@@ -85,7 +85,7 @@ export const EVENT_CODES = [
 export const TRAILER_TYPES = [
   { code: "QW", label: "Quickway" },
   { code: "KRO", label: "Kroger" },
-  { code: "RTI", label: "RTI" },
+  { code: "OWN", label: "Owned Fleet" },
   { code: "ADV", label: "Advantage" },
   { code: "OTR", label: "Other" },
 ];
