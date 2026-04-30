@@ -1,0 +1,123 @@
+{
+  "theme": "dark",
+  "archetype": "Archetype 2 (Performance Pro) - Industrial Tactical Variant",
+  "design_philosophy": {
+    "core_principles": [
+      "Tactical Minimalism: High-visibility, command-center focus designed for a truck cab at night.",
+      "Driver-Friendly Ergonomics: Large tap targets (min 48px), high contrast, and one-handed operability.",
+      "Dual Identity: Modern industrial UI for data entry, but pixel-perfect replica for paper export.",
+      "Material Honesty: No soft shadows or glassmorphism. Use 1px solid strokes, stark borders, and high-saturation accents."
+    ],
+    "emotional_tone": "Rugged, reliable, professional, and highly functional."
+  },
+  "colors": {
+    "driver_mode": {
+      "background": {
+        "primary": "#0A0A0A",
+        "secondary": "#171717",
+        "tertiary": "#262626"
+      },
+      "text": {
+        "primary": "#FFFFFF",
+        "secondary": "#A3A3A3",
+        "muted": "#737373"
+      },
+      "border": {
+        "default": "#262626",
+        "focus": "#FF5F15"
+      },
+      "accent": {
+        "primary": "#FF5F15",
+        "primary_hover": "#E04F0E",
+        "warning": "#FFB020",
+        "danger": "#FF3B30",
+        "success": "#34C759"
+      }
+    },
+    "paper_mode": {
+      "background": "#FFFFFF",
+      "text": "#000000",
+      "border": "#000000"
+    }
+  },
+  "typography": {
+    "driver_mode": {
+      "heading_font": "Chivo, sans-serif",
+      "body_font": "IBM Plex Sans, sans-serif",
+      "scale": {
+        "h1": "text-4xl tracking-tight font-black",
+        "h2": "text-2xl tracking-tight font-bold",
+        "h3": "text-xl font-bold",
+        "body": "text-base leading-relaxed",
+        "small": "text-sm tracking-wide",
+        "overline": "text-xs uppercase tracking-[0.2em] text-accent-primary"
+      }
+    },
+    "paper_mode": {
+      "heading_font": "Times New Roman, serif",
+      "body_font": "Arial, Helvetica, sans-serif",
+      "scale": {
+        "title": "text-xl font-bold text-center",
+        "table_headers": "text-[10px] font-bold leading-tight",
+        "table_cells": "text-[11px] leading-tight",
+        "footer": "text-[9px]"
+      }
+    }
+  },
+  "spacing_and_layout": {
+    "generous_spacing": true,
+    "container_padding": "p-6 md:p-8",
+    "grid_strategy": "Control Room (Dense, high clarity, border-collapse styles)",
+    "tap_targets": "Minimum h-12 for all inputs and buttons",
+    "corners": "rounded-none or rounded-sm (max 4px)"
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#FF5F15] text-white font-bold h-14 rounded-sm hover:bg-[#E04F0E] transition-colors focus:ring-2 focus:ring-[#FFB020] focus:ring-offset-2 focus:ring-offset-[#0A0A0A]",
+      "secondary": "bg-[#171717] text-white border border-[#262626] font-bold h-14 rounded-sm hover:bg-[#262626] transition-colors"
+    },
+    "inputs": {
+      "default": "bg-[#0A0A0A] border border-[#262626] text-white h-14 rounded-sm px-4 focus:border-[#FF5F15] focus:ring-1 focus:ring-[#FF5F15]"
+    },
+    "cards": {
+      "default": "bg-[#171717] border border-[#262626] rounded-sm p-6"
+    },
+    "data_entry_table": {
+      "mobile_strategy": "Use a stack of expand/collapse Accordions or Cards per stop on mobile. On tablet/desktop, use a side-scrolling table with sticky first column."
+    },
+    "temperature_stepper": {
+      "style": "Flex container with large +/- buttons (h-14 w-14) and a centered read-only input. If temp > 42F, text changes to #FF3B30."
+    }
+  },
+  "media": {
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1731531702939-0b0a9733501e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODl8MHwxfHNlYXJjaHwxfHx0cnVjayUyMGRhc2hib2FyZCUyMG5pZ2h0fGVufDB8fHx8MTc3NzU3OTQ0MHww&ixlib=rb-4.1.0&q=85",
+        "category": "hero_background",
+        "description": "Dark truck dashboard at night. Use as a blurred or low-opacity background for the login screen."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1759662232707-f1e0a4134c93?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODR8MHwxfHNlYXJjaHwxfHx0cnVjayUyMGRyaXZlciUyMHBvcnRyYWl0fGVufDB8fHx8MTc3NzU3OTQ0MHww&ixlib=rb-4.1.0&q=85",
+        "category": "driver_avatar",
+        "description": "Truck driver portrait. Use for the driver profile setup placeholder avatar."
+      }
+    ]
+  },
+  "icons_and_assets": {
+    "library": "lucide-react",
+    "logo_instructions": "DO NOT USE PLACEHOLDER IMAGES. Construct the RTI logo using a Lucide React `<Truck />` icon paired with the text 'RTI' in `font-black text-2xl`."
+  },
+  "interactions_and_motion": {
+    "hover_states": "Crisp transitions. Borders lighten, backgrounds shift slightly.",
+    "focus_states": "High-contrast ring (Safety Amber/Orange) for keyboard navigation.",
+    "transitions": "Use short durations (150ms) to feel responsive and utilitarian."
+  },
+  "testing": {
+    "requirements": "All interactive and key informational elements MUST include a `data-testid` attribute (e.g., `data-testid=\"submit-trip-btn\"`)."
+  },
+  "instructions_to_main_agent": {
+    "general": "Build the application using Tailwind CSS and Shadcn UI. Implement dark mode strictly based on the defined color palette.",
+    "paper_mode": "Create a visually hidden (or preview-only) component that perfectly replicates the RTI paper trip sheet. It must use white backgrounds, black borders, and standard web-safe fonts (Times/Arial) to ensure html2canvas/jsPDF export perfectly matches the physical form.",
+    "mobile_ux": "Ensure all inputs, dropdowns, and buttons are large enough for a truck driver to tap easily (h-12 or h-14). Use native-feeling bottom sheets or full-screen dialogs for complex selections rather than small popovers."
+  }
+}
