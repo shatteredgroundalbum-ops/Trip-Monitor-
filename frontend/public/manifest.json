@@ -1,7 +1,7 @@
 {
   "short_name": "Trip Monitor",
   "name": "Trip Monitor — Driver Edition",
-  "description": "Digital RTI trip sheets, built for the cab. Export as JPEG, PDF, or email.",
+  "description": "Trip Monitor — Driver Edition. Digital trip sheets, built for the cab. Export as JPEG, PDF, or email.",
   "icons": [
     {
       "src": "/trip-monitor-logo.webp",

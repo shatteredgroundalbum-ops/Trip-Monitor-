@@ -1,0 +1,35 @@
+{
+  "summary": "Iter 5 brand-separation retest. Backend: 15/15 pytest pass (smoke confirms no regressions). Frontend: splash dark bg + logo-only fades correctly, sessionStorage prevents re-show on reload, Login has NO logo image and NO RTI text (signin-headline + signin-overline render), Dashboard + History headers render text-only brand-lockup with TM monogram (no Trip Monitor logo image, no RTI/Riverside Transport text), SessionWizard contains no RTI/no logo image, manifest.json clean. FinishExportDialog + History export use 'TripSheet_' prefix and 'Trip Sheet — ' subject and 'attached the trip sheet' body (verified by code read).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Multiple shadcn dialogs (continue-dialog, finish-dialog, paper preview, etc.)", "issues": ["Persistent Radix a11y warnings: 'DialogContent requires a DialogTitle' and 'Missing Description / aria-describedby' — accessibility-only, no functional impact. Carryover from iter 2."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "OPTIONAL/BORDERLINE: /app/frontend/src/data/constants.js still contains a carrier-code option { code: 'RTI', label: 'RTI' } in the carriers list. Per the strict mandate ('No RTI text anywhere in the visible UI'), this string surfaces as a selectable option inside the Trip Form's carrier dropdown. If the user wants ZERO RTI text in any in-app UI, rename the label (e.g., 'Riverside') or remove the entry. PaperSheet usage is unaffected since it renders its own RTI lockup.",
+    "OPTIONAL a11y: add DialogTitle/DialogDescription (or VisuallyHidden) to all DialogContent components to silence Radix warnings (deferred from iter 2)."
+  ],
+  "critical_code_review_comments": [
+    "Brand separation correctly enforced: SplashScreen.jsx (logo image, dark #06122E bg, no buttons, no text, 2.6s fade), BrandLogo.jsx (only BrandLockupCompact text-only export, no image rendered), Login.jsx (no BrandLogo import, no img, no RTI text), Dashboard.jsx + History.jsx (BrandLockupCompact text-only header, NO img tag).",
+    "Splash sessionStorage gate works correctly: tm_splash_seen flag is set on first onComplete, reload skips splash and shows login immediately.",
+    "FinishExportDialog.jsx baseName uses 'TripSheet_' (no RTI_), subject 'Trip Sheet —' (no RTI), body 'Please find attached the trip sheet.' — confirmed.",
+    "History.jsx exportFile() identical pattern: 'TripSheet_' / 'Trip Sheet —' / 'attached the trip sheet' — confirmed.",
+    "manifest.json: name='Trip Monitor — Driver Edition', description has no 'RTI', icon points to /trip-monitor-logo.webp — confirmed.",
+    "PaperSheet.jsx intentionally untouched per user mandate; RTI brand mark lives ONLY there (not re-tested in this iteration as instructed)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (15/15 pytest)", "frontend": "100% (all brand-separation checks passed)"},
+  "test_credentials": "Backend smoke: TEST_SESSION_TOKEN=tm_test_1777584051088 (driver.test@rti.test). Browser FE: cookie session_token=tm_fe_1777584066956 (lighttest@rti.test) on driver-sheets-1.preview.emergentagent.com (httpOnly, secure, sameSite=None, path=/).",
+  "seed_data_creation": "Created two test users + sessions in test_database. Driver profile inserted for FE user (Light Test Driver / Riverside / D=LD1 / Truck T1) so Dashboard skips profile dialog and surfaces SessionWizard directly.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter 5 confirms strict brand separation. Splash logo image renders ONLY on splash. Trip Monitor logo image is NOT in nav/header/dialogs/forms anywhere else. RTI/Riverside Transport text does NOT appear in Login/Dashboard/History/Profile/Wizard UI. PaperSheet.jsx still owns RTI branding (not modified, not re-tested). Backend is unchanged from iter 4 and all 15 pytest pass. Only borderline finding is the carrier dropdown code 'RTI' string in data/constants.js — flagged as optional cleanup. Test infrastructure: pytest /app/backend/tests/backend_test.py with TEST_SESSION_TOKEN env var; FE Playwright via cookie injection.",
+  "rca of the issue": "N/A — no regressions found this iteration. Initial misread on 'splash visible after reload' was a test-timing artifact (reload fired before sessionStorage flag had been written by the splash onComplete callback). Re-test with full 3.5s wait confirmed splash unmounts cleanly and reload shows login immediately."
+}

@@ -1,6 +1,5 @@
 import React from "react";
 import { Button } from "../components/ui/button";
-import BrandLogo from "../components/app/BrandLogo";
 
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 export default function Login() {
@@ -22,29 +21,25 @@ export default function Login() {
         }}
       />
 
-      <div className="relative z-10 flex-1 flex flex-col justify-between p-8 md:p-12 max-w-md mx-auto w-full">
-        {/* Brand */}
-        <div className="flex flex-col items-center pt-6" data-testid="brand-header">
-          <BrandLogo size={200} />
-          <div className="text-[10px] uppercase tracking-[0.3em] text-[var(--tm-orange)] font-bold mt-2">
-            Riverside Transport · Trip Sheet
+      <div className="relative z-10 flex-1 flex flex-col justify-center p-8 md:p-12 max-w-md mx-auto w-full">
+        <div className="space-y-7">
+          <div data-testid="signin-overline" className="text-[10px] uppercase tracking-[0.32em] text-[var(--tm-blue)] font-bold">
+            Driver Edition · Sign in
           </div>
-        </div>
-
-        <div className="space-y-6 my-12">
           <h1
-            className="font-black tracking-tight leading-[0.95] text-center text-[var(--tm-navy)]"
-            style={{ fontFamily: "Chivo, sans-serif", fontSize: "clamp(2.25rem, 7vw, 3.5rem)" }}
+            data-testid="signin-headline"
+            className="font-black tracking-tight leading-[0.95] text-[var(--tm-navy)]"
+            style={{ fontFamily: "Chivo, sans-serif", fontSize: "clamp(2.5rem, 8vw, 4rem)" }}
           >
             Log the miles.<br />
             <span className="text-[var(--tm-orange)]">Skip the paper.</span>
           </h1>
-          <p className="text-[var(--tm-text-soft)] text-base leading-relaxed text-center max-w-sm mx-auto">
-            Digital RTI trip sheets, built for the cab. Export as JPEG, PDF, or email — identical to the printed form.
+          <p className="text-[var(--tm-text-soft)] text-base leading-relaxed max-w-sm">
+            Digital trip sheets, built for the cab. Export as JPEG, PDF, or email — paper-perfect, every time.
           </p>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-3 mt-12">
           <Button
             data-testid="google-login-btn"
             onClick={handleLogin}
@@ -53,7 +48,7 @@ export default function Login() {
             Sign in with Google
           </Button>
           <p className="text-xs text-[var(--tm-text-muted)] text-center">
-            For Riverside Transport drivers · Ver. 111022 A
+            By continuing, you agree to use Trip Monitor responsibly while on duty.
           </p>
         </div>
       </div>

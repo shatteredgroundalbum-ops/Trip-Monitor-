@@ -1,32 +1,27 @@
 import React from "react";
 
 /**
- * Trip Monitor — Driver Edition logo. The logo image itself is NEVER recolored
- * or filtered — displayed exactly as uploaded.
+ * App brand lockup (text-only). Used in dashboard / history headers.
+ *
+ * The Trip Monitor logo IMAGE is reserved for the splash screen ONLY.
+ * It must NOT appear in the in-app navigation, headers, or any other screen.
+ *
+ * RTI branding is reserved for the printed trip-sheet form (PaperSheet) ONLY.
+ * It must NOT appear anywhere in the app interface.
  */
-export default function BrandLogo({ size = 80, className = "" }) {
-  return (
-    <img
-      src="/trip-monitor-logo.webp"
-      alt="Trip Monitor — Driver Edition"
-      width={size}
-      height={size}
-      style={{ width: size, height: size, objectFit: "contain" }}
-      className={className}
-      data-testid="brand-logo"
-    />
-  );
-}
-
-/** Compact horizontal lockup for header/navbar usage. */
 export function BrandLockupCompact({ className = "" }) {
   return (
     <div className={`flex items-center gap-3 ${className}`} data-testid="brand-lockup">
-      <img
-        src="/trip-monitor-logo.webp"
-        alt="Trip Monitor"
-        className="h-10 w-10 object-contain"
-      />
+      {/* Small monogram tile to give the lockup presence (no logo image) */}
+      <div
+        aria-hidden
+        className="h-9 w-9 flex items-center justify-center rounded-md font-black text-white text-sm tracking-tight"
+        style={{
+          background: "linear-gradient(135deg, var(--tm-navy) 0%, var(--tm-blue) 100%)",
+        }}
+      >
+        TM
+      </div>
       <div className="leading-tight">
         <div className="font-black text-base tracking-tight">
           <span className="text-[var(--tm-navy)]">Trip </span>

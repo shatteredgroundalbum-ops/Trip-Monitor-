@@ -17,7 +17,7 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
   const [busy, setBusy] = useState(false);
   const paperRef = useRef(null);
 
-  const baseName = `RTI_TripSheet_${session.order_number || "NO-ORDER"}_${(profile?.full_name || "driver").replace(/\s+/g, "_")}`;
+  const baseName = `TripSheet_${session.order_number || "NO-ORDER"}_${(profile?.full_name || "driver").replace(/\s+/g, "_")}`;
 
   const captureCanvas = async () => {
     const el = paperRef.current;
@@ -58,8 +58,8 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
   };
 
   const sendEmail = () => {
-    const subject = `RTI Trip Sheet — ${profile?.full_name || ""} — ${new Date().toLocaleDateString()} — Order #${session.order_number}`;
-    const body = `Hello,%0D%0A%0D%0APlease find attached the RTI Trip Sheet.%0D%0A%0D%0A` +
+    const subject = `Trip Sheet — ${profile?.full_name || ""} — ${new Date().toLocaleDateString()} — Order #${session.order_number}`;
+    const body = `Hello,%0D%0A%0D%0APlease find attached the trip sheet.%0D%0A%0D%0A` +
       `Driver: ${profile?.full_name || ""}%0D%0A` +
       `Driver ID: ${session.driver_id}%0D%0A` +
       `Tractor #: ${session.truck_number || ""}%0D%0A` +

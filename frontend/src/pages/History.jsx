@@ -61,7 +61,7 @@ export default function History() {
 
   const exportFile = async (kind) => {
     if (!viewing) return;
-    const baseName = `RTI_TripSheet_${viewing.order_number || "NO-ORDER"}_${(profile?.full_name || "driver").replace(/\s+/g, "_")}`;
+    const baseName = `TripSheet_${viewing.order_number || "NO-ORDER"}_${(profile?.full_name || "driver").replace(/\s+/g, "_")}`;
     try {
       if (kind === "jpeg") {
         const canvas = await captureCanvas();
@@ -84,8 +84,8 @@ export default function History() {
         pdf.addImage(imgData, "JPEG", (pageW - w) / 2, 20, w, h);
         pdf.save(`${baseName}.pdf`);
       } else if (kind === "email") {
-        const subject = `RTI Trip Sheet — ${profile?.full_name || ""} — ${formatDate(viewing.finished_at || viewing.created_at)} — Order #${viewing.order_number}`;
-        const body = `Hello,%0D%0A%0D%0APlease find attached the RTI Trip Sheet.%0D%0A%0D%0A` +
+        const subject = `Trip Sheet — ${profile?.full_name || ""} — ${formatDate(viewing.finished_at || viewing.created_at)} — Order #${viewing.order_number}`;
+        const body = `Hello,%0D%0A%0D%0APlease find attached the trip sheet.%0D%0A%0D%0A` +
           `Driver: ${profile?.full_name || ""}%0D%0AOrder #: ${viewing.order_number}%0D%0ABOL #: ${viewing.bol_number}%0D%0A%0D%0AThanks.`;
         window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${body}`;
       }
