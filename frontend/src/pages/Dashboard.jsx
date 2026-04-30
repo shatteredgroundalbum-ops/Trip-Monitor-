@@ -8,8 +8,9 @@ import TripSheetForm from "../components/app/TripSheetForm";
 import FinishExportDialog from "../components/app/FinishExportDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
-import { Truck, LogOut, UserCog, CheckCircle2, Save, Eye } from "lucide-react";
+import { LogOut, UserCog, CheckCircle2, Save, Eye, History, Truck } from "lucide-react";
 import PaperSheet from "../components/app/PaperSheet";
+import { BrandLockupCompact } from "../components/app/BrandLogo";
 import { toast } from "sonner";
 
 export default function Dashboard() {
@@ -91,16 +92,13 @@ export default function Dashboard() {
       {/* Top bar */}
       <header className="sticky top-0 z-30 bg-[#0A0A0A]/95 backdrop-blur border-b border-[#262626]">
         <div className="max-w-4xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5" data-testid="app-header">
-            <div className="h-9 w-9 flex items-center justify-center bg-[#FF5F15] rounded-sm">
-              <Truck className="h-5 w-5 text-black" strokeWidth={2.5} />
-            </div>
-            <div>
-              <div className="font-black text-lg tracking-tight leading-none">RTI</div>
-              <div className="text-[9px] uppercase tracking-[0.2em] text-neutral-500 leading-none mt-0.5">Trip Sheet</div>
-            </div>
-          </div>
+          <BrandLockupCompact />
           <div className="flex items-center gap-2">
+            <Button data-testid="history-btn" variant="outline" size="sm"
+              onClick={() => navigate("/history")}
+              className="h-9 bg-transparent border-[#262626] text-white hover:bg-[#171717] rounded-sm">
+              <History className="h-4 w-4" />
+            </Button>
             <Button data-testid="edit-profile-btn" variant="outline" size="sm"
               onClick={() => setShowProfile(true)}
               className="h-9 bg-transparent border-[#262626] text-white hover:bg-[#171717] rounded-sm">

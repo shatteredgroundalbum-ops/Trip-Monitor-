@@ -294,6 +294,32 @@ async def finish_session(session_id: str, user: User = Depends(get_current_user)
     return doc
 
 
+@api_router.post("/trip-sessions/{session_id}/reopen")
+async def reopen_session(session_id: str, user: User = Depends(get_current_user)):
+    """Re-open a finished session for editing. Closes any other active session first."""
+    existing = await db.trip_sessions.find_one(
+        {"session_id": session_id, "user_id": user.user_id}, {"_id": 0}
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Not found")
+    if existing.get("status") == "active":
+        return existing  # already active
+    now = datetime.now(timezone.utc).isoformat()
+    # Abandon any other active session
+    await db.trip_sessions.update_many(
+        {"user_id": user.user_id, "status": "active", "session_id": {"$ne": session_id}},
+        {"$set": {"status": "abandoned", "updated_at": now}},
+    )
+    await db.trip_sessions.update_one(
+        {"session_id": session_id, "user_id": user.user_id},
+        {"$set": {"status": "active", "finished_at": None, "updated_at": now}},
+    )
+    doc = await db.trip_sessions.find_one(
+        {"session_id": session_id, "user_id": user.user_id}, {"_id": 0}
+    )
+    return doc
+
+
 # ============ LEARNING: LOCATIONS, TRAILERS, CITIES ============
 @api_router.get("/locations")
 async def list_locations(user: User = Depends(get_current_user)):

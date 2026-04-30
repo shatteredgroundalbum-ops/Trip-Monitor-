@@ -1,6 +1,6 @@
 import React from "react";
-import { Truck } from "lucide-react";
 import { Button } from "../components/ui/button";
+import BrandLogo from "../components/app/BrandLogo";
 
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 export default function Login() {
@@ -24,29 +24,27 @@ export default function Login() {
 
       <div className="relative z-10 flex-1 flex flex-col justify-between p-8 md:p-12 max-w-md mx-auto w-full">
         {/* Brand */}
-        <div className="flex items-center gap-3" data-testid="brand-header">
-          <div className="h-12 w-12 flex items-center justify-center bg-[#FF5F15] rounded-sm">
-            <Truck className="h-7 w-7 text-black" strokeWidth={2.5} />
+        <div className="flex flex-col items-center pt-6" data-testid="brand-header">
+          <BrandLogo size={140} />
+          <div className="mt-3 font-black tracking-tight text-3xl">
+            <span className="text-white">Trip </span>
+            <span className="text-[#3B82F6]">Monitor</span>
           </div>
-          <div className="flex flex-col leading-none">
-            <span className="font-black text-2xl tracking-tight">RTI</span>
-            <span className="text-[10px] uppercase tracking-[0.2em] text-neutral-400">
-              Riverside Transport
-            </span>
+          <div className="text-[10px] uppercase tracking-[0.3em] text-[#FF5F15] font-bold mt-1">
+            Driver Edition
           </div>
         </div>
 
-        <div className="space-y-6 mt-16 mb-16">
-          <div className="text-[10px] uppercase tracking-[0.3em] text-[#FF5F15] font-bold">
-            Trip Management
-          </div>
-          <h1 className="font-black tracking-tight leading-[0.95]" style={{ fontFamily: "Chivo, sans-serif", fontSize: "clamp(2.5rem, 8vw, 4rem)" }}>
+        <div className="space-y-6 my-12">
+          <h1
+            className="font-black tracking-tight leading-[0.95] text-center"
+            style={{ fontFamily: "Chivo, sans-serif", fontSize: "clamp(2.25rem, 7vw, 3.5rem)" }}
+          >
             Log the miles.<br />
             <span className="text-[#FF5F15]">Skip the paper.</span>
           </h1>
-          <p className="text-neutral-400 text-base leading-relaxed max-w-sm">
-            Digital RTI trip sheets, built for the cab. Export as JPEG, PDF, or email —
-            identical to the printed form.
+          <p className="text-neutral-400 text-base leading-relaxed text-center max-w-sm mx-auto">
+            Digital RTI trip sheets, built for the cab. Export as JPEG, PDF, or email — identical to the printed form.
           </p>
         </div>
 
@@ -59,7 +57,7 @@ export default function Login() {
             Sign in with Google
           </Button>
           <p className="text-xs text-neutral-500 text-center">
-            Ver. 111022 A — For RTI drivers only
+            For Riverside Transport drivers · Ver. 111022 A
           </p>
         </div>
       </div>
