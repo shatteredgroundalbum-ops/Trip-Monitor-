@@ -52,7 +52,6 @@ export default function Dashboard() {
   }, [user]);
 
   const createSession = async (payload) => {
-    // Prefill row 1 departure date with chosen date
     const rows = Array.from({ length: 8 }, (_, i) => ({ seq: i + 1 }));
     rows[0].departure_date = payload.initial_date;
     try {
@@ -70,7 +69,6 @@ export default function Dashboard() {
     if (yes) {
       toast.success("Resumed active session");
     } else {
-      // abandon + start new
       (async () => {
         if (session) await api.put(`/trip-sessions/${session.session_id}`, { status: "abandoned" });
         setSession(null);
@@ -81,81 +79,78 @@ export default function Dashboard() {
 
   if (loading || !bootstrapped) {
     return (
-      <div className="min-h-screen bg-[#0A0A0A] text-white flex items-center justify-center">
-        <div className="text-sm uppercase tracking-[0.3em] text-neutral-500">Loading...</div>
+      <div className="min-h-screen bg-white text-[var(--tm-navy)] flex items-center justify-center">
+        <div className="text-sm uppercase tracking-[0.3em] text-[var(--tm-text-muted)]">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-white">
+    <div className="min-h-screen bg-white text-[var(--tm-navy)]">
       {/* Top bar */}
-      <header className="sticky top-0 z-30 bg-[#0A0A0A]/95 backdrop-blur border-b border-[#262626]">
+      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-[var(--tm-border)]">
         <div className="max-w-4xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
           <BrandLockupCompact />
           <div className="flex items-center gap-2">
             <Button data-testid="history-btn" variant="outline" size="sm"
               onClick={() => navigate("/history")}
-              className="h-9 bg-transparent border-[#262626] text-white hover:bg-[#171717] rounded-sm">
+              className="h-9 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
               <History className="h-4 w-4" />
             </Button>
             <Button data-testid="edit-profile-btn" variant="outline" size="sm"
               onClick={() => setShowProfile(true)}
-              className="h-9 bg-transparent border-[#262626] text-white hover:bg-[#171717] rounded-sm">
+              className="h-9 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
               <UserCog className="h-4 w-4" />
             </Button>
             <Button data-testid="logout-btn" variant="outline" size="sm"
               onClick={logout}
-              className="h-9 bg-transparent border-[#262626] text-white hover:bg-[#171717] rounded-sm">
+              className="h-9 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
         </div>
       </header>
 
-      {/* Main content */}
       <main className="max-w-4xl mx-auto px-4 md:px-6 py-6 pb-32">
         {session ? (
           <>
             <div className="mb-6">
-              <div className="text-[10px] uppercase tracking-[0.25em] text-[#FF5F15] font-bold mb-1">Active Trip</div>
-              <h1 className="text-3xl md:text-4xl font-black tracking-tight">Order #{session.order_number}</h1>
-              <div className="text-sm text-neutral-400 mt-1 flex items-center gap-2">
+              <div className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-orange)] font-bold mb-1">Active Trip</div>
+              <h1 className="text-3xl md:text-4xl font-black tracking-tight text-[var(--tm-navy)]">Order #{session.order_number}</h1>
+              <div className="text-sm text-[var(--tm-text-soft)] mt-1 flex items-center gap-2">
                 <Save className="h-3 w-3" /> Auto-saving as you type
               </div>
             </div>
             <TripSheetForm session={session} onChange={setSession} />
           </>
         ) : (
-          <div className="mt-16 text-center text-neutral-400" data-testid="empty-state">
-            <Truck className="h-12 w-12 mx-auto mb-4 text-[#FF5F15]" />
-            <h2 className="text-2xl font-black text-white tracking-tight">No active trip</h2>
+          <div className="mt-16 text-center text-[var(--tm-text-soft)]" data-testid="empty-state">
+            <Truck className="h-12 w-12 mx-auto mb-4 text-[var(--tm-blue)]" />
+            <h2 className="text-2xl font-black text-[var(--tm-navy)] tracking-tight">No active trip</h2>
             <p className="text-sm mt-2">Start a new trip to fill out your sheet.</p>
             <Button data-testid="start-new-trip-btn" onClick={() => setShowWizard(true)}
-              className="mt-6 h-14 px-8 bg-[#FF5F15] hover:bg-[#E04F0E] text-white font-bold rounded-sm">
+              className="mt-6 h-14 px-8 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md shadow-[0_8px_24px_-12px_rgba(255,95,21,0.55)]">
               Start New Trip
             </Button>
           </div>
         )}
       </main>
 
-      {/* Sticky action bar */}
       {session && (
-        <div className="fixed bottom-0 left-0 right-0 z-30 bg-[#0A0A0A]/95 backdrop-blur border-t border-[#262626]">
+        <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-[var(--tm-border)]">
           <div className="max-w-4xl mx-auto px-4 md:px-6 py-3 flex gap-2">
             <Button data-testid="preview-btn" variant="outline" onClick={() => setShowPreview(true)}
-              className="h-12 bg-transparent border-[#262626] text-white hover:bg-[#171717] rounded-sm">
+              className="h-12 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
               <Eye className="h-4 w-4 mr-1" /> Preview
             </Button>
             <Button data-testid="finish-btn" onClick={() => setShowFinish(true)}
-              className="flex-1 h-12 bg-[#FF5F15] hover:bg-[#E04F0E] text-white font-bold rounded-sm">
+              className="flex-1 h-12 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md shadow-[0_8px_24px_-12px_rgba(255,95,21,0.55)]">
               <CheckCircle2 className="h-4 w-4 mr-2" /> Finish &amp; Export
             </Button>
           </div>
         </div>
       )}
 
-      {/* Profile dialog */}
       <DriverProfileDialog open={showProfile} initial={profile}
         onSaved={(p) => {
           setProfile(p);
@@ -163,49 +158,45 @@ export default function Dashboard() {
           if (!session) setShowWizard(true);
         }} />
 
-      {/* Session wizard */}
       {profile && (
         <SessionWizard open={showWizard} profile={profile}
           onCreate={createSession} onCancel={() => setShowWizard(false)} />
       )}
 
-      {/* Continue session prompt */}
       <Dialog open={showContinue}>
-        <DialogContent data-testid="continue-dialog" className="max-w-sm bg-[#171717] border-[#262626] text-white rounded-sm" hideClose>
+        <DialogContent data-testid="continue-dialog" className="max-w-sm bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md" hideClose>
           <DialogHeader>
-            <DialogTitle className="text-white">
-              <span className="text-[10px] uppercase tracking-[0.25em] text-[#FF5F15] font-bold block mb-2">Session In Progress</span>
+            <DialogTitle className="text-[var(--tm-navy)]">
+              <span className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-orange)] font-bold block mb-2">Session In Progress</span>
               <span className="text-xl font-black tracking-tight">Continue current session?</span>
             </DialogTitle>
           </DialogHeader>
           <DialogFooter className="gap-2 flex-row">
             <Button data-testid="continue-no-btn" variant="outline" onClick={() => continueSession(false)}
-              className="h-12 flex-1 bg-[#0A0A0A] border-[#262626] text-white hover:bg-[#262626] rounded-sm">
+              className="h-12 flex-1 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
               No, Start New
             </Button>
             <Button data-testid="continue-yes-btn" onClick={() => continueSession(true)}
-              className="h-12 flex-1 bg-[#FF5F15] hover:bg-[#E04F0E] text-white font-bold rounded-sm">
+              className="h-12 flex-1 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md">
               Yes, Continue
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Preview dialog */}
       {session && (
         <Dialog open={showPreview} onOpenChange={setShowPreview}>
-          <DialogContent className="max-w-5xl bg-[#171717] border-[#262626] text-white rounded-sm overflow-auto max-h-[90vh]">
+          <DialogContent className="max-w-5xl bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md overflow-auto max-h-[90vh]">
             <DialogHeader>
-              <DialogTitle className="text-white">Paper Preview</DialogTitle>
+              <DialogTitle className="text-[var(--tm-navy)]">Paper Preview</DialogTitle>
             </DialogHeader>
-            <div className="overflow-auto max-h-[75vh] flex justify-center bg-neutral-800 p-4 rounded-sm">
+            <div className="overflow-auto max-h-[75vh] flex justify-center bg-[var(--tm-surface-2)] p-4 rounded-md">
               <PaperSheet ref={previewRef} session={session} profile={profile} />
             </div>
           </DialogContent>
         </Dialog>
       )}
 
-      {/* Finish dialog */}
       {session && (
         <FinishExportDialog open={showFinish} onOpenChange={setShowFinish}
           session={session} profile={profile} />

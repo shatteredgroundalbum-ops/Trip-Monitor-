@@ -47,12 +47,12 @@ export default function DriverProfileDialog({ open, initial, onSaved }) {
     <Dialog open={open}>
       <DialogContent
         data-testid="profile-dialog"
-        className="max-w-lg bg-[#171717] border-[#262626] text-white rounded-sm"
+        className="max-w-lg bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md"
         hideClose
       >
         <DialogHeader>
-          <DialogTitle className="text-white">
-            <span className="text-[10px] uppercase tracking-[0.25em] text-[#FF5F15] font-bold block mb-2">
+          <DialogTitle className="text-[var(--tm-navy)]">
+            <span className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-orange)] font-bold block mb-2">
               One-time setup
             </span>
             <span className="text-2xl font-black tracking-tight">Driver Profile</span>
@@ -62,23 +62,23 @@ export default function DriverProfileDialog({ open, initial, onSaved }) {
         <div className="space-y-4 mt-2">
           <Field label="Full Name *">
             <Input data-testid="profile-fullname" value={form.full_name} onChange={(e) => update("full_name", e.target.value)}
-              className="bg-[#0A0A0A] border-[#262626] text-white h-12 rounded-sm" />
+              className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)] h-12 rounded-md" />
           </Field>
           <Field label="Driver ID *">
             <Input data-testid="profile-driverid" value={form.driver_id} onChange={(e) => update("driver_id", e.target.value)}
-              className="bg-[#0A0A0A] border-[#262626] text-white h-12 rounded-sm" />
+              className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)] h-12 rounded-md" />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Home Terminal *">
               <Input data-testid="profile-terminal" value={form.home_terminal} onChange={(e) => update("home_terminal", e.target.value)}
-                className="bg-[#0A0A0A] border-[#262626] text-white h-12 rounded-sm" />
+                className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)] h-12 rounded-md" />
             </Field>
             <Field label="Time Zone">
               <Select value={form.time_zone} onValueChange={(v) => update("time_zone", v)}>
-                <SelectTrigger data-testid="profile-tz" className="bg-[#0A0A0A] border-[#262626] text-white h-12 rounded-sm">
+                <SelectTrigger data-testid="profile-tz" className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)] h-12 rounded-md">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-[#171717] border-[#262626] text-white">
+                <SelectContent className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)]">
                   {TIME_ZONES.map((tz) => (<SelectItem key={tz} value={tz}>{tz}</SelectItem>))}
                 </SelectContent>
               </Select>
@@ -87,10 +87,10 @@ export default function DriverProfileDialog({ open, initial, onSaved }) {
 
           <Field label="Truck Assignment">
             <Select value={form.truck_assignment_type} onValueChange={(v) => update("truck_assignment_type", v)}>
-              <SelectTrigger data-testid="profile-assign-type" className="bg-[#0A0A0A] border-[#262626] text-white h-12 rounded-sm">
+              <SelectTrigger data-testid="profile-assign-type" className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)] h-12 rounded-md">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className="bg-[#171717] border-[#262626] text-white">
+              <SelectContent className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)]">
                 <SelectItem value="Permanent">Permanent</SelectItem>
                 <SelectItem value="Slip Seat">Slip Seat</SelectItem>
               </SelectContent>
@@ -100,22 +100,22 @@ export default function DriverProfileDialog({ open, initial, onSaved }) {
           <div className="grid grid-cols-2 gap-3">
             <Field label={form.truck_assignment_type === "Permanent" ? "Truck # *" : "Preferred Truck #"}>
               <Input data-testid="profile-truck" value={form.truck_number || ""} onChange={(e) => update("truck_number", e.target.value)}
-                className="bg-[#0A0A0A] border-[#262626] text-white h-12 rounded-sm" />
+                className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)] h-12 rounded-md" />
             </Field>
             <Field label="License Plate">
               <Input data-testid="profile-plate" value={form.license_plate || ""} onChange={(e) => update("license_plate", e.target.value)}
-                className="bg-[#0A0A0A] border-[#262626] text-white h-12 rounded-sm" />
+                className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)] h-12 rounded-md" />
             </Field>
           </div>
           <Field label="Home Address (optional)">
             <Input data-testid="profile-address" value={form.home_address || ""} onChange={(e) => update("home_address", e.target.value)}
-              className="bg-[#0A0A0A] border-[#262626] text-white h-12 rounded-sm" />
+              className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)] h-12 rounded-md" />
           </Field>
         </div>
 
         <DialogFooter className="mt-4">
           <Button data-testid="profile-save-btn" onClick={submit} disabled={saving}
-            className="w-full h-14 bg-[#FF5F15] hover:bg-[#E04F0E] text-white font-bold rounded-sm">
+            className="w-full h-14 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md">
             {saving ? "Saving..." : "Save Profile"}
           </Button>
         </DialogFooter>
@@ -127,7 +127,7 @@ export default function DriverProfileDialog({ open, initial, onSaved }) {
 function Field({ label, children }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs uppercase tracking-wider text-neutral-400">{label}</Label>
+      <Label className="text-xs uppercase tracking-wider text-[var(--tm-text-soft)]">{label}</Label>
       {children}
     </div>
   );

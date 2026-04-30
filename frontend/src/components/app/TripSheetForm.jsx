@@ -75,7 +75,7 @@ export default function TripSheetForm({ session, onChange }) {
   return (
     <div className="space-y-6">
       {/* Meta card */}
-      <div className="bg-[#171717] border border-[#262626] rounded-sm p-5 space-y-3">
+      <div className="bg-[var(--tm-surface)] border border-[var(--tm-border)] rounded-md p-5 space-y-3 shadow-sm">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Meta label="Driver ID" value={local.driver_id} />
           <Meta label="Truck #" value={local.truck_number || "—"} />
@@ -86,9 +86,9 @@ export default function TripSheetForm({ session, onChange }) {
             onChange={(v) => setLocal((p) => ({ ...p, bol_number: v }))}
             testId="form-bol" />
         </div>
-        <div className="flex flex-wrap gap-3 text-[10px] uppercase tracking-wider text-neutral-500">
-          <span>Session: <span className="text-[#FF5F15] font-bold">{local.session_type}</span></span>
-          <span>· Load: <span className="text-[#FF5F15] font-bold">{local.load_type}</span></span>
+        <div className="flex flex-wrap gap-3 text-[10px] uppercase tracking-wider text-[var(--tm-text-muted)]">
+          <span>Session: <span className="text-[var(--tm-orange)] font-bold">{local.session_type}</span></span>
+          <span>· Load: <span className="text-[var(--tm-orange)] font-bold">{local.load_type}</span></span>
           {!hasTemp && <span>· No temperature</span>}
         </div>
       </div>
@@ -111,37 +111,37 @@ export default function TripSheetForm({ session, onChange }) {
         ))}
 
         <Button data-testid="add-row-btn" variant="outline" onClick={addRow}
-          className="w-full h-12 bg-[#0A0A0A] border-[#262626] text-white hover:bg-[#262626] rounded-sm">
+          className="w-full h-12 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface-2)] rounded-md">
           <Plus className="mr-2 h-4 w-4" /> Add Row
         </Button>
       </div>
 
       {/* Road Expenses */}
-      <div className="bg-[#171717] border border-[#262626] rounded-sm p-5">
-        <h3 className="text-sm font-bold uppercase tracking-wider mb-4 text-[#FF5F15]">Road Expenses &amp; Reimbursement</h3>
+      <div className="bg-white border border-[var(--tm-border)] rounded-md p-5">
+        <h3 className="text-sm font-bold uppercase tracking-wider mb-4 text-[var(--tm-orange)]">Road Expenses &amp; Reimbursement</h3>
         <div className="space-y-2">
           {local.road_expenses.map((exp, i) => (
             <div key={i} className="grid grid-cols-[110px_1fr_110px] gap-2" data-testid={`expense-row-${i}`}>
               <Input placeholder="MM/DD"
                 value={exp.date || ""} onChange={(e) => updateExpense(i, { date: e.target.value })}
-                className="h-10 bg-[#0A0A0A] border-[#262626] text-white rounded-sm text-sm" />
+                className="h-10 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md text-sm" />
               <Input placeholder="Description"
                 value={exp.description || ""} onChange={(e) => updateExpense(i, { description: e.target.value })}
-                className="h-10 bg-[#0A0A0A] border-[#262626] text-white rounded-sm text-sm" />
+                className="h-10 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md text-sm" />
               <Input placeholder="$0.00"
                 value={exp.amount || ""} onChange={(e) => updateExpense(i, { amount: e.target.value })}
-                className="h-10 bg-[#0A0A0A] border-[#262626] text-white rounded-sm text-sm" />
+                className="h-10 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md text-sm" />
             </div>
           ))}
         </div>
       </div>
 
       {/* Notes */}
-      <div className="bg-[#171717] border border-[#262626] rounded-sm p-5">
-        <h3 className="text-sm font-bold uppercase tracking-wider mb-3 text-[#FF5F15]">Notes</h3>
+      <div className="bg-white border border-[var(--tm-border)] rounded-md p-5">
+        <h3 className="text-sm font-bold uppercase tracking-wider mb-3 text-[var(--tm-orange)]">Notes</h3>
         <Textarea data-testid="form-notes" rows={3}
           value={local.notes || ""} onChange={(e) => setLocal((p) => ({ ...p, notes: e.target.value }))}
-          className="bg-[#0A0A0A] border-[#262626] text-white rounded-sm" />
+          className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md" />
       </div>
     </div>
   );
@@ -150,8 +150,8 @@ export default function TripSheetForm({ session, onChange }) {
 function Meta({ label, value }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider text-neutral-500">{label}</div>
-      <div className="font-bold text-white">{value || "—"}</div>
+      <div className="text-[10px] uppercase tracking-wider text-[var(--tm-text-muted)]">{label}</div>
+      <div className="font-bold text-[var(--tm-navy)]">{value || "—"}</div>
     </div>
   );
 }
@@ -159,9 +159,9 @@ function Meta({ label, value }) {
 function MetaInput({ label, value, onChange, testId }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">{label}</div>
+      <div className="text-[10px] uppercase tracking-wider text-[var(--tm-text-muted)] mb-1">{label}</div>
       <Input data-testid={testId} value={value || ""} onChange={(e) => onChange(e.target.value)}
-        className="h-10 bg-[#0A0A0A] border-[#262626] text-white rounded-sm text-sm" />
+        className="h-10 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md text-sm" />
     </div>
   );
 }
@@ -198,7 +198,7 @@ function RowCard({ row, hasTemp, savedLocations, savedTrailers, savedCities, onC
   const hasData = row.event_code || row.location_name || row.stop_city || row.trailer_number;
 
   return (
-    <div className={`bg-[#171717] border rounded-sm transition-colors ${hasData ? "border-[#FF5F15]/30" : "border-[#262626]"}`}>
+    <div className={`bg-white border rounded-md transition-colors shadow-sm ${hasData ? "border-[var(--tm-blue)]" : "border-[var(--tm-border)]"}`}>
       <button
         type="button"
         onClick={() => setExpanded((e) => !e)}
@@ -206,32 +206,32 @@ function RowCard({ row, hasTemp, savedLocations, savedTrailers, savedCities, onC
         className="w-full flex items-center justify-between p-4 text-left"
       >
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 flex items-center justify-center bg-[#FF5F15] rounded-sm font-black text-black">
+          <div className="h-10 w-10 flex items-center justify-center bg-[var(--tm-orange)] rounded-md font-black text-white">
             {row.seq}
           </div>
           <div>
-            <div className="text-[10px] uppercase tracking-wider text-neutral-500">
+            <div className="text-[10px] uppercase tracking-wider text-[var(--tm-text-muted)]">
               {row.event_code ? EVENT_LABELS[row.event_code] : "Empty stop"}
             </div>
-            <div className="text-sm font-bold text-white">
+            <div className="text-sm font-bold text-[var(--tm-navy)]">
               {row.location_name || "Tap to fill"}
-              {row.stop_city && row.stop_state && <span className="text-neutral-400"> · {row.stop_city}, {row.stop_state}</span>}
+              {row.stop_city && row.stop_state && <span className="text-[var(--tm-text-soft)]"> · {row.stop_city}, {row.stop_state}</span>}
             </div>
           </div>
         </div>
-        {expanded ? <ChevronUp className="h-5 w-5 text-neutral-400" /> : <ChevronDown className="h-5 w-5 text-neutral-400" />}
+        {expanded ? <ChevronUp className="h-5 w-5 text-[var(--tm-text-soft)]" /> : <ChevronDown className="h-5 w-5 text-[var(--tm-text-soft)]" />}
       </button>
 
       {expanded && (
-        <div className="p-4 pt-0 space-y-3 border-t border-[#262626]">
+        <div className="p-4 pt-0 space-y-3 border-t border-[var(--tm-border)]">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Event Code</Label>
               <Select value={row.event_code || ""} onValueChange={(v) => onChange({ event_code: v })}>
-                <SelectTrigger data-testid={`row-${row.seq}-event`} className="h-12 bg-[#0A0A0A] border-[#262626] text-white rounded-sm">
+                <SelectTrigger data-testid={`row-${row.seq}-event`} className="h-12 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md">
                   <SelectValue placeholder="Select..." />
                 </SelectTrigger>
-                <SelectContent className="bg-[#171717] border-[#262626] text-white">
+                <SelectContent className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)]">
                   {EVENT_CODES.map((ec) => (
                     <SelectItem key={ec.code} value={ec.code}>
                       <TooltipProvider delayDuration={100}>
@@ -239,11 +239,11 @@ function RowCard({ row, hasTemp, savedLocations, savedTrailers, savedCities, onC
                           <TooltipTrigger asChild>
                             <span className="flex items-center gap-2 w-full">
                               <span className="font-bold w-12">{ec.code}</span>
-                              <Info className="h-3 w-3 text-[#FF5F15]" />
-                              <span className="text-xs text-neutral-400">{ec.label}</span>
+                              <Info className="h-3 w-3 text-[var(--tm-orange)]" />
+                              <span className="text-xs text-[var(--tm-text-soft)]">{ec.label}</span>
                             </span>
                           </TooltipTrigger>
-                          <TooltipContent className="bg-black text-white border-[#262626]">{ec.label}</TooltipContent>
+                          <TooltipContent className="bg-black text-white border-[var(--tm-border)]">{ec.label}</TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                     </SelectItem>
@@ -257,12 +257,12 @@ function RowCard({ row, hasTemp, savedLocations, savedTrailers, savedCities, onC
                 <PopoverTrigger asChild>
                   <Button variant="outline"
                     data-testid={`row-${row.seq}-date`}
-                    className="w-full h-12 justify-start bg-[#0A0A0A] border-[#262626] text-white rounded-sm hover:bg-[#262626] font-normal">
+                    className="w-full h-12 justify-start bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md hover:bg-[var(--tm-surface-2)] font-normal">
                     <CalendarIcon className="mr-2 h-4 w-4" />
                     {row.departure_date || "Pick"}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto p-0 bg-[#171717] border-[#262626] text-white" align="start">
+                <PopoverContent className="w-auto p-0 bg-white border-[var(--tm-border)] text-[var(--tm-navy)]" align="start">
                   <Calendar mode="single"
                     selected={row.departure_date ? parse(row.departure_date, "MM/dd/yyyy", new Date()) : undefined}
                     onSelect={(d) => d && onChange({ departure_date: format(d, "MM/dd/yyyy") })} />
@@ -275,7 +275,7 @@ function RowCard({ row, hasTemp, savedLocations, savedTrailers, savedCities, onC
             <Label>Departure Time</Label>
             <Input data-testid={`row-${row.seq}-time`} placeholder="HH:MM"
               value={row.departure_time || ""} onChange={(e) => onChange({ departure_time: e.target.value })}
-              className="h-12 bg-[#0A0A0A] border-[#262626] text-white rounded-sm" />
+              className="h-12 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md" />
           </div>
 
           <div>
@@ -284,7 +284,7 @@ function RowCard({ row, hasTemp, savedLocations, savedTrailers, savedCities, onC
               value={row.location_name || ""}
               onChange={(e) => onChange({ location_name: e.target.value })}
               onBlur={onLocationBlur}
-              className="h-12 bg-[#0A0A0A] border-[#262626] text-white rounded-sm" />
+              className="h-12 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md" />
             <datalist id={`locations-list-${row.seq}`}>
               {locationSuggestions.map((l) => <option key={l.name} value={l.name} />)}
             </datalist>
@@ -303,7 +303,7 @@ function RowCard({ row, hasTemp, savedLocations, savedTrailers, savedCities, onC
                   else onChange({ stop_city: v });
                 }}
                 onBlur={onCityBlur}
-                className="h-12 bg-[#0A0A0A] border-[#262626] text-white rounded-sm" />
+                className="h-12 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md" />
               <datalist id={`cities-list-${row.seq}`}>
                 {stateCities.map((c) => <option key={c} value={c} />)}
               </datalist>
@@ -311,10 +311,10 @@ function RowCard({ row, hasTemp, savedLocations, savedTrailers, savedCities, onC
             <div>
               <Label>State</Label>
               <Select value={row.stop_state || ""} onValueChange={(v) => onChange({ stop_state: v })}>
-                <SelectTrigger data-testid={`row-${row.seq}-state`} className="h-12 bg-[#0A0A0A] border-[#262626] text-white rounded-sm">
+                <SelectTrigger data-testid={`row-${row.seq}-state`} className="h-12 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md">
                   <SelectValue placeholder="--" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#171717] border-[#262626] text-white max-h-60">
+                <SelectContent className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)] max-h-60">
                   {US_STATES.map((s) => <SelectItem key={s.code} value={s.code}>{s.code} — {s.name}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -328,7 +328,7 @@ function RowCard({ row, hasTemp, savedLocations, savedTrailers, savedCities, onC
                 value={row.trailer_number || ""}
                 onChange={(e) => onChange({ trailer_number: e.target.value })}
                 onBlur={onTrailerBlur}
-                className="h-12 bg-[#0A0A0A] border-[#262626] text-white rounded-sm" />
+                className="h-12 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md" />
               <datalist id={`trailers-list-${row.seq}`}>
                 {trailerSuggestions.map((t) => <option key={t.number} value={t.number} />)}
               </datalist>
@@ -336,10 +336,10 @@ function RowCard({ row, hasTemp, savedLocations, savedTrailers, savedCities, onC
             <div>
               <Label>Type</Label>
               <Select value={row.trailer_type || ""} onValueChange={(v) => onChange({ trailer_type: v })}>
-                <SelectTrigger data-testid={`row-${row.seq}-trailertype`} className="h-12 bg-[#0A0A0A] border-[#262626] text-white rounded-sm">
+                <SelectTrigger data-testid={`row-${row.seq}-trailertype`} className="h-12 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md">
                   <SelectValue placeholder="—" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#171717] border-[#262626] text-white">
+                <SelectContent className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)]">
                   {TRAILER_TYPES.map((tt) => <SelectItem key={tt.code} value={tt.code}>{tt.code} · {tt.label}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -349,7 +349,7 @@ function RowCard({ row, hasTemp, savedLocations, savedTrailers, savedCities, onC
             <Input data-testid={`row-${row.seq}-trailertype-custom`} placeholder="Custom type code"
               value={row.trailer_type_custom || ""}
               onChange={(e) => onChange({ trailer_type_custom: e.target.value })}
-              className="h-10 bg-[#0A0A0A] border-[#262626] text-white rounded-sm" />
+              className="h-10 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md" />
           )}
 
           {hasTemp && (
@@ -357,24 +357,24 @@ function RowCard({ row, hasTemp, savedLocations, savedTrailers, savedCities, onC
               <Label>Temperature (°F)</Label>
               <div className="flex items-center gap-2">
                 <Button type="button" onClick={() => tempChange(-1)} variant="outline"
-                  className="h-14 w-14 bg-[#0A0A0A] border-[#262626] text-white rounded-sm hover:bg-[#262626]">
+                  className="h-14 w-14 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md hover:bg-[var(--tm-surface-2)]">
                   <Minus className="h-5 w-5" />
                 </Button>
                 <div
                   data-testid={`row-${row.seq}-temp`}
-                  className={`flex-1 h-14 flex items-center justify-center rounded-sm text-2xl font-black ${
-                    (row.temperature ?? 35) >= 42 ? "bg-[#FF3B30]/20 text-[#FF3B30] border border-[#FF3B30]" : "bg-[#0A0A0A] border border-[#262626] text-white"
+                  className={`flex-1 h-14 flex items-center justify-center rounded-md text-2xl font-black ${
+                    (row.temperature ?? 35) >= 42 ? "bg-[#FF3B30]/20 text-[#FF3B30] border border-[#FF3B30]" : "bg-white border border-[var(--tm-border)] text-[var(--tm-navy)]"
                   }`}
                 >
                   {row.temperature ?? 35}°F
                 </div>
                 <Button type="button" onClick={() => tempChange(1)} variant="outline"
-                  className="h-14 w-14 bg-[#0A0A0A] border-[#262626] text-white rounded-sm hover:bg-[#262626]">
+                  className="h-14 w-14 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md hover:bg-[var(--tm-surface-2)]">
                   <Plus className="h-5 w-5" />
                 </Button>
               </div>
               {tempWarn && (
-                <div className="mt-2 p-3 rounded-sm bg-[#FF3B30]/20 border border-[#FF3B30] text-[#FF3B30] flex items-start gap-2" data-testid="temp-warning">
+                <div className="mt-2 p-3 rounded-md bg-[#FF3B30]/20 border border-[#FF3B30] text-[#FF3B30] flex items-start gap-2" data-testid="temp-warning">
                   <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
                   <div className="text-xs font-bold leading-tight">
                     Warning: Temperature is reaching dangerous levels. Do not transport if temperature remains above 42°F.
@@ -391,5 +391,5 @@ function RowCard({ row, hasTemp, savedLocations, savedTrailers, savedCities, onC
 }
 
 function Label({ children }) {
-  return <div className="text-[10px] uppercase tracking-wider text-neutral-400 mb-1">{children}</div>;
+  return <div className="text-[10px] uppercase tracking-wider text-[var(--tm-text-soft)] mb-1">{children}</div>;
 }

@@ -4,18 +4,43 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===========================================================================
+   Trip Monitor — Driver Edition
+   Brand palette pulled from the splash logo (white bg, navy + electric blue + orange).
+   --tm-navy   : deep navy blue ("Trip" wordmark, speedometer face)
+   --tm-blue   : electric blue ("Monitor" wordmark, road)
+   --tm-orange : orange accent (speedometer needle, "Driver Edition" pill border)
+   --tm-cream  : near-white panel tone for soft surface contrast on white pages
+   =========================================================================== */
+:root {
+    --tm-navy: #0E1F47;
+    --tm-navy-deep: #08153A;
+    --tm-blue: #1E78FF;
+    --tm-blue-deep: #1561D6;
+    --tm-orange: #FF5F15;
+    --tm-orange-deep: #E04F0E;
+    --tm-bg: #FFFFFF;
+    --tm-surface: #F4F7FB;
+    --tm-surface-2: #E9EFF8;
+    --tm-border: #D6E0EE;
+    --tm-text: #0E1F47;
+    --tm-text-soft: #4A5A78;
+    --tm-text-muted: #7B8AA8;
+}
+
 body {
     margin: 0;
     font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
         "Roboto", "Helvetica Neue", sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background: #0A0A0A;
-    color: #FFFFFF;
+    background: var(--tm-bg);
+    color: var(--tm-text);
 }
 
 h1, h2, h3, .font-display {
     font-family: "Chivo", sans-serif;
+    color: var(--tm-navy);
 }
 
 code {
@@ -24,26 +49,27 @@ code {
 
 @layer base {
     :root {
-        --background: 0 0% 4%;
-        --foreground: 0 0% 100%;
-        --card: 0 0% 9%;
-        --card-foreground: 0 0% 100%;
-        --popover: 0 0% 9%;
-        --popover-foreground: 0 0% 100%;
-        --primary: 18 100% 54%;
+        /* Shadcn tokens mapped to brand palette (light theme) */
+        --background: 0 0% 100%;
+        --foreground: 222 67% 16%;
+        --card: 0 0% 100%;
+        --card-foreground: 222 67% 16%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 222 67% 16%;
+        --primary: 222 67% 16%;
         --primary-foreground: 0 0% 100%;
-        --secondary: 0 0% 15%;
+        --secondary: 215 100% 56%;
         --secondary-foreground: 0 0% 100%;
-        --muted: 0 0% 15%;
-        --muted-foreground: 0 0% 64%;
+        --muted: 218 50% 96%;
+        --muted-foreground: 222 25% 38%;
         --accent: 18 100% 54%;
         --accent-foreground: 0 0% 100%;
         --destructive: 4 100% 59%;
         --destructive-foreground: 0 0% 100%;
-        --border: 0 0% 15%;
-        --input: 0 0% 15%;
-        --ring: 18 100% 54%;
-        --radius: 0.125rem;
+        --border: 217 38% 88%;
+        --input: 217 38% 88%;
+        --ring: 215 100% 56%;
+        --radius: 0.25rem;
     }
 }
 
@@ -56,10 +82,16 @@ code {
     }
 }
 
-/* Focus rings - Safety Amber */
+/* Focus rings — Electric Blue (logo) */
 *:focus-visible {
-    outline: 2px solid #FFB020;
+    outline: 2px solid var(--tm-blue);
     outline-offset: 2px;
+}
+
+/* Selection */
+::selection {
+    background: var(--tm-blue);
+    color: #fff;
 }
 
 @layer base {

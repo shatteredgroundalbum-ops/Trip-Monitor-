@@ -93,10 +93,10 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-testid="finish-dialog" className="max-w-lg bg-[#171717] border-[#262626] text-white rounded-sm">
+      <DialogContent data-testid="finish-dialog" className="max-w-lg bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md">
         <DialogHeader>
-          <DialogTitle className="text-white">
-            <span className="text-[10px] uppercase tracking-[0.25em] text-[#FF5F15] font-bold block mb-2">
+          <DialogTitle className="text-[var(--tm-navy)]">
+            <span className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-orange)] font-bold block mb-2">
               Finish &amp; Export
             </span>
             <span className="text-2xl font-black tracking-tight">Send your trip sheet</span>
@@ -116,7 +116,7 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
         </div>
 
         <Button data-testid="finish-export-btn" onClick={handleFinish} disabled={busy}
-          className="w-full h-14 mt-4 bg-[#FF5F15] hover:bg-[#E04F0E] text-white font-bold rounded-sm">
+          className="w-full h-14 mt-4 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md">
           {busy ? "Exporting..." : "Finish & Export"}
         </Button>
 
@@ -132,18 +132,18 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
 function Option({ icon, label, description, checked, onCheckedChange, testId }) {
   return (
     <label
-      className={`flex items-start gap-3 p-4 rounded-sm border cursor-pointer transition-colors ${
-        checked ? "bg-[#0A0A0A] border-[#FF5F15]" : "bg-[#0A0A0A] border-[#262626] hover:border-[#FF5F15]/50"
+      className={`flex items-start gap-3 p-4 rounded-md border cursor-pointer transition-colors ${
+        checked ? "bg-[var(--tm-surface)] border-[var(--tm-orange)]" : "bg-white border-[var(--tm-border)] hover:border-[var(--tm-blue)]"
       }`}
     >
       <Checkbox data-testid={testId} checked={checked} onCheckedChange={onCheckedChange}
-        className="mt-0.5 border-[#262626] data-[state=checked]:bg-[#FF5F15] data-[state=checked]:border-[#FF5F15]" />
+        className="mt-0.5 border-[var(--tm-border)] data-[state=checked]:bg-[var(--tm-orange)] data-[state=checked]:border-[var(--tm-orange)]" />
       <div className="flex-1">
-        <div className="flex items-center gap-2 font-bold text-white">
-          <span className="text-[#FF5F15]">{icon}</span>
+        <div className="flex items-center gap-2 font-bold text-[var(--tm-navy)]">
+          <span className="text-[var(--tm-orange)]">{icon}</span>
           {label}
         </div>
-        <div className="text-xs text-neutral-400 mt-1">{description}</div>
+        <div className="text-xs text-[var(--tm-text-soft)] mt-1">{description}</div>
       </div>
     </label>
   );

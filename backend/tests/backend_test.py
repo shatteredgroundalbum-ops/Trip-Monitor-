@@ -160,6 +160,27 @@ def test_update_finished_session_returns_409(auth, session_id):
     assert r.status_code == 409
 
 
+def test_reopen_finished_session(auth, session_id):
+    # session_id is finished — reopen should flip status back to active
+    r = requests.post(f"{BASE}/api/trip-sessions/{session_id}/reopen", headers=auth)
+    assert r.status_code == 200
+    j = r.json()
+    assert j["status"] == "active"
+    assert j["finished_at"] is None
+    assert "_id" not in j
+    # and a subsequent PUT should now succeed (no longer 409)
+    r2 = requests.put(
+        f"{BASE}/api/trip-sessions/{session_id}", headers=auth, json={"notes": "REOPENED_OK"}
+    )
+    assert r2.status_code == 200
+    assert r2.json()["notes"] == "REOPENED_OK"
+
+
+def test_reopen_not_found(auth):
+    r = requests.post(f"{BASE}/api/trip-sessions/ts_doesnotexist/reopen", headers=auth)
+    assert r.status_code == 404
+
+
 # learning
 def test_locations_bump_and_list(auth):
     for _ in range(2):
