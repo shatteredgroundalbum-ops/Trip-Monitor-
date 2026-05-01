@@ -8,6 +8,7 @@ import CreateAccount from "./pages/CreateAccount";
 import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
 import AuthCallback from "./pages/AuthCallback";
+import TemplateLab from "./pages/dev/TemplateLab";
 import SplashScreen from "./components/app/SplashScreen";
 import OfflineBanner from "./components/app/OfflineBanner";
 import { Toaster } from "./components/ui/sonner";
@@ -39,6 +40,9 @@ function AppRouter() {
       <Route path="/login" element={<Login />} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
+      {/* Hidden internal — Batch-1 dynamic-trip-sheet pipeline harness.
+          Not linked from anywhere; reach by typing /dev/template-lab. */}
+      <Route path="/dev/template-lab" element={<TemplateLab />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

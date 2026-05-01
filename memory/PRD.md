@@ -128,12 +128,53 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
   - Backend tests: 9/9 PASS in
     `/app/backend/tests/test_iter9_mileage_recap.py`. iter 7 + iter 8
     regression still 24/24 PASS. Frontend e2e 14/14 PASS.
+- ✅ **Dynamic Trip Sheet — Batch 1 (foundation, hidden)** (2026-02-?? fork — iter 10):
+  - Decisions locked in by user spec: Tesseract.js (free, browser-only,
+    offline-capable), local-first IndexedDB storage, NO UI surfaced yet,
+    tap-to-assign mapping deferred to Batch 2, default RTI sheet stays
+    untouched.
+  - Added deps: `tesseract.js@7.0.0`, `localforage@1.10.0`.
+  - New `template-types.js`: `TripTemplate` data model with
+    normalized 0..1 field coordinates, `PRESET_FIELDS` catalog (13
+    fields the future mapping wizard will walk through), UUID helper.
+  - New `template-store.js`: localforage-backed CRUD (saveTemplate,
+    getTemplate, listTemplates, deleteTemplate, getActiveTemplate,
+    setActiveTemplateId, totalStorageBytes, _DEV_clearAll).
+  - New `scan-pipeline.js`: `normalizeCapture()` downscales captures to
+    ≤ 1600 px max-edge JPEG (≤ ~350 KB typical), `runOcr()` lazily
+    imports Tesseract via `createWorker('eng', 1, {…})` against jsdelivr
+    CDN with `cacheMethod: 'write'` so first run downloads ~10 MB
+    `eng.traineddata` and subsequent runs (and offline use) load from
+    cache. Word-level data parsed via 4 fallback strategies
+    (data.words → blocks tree → TSV → hocr regex) since v7's
+    default JSON omits words.
+  - New hidden harness route `/dev/template-lab` (NOT linked from any
+    visible nav). Exposes capture → normalize → OCR → save → list flow.
+    Verified end-to-end: synthetic 800×240 sheet OCR'd 8 words at 95%
+    avg confidence with bbox overlay rendered on the preview;
+    IndexedDB persistence holds across reloads; storage indicator
+    accurate; honors the "Multiple templates take more storage"
+    confirmation.
+  - Privacy: nothing is uploaded. All scans + OCR stay on device.
+  - No backend changes. Prior auth/stats/recap/achievements endpoints
+    still 401 unauth, regression unbroken.
 - ✅ Pre-seeded major US cities/states + 10 event codes + 5 trailer types.
 
 ## Prioritized Backlog
-- P1: Real social-login OAuth wiring (Google works via Emergent OAuth; FB / IG / LinkedIn / Email-password remain UI placeholders that toast "coming soon")
+- **P0 (next): Dynamic Trip Sheet — Batch 2 — Mapping system**
+  - Tap-to-assign UI (driver taps once per field on the scan)
+  - Field coordinate persistence into `template.fields{}`
+  - Template reuse engine + activation pointer
+  - Wire into onboarding (default TripMonitor sheet vs "Scan your own")
+- **P0 (next-next): Dynamic Trip Sheet — Batch 3 — Integration**
+  - Replace hardcoded RTI PaperSheet with the user's active template
+  - Add "Re-scan / replace template" flow
+  - Custom-template export (photographic mode: scan as background, typed values overlaid into mapped boxes)
+- P1: Real social-login OAuth wiring (Facebook / Instagram / LinkedIn) — currently UI placeholders
 - P1: Replace QR placeholder with real GoDriver install QR
 - P2: History screen to re-open finished sheets
 - P2: Automatic email attachment via backend (SendGrid/Resend)
-- P2: Company / Admin onboarding flow (multi-tenant: company creation + branding upload + custom trip-sheet templates)
-- P2: "Trip recap" celebration card on Finish (miles earned, badges unlocked, next milestone)
+- P2: Company / Admin onboarding flow (multi-tenant)
+- P2: "Trip recap" celebration card on Finish (shareable card image)
+- P2: Refactor `/app/backend/server.py` into sub-routers (~890 lines)
+- P2: Cloud backup for templates (Google Drive / OneDrive — driver opt-in)
