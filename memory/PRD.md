@@ -131,6 +131,60 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
 - ✅ **Dynamic Trip Sheet — Batch 1 (foundation, hidden)** (2026-02-?? fork — iter 10):
   - Decisions locked in by user spec: Tesseract.js (free, browser-only,
     offline-capable), local-first IndexedDB storage, NO UI surfaced yet,
+    tap-to-assign mapping deferred to Batch 2.
+  - Deps: `tesseract.js@7.0.0`, `localforage@1.10.0`.
+  - `template-types.js`: model + 13-field `PRESET_FIELDS` catalog.
+  - `template-store.js`: localforage CRUD + active-template pointer.
+  - `scan-pipeline.js`: `normalizeCapture` downscales to ≤1600 px JPEG,
+    `runOcr` runs Tesseract v7 via `createWorker` with jsdelivr CDN and
+    `cacheMethod:'write'` — 4-strategy word extraction fallback
+    (data.words → blocks → TSV → hocr regex) since v7 omits words by
+    default.
+  - Hidden harness `/dev/template-lab` (not linked anywhere).
+  - Privacy: zero uploads. Everything stays on device.
+- ✅ **Dynamic Trip Sheet — Batch 2 + Batch 3 (surfaced + integrated)** (2026-02-?? fork — iter 11):
+  - **Mapping system**: new `<TemplateMappingWizard />` walks the driver
+    through the 13-field `PRESET_FIELDS` catalog. Tap-to-assign UX only
+    (no drag). Each tap anchors a numbered pin at the normalized (x, y)
+    on the scan; driver can undo, skip (optional-by-default), or go
+    back. Progress bar + "Step X / 13" overline + live "N mapped" count.
+    On finish the updated template is persisted to IndexedDB and set as
+    the active template.
+  - **Surfaced flow**: new user-facing `/templates` route with 3 steps
+    — Pick (Use TripMonitor default OR Scan my company sheet) → Capture
+    (camera or upload, downscale, optional OCR pass) → Map (the wizard
+    above). Entry from Dashboard header action (file icon next to
+    history). Stored-templates list with per-template Activate / Delete
+    controls and active-template highlight. Honors the "multiple
+    templates increase storage" confirmation rule.
+  - **Default template seed**: new `ensureDefaultTemplate()` helper
+    creates a "TripMonitor Default" record with a stable id on first
+    run and auto-activates it so the runtime always has something
+    to render. Idempotent — never overwrites a driver's active choice.
+  - **Runtime replacement**: new `<DynamicPaperSheet />` branches
+    by `template.source`. For `default`, it delegates to the existing
+    legacy `PaperSheet` (RTI layout, zero behaviour change). For
+    `scanned`, it renders PHOTOGRAPHIC MODE — the scan as a 900-px-wide
+    background `<img>` with typed trip values absolutely-positioned at
+    each field's normalized coordinates in dark-navy Arial. FinishExportDialog
+    + Dashboard preview modal now consume `<DynamicPaperSheet>` with
+    `template={activeTemplate}`. html2canvas → JPEG/PDF/email works
+    unchanged because the DOM shape is the same.
+  - **Privacy preserved**: `ScannedPaperSheet` intentionally ignores
+    `total_trip_miles` / `segment_miles` — mileage remains internal-only
+    across both default AND scanned exports.
+  - **Re-scan flow**: "Change template" in `/templates` Stored-templates
+    list. Drivers can Activate any stored template (switching the
+    runtime instantly) or Delete (except the built-in default).
+  - **Validated end-to-end**: pick-scan → synthetic 800×400 company
+    sheet → OCR skipped → storage-warning confirm → mapping wizard
+    pinned 4 fields + skipped 9 → finish → back to Dashboard → preview
+    modal rendered ScannedPaperSheet with 3 value overlays + 1 scan
+    image child, confirming photographic mode is the active runtime
+    path. IndexedDB persistence across navigations verified. Backend
+    still 401s unauth on all 4 probed endpoints.
+  - Decisions locked in by user spec: Tesseract.js (free, browser-only,
+    offline-capable), local-first IndexedDB storage, NO UI surfaced yet,
     tap-to-assign mapping deferred to Batch 2, default RTI sheet stays
     untouched.
   - Added deps: `tesseract.js@7.0.0`, `localforage@1.10.0`.
@@ -161,20 +215,13 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
 - ✅ Pre-seeded major US cities/states + 10 event codes + 5 trailer types.
 
 ## Prioritized Backlog
-- **P0 (next): Dynamic Trip Sheet — Batch 2 — Mapping system**
-  - Tap-to-assign UI (driver taps once per field on the scan)
-  - Field coordinate persistence into `template.fields{}`
-  - Template reuse engine + activation pointer
-  - Wire into onboarding (default TripMonitor sheet vs "Scan your own")
-- **P0 (next-next): Dynamic Trip Sheet — Batch 3 — Integration**
-  - Replace hardcoded RTI PaperSheet with the user's active template
-  - Add "Re-scan / replace template" flow
-  - Custom-template export (photographic mode: scan as background, typed values overlaid into mapped boxes)
 - P1: Real social-login OAuth wiring (Facebook / Instagram / LinkedIn) — currently UI placeholders
 - P1: Replace QR placeholder with real GoDriver install QR
+- P2: Smart field-suggestion pass during mapping (scan OCR words for labels like "Order #", "Driver", "BOL" and pre-anchor matching pins — drops typical tap count from 13 → ~3)
+- P2: Cloud backup for templates (Google Drive / OneDrive — driver opt-in)
+- P2: Multi-page trip envelopes (stage-2 scan → secondary template)
 - P2: History screen to re-open finished sheets
 - P2: Automatic email attachment via backend (SendGrid/Resend)
 - P2: Company / Admin onboarding flow (multi-tenant)
-- P2: "Trip recap" celebration card on Finish (shareable card image)
+- P2: "Trip recap" shareable PNG card (miles + badges) for social sharing
 - P2: Refactor `/app/backend/server.py` into sub-routers (~890 lines)
-- P2: Cloud backup for templates (Google Drive / OneDrive — driver opt-in)

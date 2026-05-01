@@ -11,8 +11,10 @@ import WeeklyTrend from "../components/app/WeeklyTrend";
 import InstallPrompt from "../components/app/InstallPrompt";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
-import { LogOut, UserCog, CheckCircle2, Save, Eye, History, Truck, Gauge, Route, ListChecks, ArrowRight, Plus } from "lucide-react";
+import { LogOut, UserCog, CheckCircle2, Save, Eye, History, Truck, Gauge, Route, ListChecks, ArrowRight, Plus, FileText } from "lucide-react";
 import PaperSheet from "../components/app/PaperSheet";
+import DynamicPaperSheet from "../components/app/DynamicPaperSheet";
+import { ensureDefaultTemplate, getActiveTemplate } from "../lib/template-store";
 import { BrandLockupCompact } from "../components/app/BrandLogo";
 import { ROLE_LABEL } from "../data/constants";
 import { toast } from "sonner";
@@ -26,6 +28,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [weekly, setWeekly] = useState(null);
   const [achievements, setAchievements] = useState(null);
+  const [template, setTemplate] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [showContinue, setShowContinue] = useState(false);
@@ -37,6 +40,17 @@ export default function Dashboard() {
   useEffect(() => {
     if (!loading && !user) navigate("/", { replace: true });
   }, [loading, user, navigate]);
+
+  // Ensure there's always an active template and load it for export rendering.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await ensureDefaultTemplate();
+      const active = await getActiveTemplate();
+      if (!cancelled) setTemplate(active);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const refreshStats = async () => {
     try {
@@ -128,6 +142,12 @@ export default function Dashboard() {
               onClick={() => navigate("/history")}
               className="h-9 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
               <History className="h-4 w-4" />
+            </Button>
+            <Button data-testid="template-setup-btn" variant="outline" size="sm"
+              onClick={() => navigate("/templates")}
+              title="Trip sheet template"
+              className="h-9 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
+              <FileText className="h-4 w-4" />
             </Button>
             <Button data-testid="edit-profile-btn" variant="outline" size="sm"
               onClick={() => setShowProfile(true)}
@@ -362,7 +382,7 @@ export default function Dashboard() {
               </DialogDescription>
             </DialogHeader>
             <div className="overflow-auto max-h-[75vh] flex justify-center bg-[var(--tm-surface-2)] p-4 rounded-md">
-              <PaperSheet ref={previewRef} session={session} profile={profile} />
+              <DynamicPaperSheet ref={previewRef} session={session} profile={profile} template={template} />
             </div>
           </DialogContent>
         </Dialog>
@@ -370,7 +390,7 @@ export default function Dashboard() {
 
       {session && (
         <FinishExportDialog open={showFinish} onOpenChange={setShowFinish}
-          session={session} profile={profile} />
+          session={session} profile={profile} template={template} />
       )}
 
       <InstallPrompt />

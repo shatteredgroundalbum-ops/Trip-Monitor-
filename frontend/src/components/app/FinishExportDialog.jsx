@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Checkbox } from "../ui/checkbox";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import PaperSheet from "./PaperSheet";
+import DynamicPaperSheet from "./DynamicPaperSheet";
 import TripRecap from "./TripRecap";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { api } from "../../lib/api";
 import { Image, FileText, Mail, Loader2, Printer } from "lucide-react";
 
-export default function FinishExportDialog({ open, onOpenChange, session, profile }) {
+export default function FinishExportDialog({ open, onOpenChange, session, profile, template }) {
   const [doJpeg, setDoJpeg] = useState(true);
   const [doPdf, setDoPdf] = useState(true);
   const [doPrint, setDoPrint] = useState(false);
@@ -279,7 +279,7 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
 
         {/* Hidden render target for html2canvas */}
         <div style={{ position: "fixed", left: -10000, top: 0, pointerEvents: "none" }} aria-hidden>
-          <PaperSheet ref={paperRef} session={session} profile={profile} />
+          <DynamicPaperSheet ref={paperRef} session={session} profile={profile} template={template} />
         </div>
       </DialogContent>
 

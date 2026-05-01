@@ -97,6 +97,41 @@ export async function createTemplate(opts) {
   return tpl;
 }
 
+/**
+ * ID used for the built-in TripMonitor default template. Stable so we
+ * can idempotently seed it across app launches.
+ */
+export const DEFAULT_TEMPLATE_ID = "builtin-tripmonitor-default";
+
+/**
+ * Ensure the built-in default template record exists. Pre-mapped so the
+ * app can render a trip sheet out-of-the-box, before the driver scans
+ * anything of their own. The actual rendering for source='default' is
+ * handled by DynamicPaperSheet, which delegates to the legacy PaperSheet
+ * component — so we don't need real coordinates here.
+ */
+export async function ensureDefaultTemplate() {
+  const existing = await tplStore.getItem(DEFAULT_TEMPLATE_ID);
+  if (existing) return existing;
+  const now = new Date().toISOString();
+  const defaultTpl = {
+    id: DEFAULT_TEMPLATE_ID,
+    name: "TripMonitor Default",
+    source: "default",
+    is_default: true,
+    created_at: now,
+    updated_at: now,
+    scan: null,
+    ocr_words: [],
+    fields: {},
+  };
+  await tplStore.setItem(DEFAULT_TEMPLATE_ID, defaultTpl);
+  // Auto-activate on first run so the runtime always has an active template.
+  const active = await metaStore.getItem(META_ACTIVE_KEY);
+  if (!active) await metaStore.setItem(META_ACTIVE_KEY, DEFAULT_TEMPLATE_ID);
+  return defaultTpl;
+}
+
 /** Wipe the templates collection (test / dev only). */
 export async function _DEV_clearAll() {
   await tplStore.clear();
