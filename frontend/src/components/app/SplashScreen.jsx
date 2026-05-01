@@ -8,7 +8,7 @@ import React, { useEffect, useState, useRef } from "react";
  * Slides UP and out at the end (the login screen slides UP and in over the same
  * window for a continuous cinematic transition).
  */
-export default function SplashScreen({ onComplete, durationMs = 2800 }) {
+export default function SplashScreen({ onComplete, durationMs = 3200 }) {
   const [phase, setPhase] = useState("in");      // "in" → "hold" → "out"
   const [hasVideo, setHasVideo] = useState(true); // optimistic; flips false on error
   const videoRef = useRef(null);

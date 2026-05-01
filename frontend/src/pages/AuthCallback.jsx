@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { Truck } from "lucide-react";
 
 export default function AuthCallback() {
   const navigate = useNavigate();
@@ -37,13 +36,17 @@ export default function AuthCallback() {
 
   return (
     <div className="min-h-screen bg-white text-[var(--tm-navy)] flex items-center justify-center">
-      <div className="flex flex-col items-center gap-4">
-        <div className="h-12 w-12 flex items-center justify-center bg-[var(--tm-orange)] rounded-md animate-pulse">
-          <Truck className="h-7 w-7 text-[var(--tm-navy)]" strokeWidth={2.5} />
+      <div className="flex flex-col items-center gap-5">
+        <div className="relative">
+          <div className="h-16 w-16 rounded-full border-4 border-[var(--tm-surface-2)]" />
+          <div className="absolute inset-0 h-16 w-16 rounded-full border-4 border-[var(--tm-blue)] border-t-transparent animate-spin" />
         </div>
-        <div className="text-sm text-[var(--tm-text-soft)] tracking-wider uppercase">
-          {error || "Signing you in..."}
+        <div className="text-[10px] uppercase tracking-[0.3em] text-[var(--tm-blue)] font-bold">
+          {error ? "Sign-in failed" : "Welcome — signing you in"}
         </div>
+        {error && (
+          <div className="text-sm text-[var(--tm-text-soft)] max-w-xs text-center">{error}</div>
+        )}
       </div>
     </div>
   );

@@ -1,20 +1,26 @@
 import React, { useEffect, useState } from "react";
 import { Button } from "../components/ui/button";
+import { Loader2 } from "lucide-react";
 
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 export default function Login() {
   const [entered, setEntered] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
 
   useEffect(() => {
-    // Slide-up entrance — slight delay so it overlaps the splash exit
     const t = setTimeout(() => setEntered(true), 60);
     return () => clearTimeout(t);
   }, []);
 
   const handleLogin = () => {
+    setRedirecting(true);
     // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
     const redirectUrl = window.location.origin + "/dashboard";
-    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+    // Tiny delay so the loading overlay paints before the page navigates away —
+    // gives the driver a sense that the click "did something".
+    setTimeout(() => {
+      window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+    }, 100);
   };
 
   return (
@@ -26,7 +32,6 @@ export default function Login() {
         transition: "opacity 600ms ease-out, transform 700ms cubic-bezier(0.16, 1, 0.3, 1)",
       }}
     >
-      {/* Brand-tinted ambient glow (electric blue, very subtle) */}
       <div
         aria-hidden
         className="absolute inset-0 pointer-events-none"
@@ -61,15 +66,48 @@ export default function Login() {
           <Button
             data-testid="google-login-btn"
             onClick={handleLogin}
-            className="w-full h-14 bg-[var(--tm-navy)] hover:bg-[var(--tm-navy-deep)] text-white font-bold rounded-md text-base tracking-wide transition-colors shadow-[0_8px_28px_-12px_rgba(14,31,71,0.55)]"
+            disabled={redirecting}
+            className="w-full h-14 bg-[var(--tm-navy)] hover:bg-[var(--tm-navy-deep)] disabled:opacity-100 text-white font-bold rounded-md text-base tracking-wide transition-colors shadow-[0_8px_28px_-12px_rgba(14,31,71,0.55)]"
           >
-            Sign in with Google
+            {redirecting ? (
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Connecting to Google...
+              </span>
+            ) : (
+              "Sign in with Google"
+            )}
           </Button>
           <p className="text-xs text-[var(--tm-text-muted)] text-center">
             By continuing, you agree to use Trip Monitor responsibly while on duty.
           </p>
         </div>
       </div>
+
+      {/* Full-screen "Connecting…" overlay so the redirect doesn't feel frozen */}
+      {redirecting && (
+        <div
+          data-testid="login-redirect-overlay"
+          className="fixed inset-0 z-[90] flex flex-col items-center justify-center"
+          style={{
+            backgroundColor: "rgba(255,255,255,0.92)",
+            backdropFilter: "blur(6px)",
+            WebkitBackdropFilter: "blur(6px)",
+            animation: "tm-fade-in 200ms ease-out forwards",
+          }}
+        >
+          <div className="relative">
+            <div className="h-16 w-16 rounded-full border-4 border-[var(--tm-surface-2)]" />
+            <div className="absolute inset-0 h-16 w-16 rounded-full border-4 border-[var(--tm-blue)] border-t-transparent animate-spin" />
+          </div>
+          <div className="mt-6 text-[10px] uppercase tracking-[0.3em] text-[var(--tm-blue)] font-bold">
+            Connecting to Google
+          </div>
+          <div className="mt-2 text-sm text-[var(--tm-text-soft)]">
+            Pick your account in the next screen
+          </div>
+        </div>
+      )}
     </div>
   );
 }
