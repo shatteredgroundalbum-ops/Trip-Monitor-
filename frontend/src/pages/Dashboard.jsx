@@ -7,6 +7,8 @@ import SessionWizard from "../components/app/SessionWizard";
 import TripSheetForm from "../components/app/TripSheetForm";
 import FinishExportDialog from "../components/app/FinishExportDialog";
 import AchievementsPanel from "../components/app/AchievementsPanel";
+import WeeklyTrend from "../components/app/WeeklyTrend";
+import InstallPrompt from "../components/app/InstallPrompt";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
 import { LogOut, UserCog, CheckCircle2, Save, Eye, History, Truck, Gauge, Route, ListChecks, ArrowRight, Plus } from "lucide-react";
@@ -22,6 +24,7 @@ export default function Dashboard() {
   const [session, setSession] = useState(null);
   const [recentTrips, setRecentTrips] = useState([]);
   const [stats, setStats] = useState(null);
+  const [weekly, setWeekly] = useState(null);
   const [achievements, setAchievements] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
@@ -37,13 +40,15 @@ export default function Dashboard() {
 
   const refreshStats = async () => {
     try {
-      const [s, recent, ach] = await Promise.all([
+      const [s, recent, ach, week] = await Promise.all([
         api.get("/stats"),
         api.get("/trip-sessions"),
         api.get("/achievements"),
+        api.get("/stats/week"),
       ]);
       setStats(s.data);
       setAchievements(ach.data);
+      setWeekly(week.data);
       const finished = (recent.data || []).filter((t) => t.status === "finished").slice(0, 3);
       setRecentTrips(finished);
     } catch { /* ignore */ }
@@ -197,6 +202,13 @@ export default function Dashboard() {
         {achievements && (
           <div className="mb-6">
             <AchievementsPanel data={achievements} />
+          </div>
+        )}
+
+        {/* This week — 7-bar trend */}
+        {weekly && (
+          <div className="mb-6">
+            <WeeklyTrend data={weekly} />
           </div>
         )}
 
@@ -360,6 +372,8 @@ export default function Dashboard() {
         <FinishExportDialog open={showFinish} onOpenChange={setShowFinish}
           session={session} profile={profile} />
       )}
+
+      <InstallPrompt />
     </div>
   );
 }

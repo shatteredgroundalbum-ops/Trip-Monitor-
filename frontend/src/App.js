@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
 import AuthCallback from "./pages/AuthCallback";
 import SplashScreen from "./components/app/SplashScreen";
+import OfflineBanner from "./components/app/OfflineBanner";
 import { Toaster } from "./components/ui/sonner";
 
 function ProtectedRoute({ children }) {
@@ -64,6 +65,7 @@ function App() {
     <div className="App">
       <BrowserRouter>
         <AuthProvider>
+          <OfflineBanner />
           <AppRouter />
           {showSplash && !isAuthCallback && <SplashScreen onComplete={handleSplashComplete} />}
           <Toaster theme="light" />

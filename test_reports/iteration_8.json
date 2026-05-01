@@ -1,0 +1,61 @@
+{
+  "summary": "Iter 8 verified end-to-end: GET /api/stats/week + manifest/service-worker + WeeklyTrend + InstallPrompt + OfflineBanner all pass. 5/5 new pytest cases green; 19/19 iter7 regression also green. UI dashboard renders 7-bar mini-trend (1,455 mi · 4 trips · best 540) with today=orange, others=blue; install prompt fires on synthetic beforeinstallprompt and writes tm_install_dismissed_at on dismiss; offline banner toggles to online-pulse on online event. RTI brand-separation invariant holds.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter8_pwa_weekly.py",
+    "/app/test_reports/pytest/iter8_results.xml",
+    "/app/backend/tests/test_iter7_role_achievements_miles.py"
+  ],
+  "tests_executed": {
+    "backend_iter8": {
+      "TestStatsWeekShape::test_unauth_401": "PASS",
+      "TestStatsWeekShape::test_empty_user_returns_7_buckets": "PASS",
+      "TestStatsWeekSeeded::test_seeded_distribution": "PASS (1455 mi total, 4 trips, max 540, today=320, day-1=415, day-3=180, day-5=540)",
+      "TestPwaAssets::test_manifest_reachable_and_valid": "PASS (icons 192/512, shortcuts >=1, display=standalone, theme #FF5F15)",
+      "TestPwaAssets::test_service_worker_versioned": "PASS (cache_version=trip-monitor-v2)"
+    },
+    "backend_iter7_regression": "19/19 PASS",
+    "frontend_e2e": {
+      "weekly-trend present": "PASS",
+      "week-miles-total = '1,455'": "PASS",
+      "week-trips-total = '4'": "PASS",
+      "weekly-trend-bars children = 7": "PASS",
+      "all 7 day testids match week-bar-<lc weekday>": "PASS (sat,sun,mon,tue,wed,thu,fri)",
+      "today bar uses tm-orange tint": "PASS",
+      "non-today bar (day-1, 415mi) uses tm-blue tint": "PASS",
+      "synthetic beforeinstallprompt -> install-prompt visible": "PASS",
+      "install-prompt-install-btn / -dismiss / -close present": "PASS",
+      "dismiss writes localStorage tm_install_dismissed_at + removes prompt": "PASS",
+      "offline event -> offline-banner (orange) appears": "PASS",
+      "online event -> online-pulse (blue) appears + offline-banner removed": "PASS",
+      "online-pulse auto-dismisses after ~2.5s": "PASS",
+      "iter7 dashboard regression — role-chip + miles tiles + achievements panel render": "PASS",
+      "RTI not present in visible dashboard text (brand-separation invariant)": "PASS"
+    }
+  },
+  "action_items": [],
+  "critical_code_review_comments": [
+    "/app/backend/server.py is 747 lines — approaching the 700-line guideline. Consider splitting routers (stats, achievements, trips, auth) into separate modules in a future cleanup iter; not blocking.",
+    "WeeklyTrend computes `Math.max(1, ...(days.map(d=>d.miles) || [0]))` — the `|| [0]` only fires if .map returns falsy, which it never does. Harmless; could simplify.",
+    "service-worker.js fetch handler returns undefined for non-GET /api/* requests (intended pass-through), which is correct browser behavior. OK.",
+    "InstallPrompt: when `isiOS()` is false AND `beforeinstallprompt` never fires, component renders nothing. That is correct behavior, just noting that headless desktop Chromium without a real install ledger is silent — only the synthetic-dispatch test verifies the UI."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter8_pwa_weekly.py (NEW)"
+  ],
+  "success_rate": {"backend": "100% (24/24 incl. iter7 regression)", "frontend": "100% (15/15 e2e checks)"},
+  "test_credentials": "Test user injected via mongosh per /app/memory/test_credentials.md. Cleaned up post-run. session_token=tm_iter8_e2e_session_<ts>",
+  "seed_data_creation": "Test fixture seeds 4 finished trips (today=320, day-1=415, day-3=180, day-5=540) with time_zone=UTC for deterministic bucketing; cleaned up after test. E2E test user + 4 trips also injected via mongosh and cleaned up.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter 8 is fully green. Pytest harness pattern: set REACT_APP_BACKEND_URL+MONGO_URL+DB_NAME env vars before invoking pytest. The frontend continue-dialog (data-testid='continue-yes-btn') only appears if the seeded user has an ACTIVE (not finished) trip session — for iter8 we only seeded finished trips so the dialog did not appear. Note: service worker is registered ONLY in production builds — only /service-worker.js reachability + cache version were asserted (per E1's note). beforeinstallprompt was successfully dispatched as synthetic CustomEvent and the InstallPrompt picked it up.",
+  "rca of the issue": "N/A — no failures."
+}

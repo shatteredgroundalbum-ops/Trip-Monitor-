@@ -530,6 +530,78 @@ async def get_stats(user: User = Depends(get_current_user)):
     }
 
 
+@api_router.get("/stats/week")
+async def get_weekly_stats(user: User = Depends(get_current_user)):
+    """Last-7-days bar chart data: one bucket per local day,
+    each with miles + finished trip count.
+
+    Days are bucketed by the user's profile time_zone (falls back to UTC).
+    Returns 7 entries oldest → newest (today is last).
+    """
+    profile_doc = await db.driver_profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
+    tz_name = profile_doc.get("time_zone") or "UTC"
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = timezone.utc
+
+    now_local = datetime.now(tz)
+    today_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    # Window: 7 days starting at midnight 6 days ago (local)
+    window_start_local = today_local - timedelta(days=6)
+    window_start_utc_iso = window_start_local.astimezone(timezone.utc).isoformat()
+
+    finished = await db.trip_sessions.find(
+        {
+            "user_id": user.user_id,
+            "status": "finished",
+            "finished_at": {"$gte": window_start_utc_iso},
+        },
+        {"_id": 0, "finished_at": 1, "total_trip_miles": 1, "session_id": 1},
+    ).to_list(1000)
+
+    # Pre-create 7 buckets keyed by YYYY-MM-DD (local)
+    buckets = {}
+    for i in range(7):
+        day = window_start_local + timedelta(days=i)
+        buckets[day.strftime("%Y-%m-%d")] = {
+            "date": day.strftime("%Y-%m-%d"),
+            "label": day.strftime("%a"),  # Mon/Tue/...
+            "is_today": day.date() == today_local.date(),
+            "miles": 0,
+            "trips": 0,
+        }
+
+    for trip in finished:
+        finished_at = trip.get("finished_at")
+        if not finished_at:
+            continue
+        try:
+            dt_utc = datetime.fromisoformat(finished_at)
+            if dt_utc.tzinfo is None:
+                dt_utc = dt_utc.replace(tzinfo=timezone.utc)
+            dt_local = dt_utc.astimezone(tz)
+            key = dt_local.strftime("%Y-%m-%d")
+        except (TypeError, ValueError):
+            continue
+        if key in buckets:
+            buckets[key]["miles"] += int(trip.get("total_trip_miles") or 0)
+            buckets[key]["trips"] += 1
+
+    days = list(buckets.values())
+    miles_total = sum(d["miles"] for d in days)
+    trips_total = sum(d["trips"] for d in days)
+    miles_max = max((d["miles"] for d in days), default=0)
+    return {
+        "time_zone": tz_name,
+        "miles_total_7d": miles_total,
+        "trips_total_7d": trips_total,
+        "miles_max": miles_max,
+        "days": days,
+    }
+
+
 # ============ ACHIEVEMENTS ============
 MILES_TIERS = [100_000, 250_000, 500_000, 1_000_000, 2_000_000, 3_000_000, 5_000_000]
 YEARS_TIERS = [1, 5, 10, 15, 20, 25, 30]

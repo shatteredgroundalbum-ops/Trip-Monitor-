@@ -5,16 +5,44 @@
   "icons": [
     {
       "src": "/trip-monitor-logo.webp",
-      "sizes": "any",
+      "sizes": "192x192",
       "type": "image/webp",
       "purpose": "any maskable"
+    },
+    {
+      "src": "/trip-monitor-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/trip-monitor-logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any"
     }
   ],
   "start_url": "/dashboard",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "theme_color": "#FFFFFF",
+  "theme_color": "#FF5F15",
   "background_color": "#FFFFFF",
-  "categories": ["productivity", "business", "transportation"]
+  "categories": ["productivity", "business", "transportation"],
+  "shortcuts": [
+    {
+      "name": "Start a new trip",
+      "short_name": "New trip",
+      "description": "Start a fresh trip sheet right from your home screen",
+      "url": "/dashboard?action=new-trip",
+      "icons": [{ "src": "/trip-monitor-logo.webp", "sizes": "192x192", "type": "image/webp" }]
+    },
+    {
+      "name": "Trip history",
+      "short_name": "History",
+      "description": "Review and re-export finished trip sheets",
+      "url": "/history",
+      "icons": [{ "src": "/trip-monitor-logo.webp", "sizes": "192x192", "type": "image/webp" }]
+    }
+  ]
 }
