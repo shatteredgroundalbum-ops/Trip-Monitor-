@@ -8,7 +8,7 @@ import TripSheetForm from "../components/app/TripSheetForm";
 import FinishExportDialog from "../components/app/FinishExportDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
-import { LogOut, UserCog, CheckCircle2, Save, Eye, History, Truck } from "lucide-react";
+import { LogOut, UserCog, CheckCircle2, Save, Eye, History, Truck, MapPin, Route, ListChecks, ArrowRight, Plus } from "lucide-react";
 import PaperSheet from "../components/app/PaperSheet";
 import { BrandLockupCompact } from "../components/app/BrandLogo";
 import { toast } from "sonner";
@@ -18,6 +18,8 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [session, setSession] = useState(null);
+  const [recentTrips, setRecentTrips] = useState([]);
+  const [stats, setStats] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [showContinue, setShowContinue] = useState(false);
@@ -29,6 +31,18 @@ export default function Dashboard() {
   useEffect(() => {
     if (!loading && !user) navigate("/", { replace: true });
   }, [loading, user, navigate]);
+
+  const refreshStats = async () => {
+    try {
+      const [s, recent] = await Promise.all([
+        api.get("/stats"),
+        api.get("/trip-sessions"),
+      ]);
+      setStats(s.data);
+      const finished = (recent.data || []).filter((t) => t.status === "finished").slice(0, 3);
+      setRecentTrips(finished);
+    } catch { /* ignore */ }
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -43,11 +57,12 @@ export default function Dashboard() {
         } else if (active) {
           setShowContinue(true);
           setSession(active);
-        } else {
-          setShowWizard(true);
         }
       } catch { /* ignore */ }
-      finally { setBootstrapped(true); }
+      finally {
+        await refreshStats();
+        setBootstrapped(true);
+      }
     })();
   }, [user]);
 
@@ -72,7 +87,6 @@ export default function Dashboard() {
       (async () => {
         if (session) await api.put(`/trip-sessions/${session.session_id}`, { status: "abandoned" });
         setSession(null);
-        setShowWizard(true);
       })();
     }
   };
@@ -85,11 +99,12 @@ export default function Dashboard() {
     );
   }
 
+  const driverFirstName = (profile?.full_name || user?.name || "Driver").split(" ")[0];
+
   return (
     <div className="min-h-screen bg-white text-[var(--tm-navy)]">
-      {/* Top bar */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-[var(--tm-border)]">
-        <div className="max-w-4xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
+        <div className="max-w-5xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
           <BrandLockupCompact />
           <div className="flex items-center gap-2">
             {session && (
@@ -118,40 +133,136 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 md:px-6 py-6 pb-56">
+      <main className="max-w-5xl mx-auto px-4 md:px-6 py-6 pb-56">
+        {/* Greeting */}
+        <div className="mb-6">
+          <div className="text-[10px] uppercase tracking-[0.3em] text-[var(--tm-blue)] font-bold mb-1">Dashboard</div>
+          <h1 className="text-3xl md:text-4xl font-black tracking-tight text-[var(--tm-navy)]">
+            Hey, {driverFirstName} 👋
+          </h1>
+          <p className="text-sm text-[var(--tm-text-soft)] mt-1">
+            {session ? "You have an active trip in progress." : "Ready to roll? Start a new trip below."}
+          </p>
+        </div>
+
+        {/* Stat cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6" data-testid="stats-grid">
+          <StatCard
+            icon={<Route className="h-4 w-4" />}
+            label="Trips this month"
+            value={stats?.trips_this_month ?? 0}
+            sub={`${stats?.trips_total ?? 0} total`}
+            testId="stat-trips-month"
+            tone="blue"
+          />
+          <StatCard
+            icon={<ListChecks className="h-4 w-4" />}
+            label="Total stops"
+            value={stats?.total_stops ?? 0}
+            sub="across finished trips"
+            testId="stat-total-stops"
+            tone="navy"
+          />
+          <StatCard
+            icon={<MapPin className="h-4 w-4" />}
+            label="Most-used stop"
+            value={truncate(stats?.top_location, 14) || "—"}
+            sub="learned from you"
+            testId="stat-top-location"
+            tone="orange"
+          />
+          <StatCard
+            icon={<Truck className="h-4 w-4" />}
+            label="Current truck"
+            value={profile?.truck_number || "—"}
+            sub={profile?.truck_assignment_type || "—"}
+            testId="stat-truck"
+            tone="navy"
+          />
+        </div>
+
+        {/* Active trip OR Start new trip CTA */}
         {session ? (
-          <>
-            <div className="mb-6">
-              <div className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-orange)] font-bold mb-1">Active Trip</div>
-              <h1 className="text-3xl md:text-4xl font-black tracking-tight text-[var(--tm-navy)]">Order #{session.order_number}</h1>
-              <div className="text-sm text-[var(--tm-text-soft)] mt-1 flex items-center gap-2">
-                <Save className="h-3 w-3" /> Auto-saving as you type
+          <section className="mb-8">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-orange)] font-bold mb-1">Active Trip</div>
+                <h2 className="text-2xl md:text-3xl font-black tracking-tight text-[var(--tm-navy)]">Order #{session.order_number}</h2>
+                <div className="text-xs text-[var(--tm-text-soft)] mt-1 flex items-center gap-2">
+                  <Save className="h-3 w-3" /> Auto-saving as you type
+                </div>
               </div>
             </div>
             <TripSheetForm session={session} onChange={setSession} />
-          </>
+          </section>
         ) : (
-          <div className="mt-16 text-center text-[var(--tm-text-soft)]" data-testid="empty-state">
-            <Truck className="h-12 w-12 mx-auto mb-4 text-[var(--tm-blue)]" />
-            <h2 className="text-2xl font-black text-[var(--tm-navy)] tracking-tight">No active trip</h2>
-            <p className="text-sm mt-2">Start a new trip to fill out your sheet.</p>
-            <Button data-testid="start-new-trip-btn" onClick={() => setShowWizard(true)}
-              className="mt-6 h-14 px-8 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md shadow-[0_8px_24px_-12px_rgba(255,95,21,0.55)]">
-              Start New Trip
-            </Button>
-          </div>
+          <section className="mb-8">
+            <div className="bg-gradient-to-br from-[var(--tm-navy)] to-[var(--tm-blue-deep)] rounded-md p-6 md:p-8 text-white shadow-[0_12px_36px_-16px_rgba(14,31,71,0.6)]">
+              <div className="text-[10px] uppercase tracking-[0.3em] text-white/70 font-bold mb-2">Ready to roll</div>
+              <h2 className="text-2xl md:text-3xl font-black tracking-tight">No active trip</h2>
+              <p className="text-sm text-white/80 mt-1 mb-5 max-w-md">
+                Start a fresh trip sheet — Order #, BOL # (optional), and 8 stop rows ready to fill.
+              </p>
+              <Button data-testid="start-new-trip-btn" onClick={() => setShowWizard(true)}
+                className="h-12 px-6 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md">
+                <Plus className="h-4 w-4 mr-1" /> Start New Trip
+              </Button>
+            </div>
+          </section>
         )}
+
+        {/* Recent trips */}
+        <section data-testid="recent-trips-section">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-bold uppercase tracking-[0.2em] text-[var(--tm-navy)]">Recent trips</h3>
+            <button
+              type="button"
+              onClick={() => navigate("/history")}
+              className="text-xs text-[var(--tm-blue)] font-bold hover:underline inline-flex items-center gap-1"
+              data-testid="see-all-history-btn"
+            >
+              See all <ArrowRight className="h-3 w-3" />
+            </button>
+          </div>
+
+          {recentTrips.length === 0 ? (
+            <div className="bg-[var(--tm-surface)] border border-[var(--tm-border)] rounded-md p-6 text-sm text-[var(--tm-text-soft)] text-center">
+              No finished trips yet — finish one and it&apos;ll show up here.
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              {recentTrips.map((t) => (
+                <div
+                  key={t.session_id}
+                  className="flex items-center gap-3 bg-white border border-[var(--tm-border)] hover:border-[var(--tm-blue)] rounded-md p-3 transition-colors cursor-pointer"
+                  onClick={() => navigate("/history")}
+                  data-testid={`recent-trip-${t.session_id}`}
+                >
+                  <div className="h-10 w-10 rounded-md bg-[var(--tm-surface-2)] flex items-center justify-center text-[var(--tm-navy)]">
+                    <Route className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--tm-blue)] font-bold">
+                      {formatDate(t.finished_at || t.created_at)} · {t.load_type}
+                    </div>
+                    <div className="text-sm font-bold text-[var(--tm-navy)] truncate">
+                      Order #{t.order_number}{t.bol_number ? ` · BOL #${t.bol_number}` : ""}
+                    </div>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-[var(--tm-text-muted)] flex-shrink-0" />
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </main>
 
       {session && (
         <div
           className="fixed left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-[var(--tm-border)]"
-          style={{
-            bottom: 0,
-            paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 56px)",
-          }}
+          style={{ bottom: 0, paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 56px)" }}
         >
-          <div className="max-w-4xl mx-auto px-4 md:px-6 py-3 flex gap-2">
+          <div className="max-w-5xl mx-auto px-4 md:px-6 py-3 flex gap-2">
             <Button data-testid="preview-btn" variant="outline" onClick={() => setShowPreview(true)}
               className="h-12 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
               <Eye className="h-4 w-4 mr-1" /> Preview
@@ -168,7 +279,6 @@ export default function Dashboard() {
         onSaved={(p) => {
           setProfile(p);
           setShowProfile(false);
-          if (!session) setShowWizard(true);
         }} />
 
       {profile && (
@@ -190,7 +300,7 @@ export default function Dashboard() {
           <DialogFooter className="gap-2 flex-row">
             <Button data-testid="continue-no-btn" variant="outline" onClick={() => continueSession(false)}
               className="h-12 flex-1 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
-              No, Start New
+              No, Discard
             </Button>
             <Button data-testid="continue-yes-btn" onClick={() => continueSession(true)}
               className="h-12 flex-1 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md">
@@ -222,4 +332,41 @@ export default function Dashboard() {
       )}
     </div>
   );
+}
+
+function StatCard({ icon, label, value, sub, testId, tone = "navy" }) {
+  const toneClasses = {
+    navy: "bg-[var(--tm-navy)] text-white",
+    blue: "bg-[var(--tm-blue)] text-white",
+    orange: "bg-[var(--tm-orange)] text-white",
+  }[tone];
+  return (
+    <div
+      data-testid={testId}
+      className="bg-white border border-[var(--tm-border)] rounded-md p-4 shadow-sm hover:shadow-md transition-shadow"
+    >
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[10px] uppercase tracking-wider text-[var(--tm-text-muted)] font-bold">{label}</div>
+        <div className={`h-7 w-7 rounded-md flex items-center justify-center ${toneClasses}`}>
+          {icon}
+        </div>
+      </div>
+      <div className="text-2xl md:text-3xl font-black tracking-tight text-[var(--tm-navy)] truncate" title={String(value)}>
+        {value}
+      </div>
+      <div className="text-[10px] uppercase tracking-wider text-[var(--tm-text-muted)] mt-1 truncate">{sub}</div>
+    </div>
+  );
+}
+
+function truncate(s, n) {
+  if (!s) return s;
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+function formatDate(iso) {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  } catch { return iso; }
 }

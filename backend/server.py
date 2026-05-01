@@ -399,6 +399,65 @@ async def bump_city(payload: Dict[str, Any], user: User = Depends(get_current_us
     return {"ok": True}
 
 
+@api_router.get("/stats")
+async def get_stats(user: User = Depends(get_current_user)):
+    """Aggregate driver stats for the dashboard tiles."""
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+    finished_total = await db.trip_sessions.count_documents(
+        {"user_id": user.user_id, "status": "finished"}
+    )
+    finished_month = await db.trip_sessions.count_documents(
+        {"user_id": user.user_id, "status": "finished", "finished_at": {"$gte": month_start}}
+    )
+
+    # Total stops across all finished trips
+    total_stops_pipeline = [
+        {"$match": {"user_id": user.user_id, "status": "finished"}},
+        {"$unwind": "$rows"},
+        {"$match": {"$or": [
+            {"rows.event_code": {"$nin": [None, ""]}},
+            {"rows.location_name": {"$nin": [None, ""]}},
+            {"rows.stop_city": {"$nin": [None, ""]}},
+        ]}},
+        {"$count": "n"},
+    ]
+    cursor = db.trip_sessions.aggregate(total_stops_pipeline)
+    total_stops = 0
+    async for doc in cursor:
+        total_stops = doc.get("n", 0)
+
+    # Most-used location across all rows
+    top_loc_pipeline = [
+        {"$match": {"user_id": user.user_id}},
+        {"$unwind": "$rows"},
+        {"$match": {"rows.location_name": {"$nin": [None, ""]}}},
+        {"$group": {"_id": "$rows.location_name", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 1},
+    ]
+    cursor = db.trip_sessions.aggregate(top_loc_pipeline)
+    top_location = None
+    async for doc in cursor:
+        top_location = doc.get("_id")
+
+    # Last finished trip
+    last_finished = await db.trip_sessions.find_one(
+        {"user_id": user.user_id, "status": "finished"},
+        {"_id": 0},
+        sort=[("finished_at", -1)],
+    )
+
+    return {
+        "trips_total": finished_total,
+        "trips_this_month": finished_month,
+        "total_stops": total_stops,
+        "top_location": top_location,
+        "last_trip": last_finished,
+    }
+
+
 @api_router.get("/")
 async def root():
     return {"app": "Trip Monitor Driver Edition", "status": "ok"}

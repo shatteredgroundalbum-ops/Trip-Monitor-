@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { markSignedUp } from "../lib/auth-storage";
 
 export default function AuthCallback() {
   const navigate = useNavigate();
@@ -24,6 +25,7 @@ export default function AuthCallback() {
     (async () => {
       try {
         const res = await api.post("/auth/session", { session_id: sessionId });
+        markSignedUp(res.data?.email);
         setUser(res.data);
         window.history.replaceState(null, "", "/dashboard");
         navigate("/dashboard", { replace: true, state: { user: res.data } });
