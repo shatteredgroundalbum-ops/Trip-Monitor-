@@ -66,14 +66,6 @@ export default function ProMappingEditor({ template, onDone, onCancel }) {
   const sh = scan?.height || 1;
   const ocrWords = template?.ocr_words || [];
 
-  if (!scan?.data_url) {
-    return (
-      <div className="p-6 text-center text-[var(--tm-text-soft)] text-sm">
-        No scan attached to this template. Capture one first.
-      </div>
-    );
-  }
-
   const commitElement = (kind, geometry, label) => {
     const el = {
       id: cryptoUuid(),
@@ -244,6 +236,14 @@ export default function ProMappingEditor({ template, onDone, onCancel }) {
   };
 
   const showToolInstruction = useMemo(() => toolInstruction(tool, draft), [tool, draft]);
+
+  if (!scan?.data_url) {
+    return (
+      <div className="p-6 text-center text-[var(--tm-text-soft)] text-sm">
+        No scan attached to this template. Capture one first.
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-96px)]" data-testid="pro-mapping-editor">
