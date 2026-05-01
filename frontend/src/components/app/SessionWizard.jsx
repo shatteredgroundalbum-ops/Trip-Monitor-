@@ -29,8 +29,8 @@ export default function SessionWizard({ open, profile, onCreate, onCancel }) {
   const hasTemperature = finalLoadType === "Store" || finalLoadType === "Warehouse-Dairy";
 
   const handleSubmit = () => {
-    if (!orderNumber || !bolNumber) {
-      toast.error("Order # and BOL # are required");
+    if (!orderNumber) {
+      toast.error("Order # is required");
       return;
     }
     if (profile?.truck_assignment_type === "Slip Seat" && !truckNumber) {
@@ -199,7 +199,7 @@ export default function SessionWizard({ open, profile, onCreate, onCancel }) {
                   className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)] h-12 rounded-md mt-1.5" />
               </div>
               <div>
-                <Label className="text-xs uppercase tracking-wider text-[var(--tm-text-soft)]">BOL # *</Label>
+                <Label className="text-xs uppercase tracking-wider text-[var(--tm-text-soft)]">BOL # (optional)</Label>
                 <Input data-testid="wizard-bol" value={bolNumber} onChange={(e) => setBolNumber(e.target.value)}
                   className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)] h-12 rounded-md mt-1.5" />
               </div>

@@ -8,7 +8,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "../components/ui/alert-dialog";
-import { ArrowLeft, Eye, Edit3, FileText, Image as ImageIcon, Mail, Truck } from "lucide-react";
+import { ArrowLeft, Eye, Edit3, FileText, Image as ImageIcon, Mail, Truck, Printer } from "lucide-react";
 import { BrandLockupCompact } from "../components/app/BrandLogo";
 import PaperSheet from "../components/app/PaperSheet";
 import html2canvas from "html2canvas";
@@ -91,6 +91,23 @@ export default function History() {
         pdf.addImage(imgData, "JPEG", (pageW - w) / 2, 20, w, h);
         pdf.save(`${baseName}.pdf`);
         toast.success("PDF saved", { id: "h-exp" });
+      } else if (kind === "print") {
+        toast.loading("Opening print dialog...", { id: "h-exp" });
+        const canvas = await captureCanvas();
+        const imgData = canvas.toDataURL("image/jpeg", 0.95);
+        const printWin = window.open("", "_blank", "width=900,height=1200");
+        if (!printWin) {
+          toast.error("Pop-up blocked — allow pop-ups to print", { id: "h-exp" });
+          return;
+        }
+        printWin.document.open();
+        printWin.document.write(`<!doctype html><html><head><title>${baseName}</title>
+<style>@page { size: letter portrait; margin: 0.4in; } html, body { margin: 0; padding: 0; background: #fff; } img { width: 100%; height: auto; display: block; }</style></head><body>
+<img src="${imgData}" alt="Trip Sheet" />
+<script>window.onload = () => { setTimeout(() => { window.focus(); window.print(); }, 250); };</script>
+</body></html>`);
+        printWin.document.close();
+        toast.success("Print dialog opened", { id: "h-exp" });
       } else if (kind === "email") {
         const subject = `Trip Sheet — ${profile?.full_name || ""} — ${formatDate(viewing.finished_at || viewing.created_at)} — Order #${viewing.order_number}`;
         const lines = [
@@ -219,6 +236,10 @@ export default function History() {
             <Button data-testid="history-export-pdf" variant="outline" onClick={() => exportFile("pdf")}
               className="h-10 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
               <FileText className="h-4 w-4 mr-1" /> PDF
+            </Button>
+            <Button data-testid="history-export-print" variant="outline" onClick={() => exportFile("print")}
+              className="h-10 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
+              <Printer className="h-4 w-4 mr-1" /> Print
             </Button>
             <Button data-testid="history-export-email" variant="outline" onClick={() => exportFile("email")}
               className="h-10 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">

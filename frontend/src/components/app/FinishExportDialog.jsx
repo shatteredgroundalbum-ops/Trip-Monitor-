@@ -8,11 +8,12 @@ import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { api } from "../../lib/api";
-import { Image, FileText, Mail, Loader2 } from "lucide-react";
+import { Image, FileText, Mail, Loader2, Printer } from "lucide-react";
 
 export default function FinishExportDialog({ open, onOpenChange, session, profile }) {
   const [doJpeg, setDoJpeg] = useState(true);
   const [doPdf, setDoPdf] = useState(true);
+  const [doPrint, setDoPrint] = useState(false);
   const [doEmail, setDoEmail] = useState(false);
   const [recipient, setRecipient] = useState(profile?.dispatcher_email || "");
   const [busy, setBusy] = useState(false);
@@ -48,31 +49,29 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  /** Run a phase: animate progress steadily, run actual work, then snap to phase end. */
-  const runPhase = async (label, work, fromPct, toPct, animateMs = 1200) => {
+  /**
+   * Run a phase: animate the bar from `fromPct` toward `toPct` while the work runs.
+   * The animation always finishes its full sweep BEFORE returning, so the user
+   * sees the bar actually fill the segment instead of jumping.
+   */
+  const runPhase = async (label, work, fromPct, toPct, animateMs = 1500) => {
     setBusyStep(label);
-    // Start a soft animation from fromPct → ~80% of phase range while work runs
-    const softTo = fromPct + (toPct - fromPct) * 0.85;
-    let canceled = false;
-    const animPromise = animateTo(fromPct, softTo, animateMs).then(() => { canceled = true; });
+    const animPromise = animateTo(fromPct, toPct, animateMs);
     const result = await work();
-    // If anim still running, jump to phase end
-    if (!canceled) await animPromise;
-    setProgress(toPct);
+    await animPromise; // wait for animation to actually reach toPct
     return result;
   };
 
-  const exportJpegPhase = async (fromPct, toPct) => {
-    return runPhase("Generating JPEG...", async () => {
+  const exportJpegPhase = (fromPct, toPct) =>
+    runPhase("Saving JPEG to your device...", async () => {
       const canvas = await captureCanvas();
       const blob = await new Promise((res) => canvas.toBlob((b) => res(b), "image/jpeg", 0.95));
       if (blob) downloadBlob(blob, `${baseName}.jpg`);
       return blob;
-    }, fromPct, toPct, 1500);
-  };
+    }, fromPct, toPct, 1600);
 
-  const exportPdfPhase = async (fromPct, toPct) => {
-    return runPhase("Generating PDF...", async () => {
+  const exportPdfPhase = (fromPct, toPct) =>
+    runPhase("Saving PDF to your device...", async () => {
       const canvas = await captureCanvas();
       const imgData = canvas.toDataURL("image/jpeg", 0.95);
       const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "letter" });
@@ -84,8 +83,32 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
       if (h > pageH - 40) { h = pageH - 40; w = h * ratio; }
       pdf.addImage(imgData, "JPEG", (pageW - w) / 2, 20, w, h);
       pdf.save(`${baseName}.pdf`);
-    }, fromPct, toPct, 1800);
-  };
+    }, fromPct, toPct, 1900);
+
+  /** Open the OS print dialog with the paper sheet rendered as a printable page. */
+  const printPhase = (fromPct, toPct) =>
+    runPhase("Opening print dialog...", async () => {
+      const canvas = await captureCanvas();
+      const imgData = canvas.toDataURL("image/jpeg", 0.95);
+      const printWin = window.open("", "_blank", "width=900,height=1200");
+      if (!printWin) {
+        toast.error("Pop-up blocked — allow pop-ups to print");
+        return;
+      }
+      printWin.document.open();
+      printWin.document.write(`<!doctype html><html><head><title>${baseName}</title>
+<style>
+  @page { size: letter portrait; margin: 0.4in; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  img { width: 100%; height: auto; display: block; }
+</style></head><body>
+<img src="${imgData}" alt="Trip Sheet" />
+<script>
+  window.onload = () => { setTimeout(() => { window.focus(); window.print(); }, 250); };
+</script>
+</body></html>`);
+      printWin.document.close();
+    }, fromPct, toPct, 1200);
 
   const openMailApp = () => {
     const subject = `Trip Sheet — ${profile?.full_name || ""} — ${new Date().toLocaleDateString()} — Order #${session.order_number}`;
@@ -111,39 +134,44 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
   };
 
   const handleFinish = async () => {
-    if (!doJpeg && !doPdf && !doEmail) {
+    if (!doJpeg && !doPdf && !doPrint && !doEmail) {
       toast.error("Pick at least one export option");
       return;
     }
     setBusy(true);
     setProgress(0);
     try {
-      // Compute phase budgets so total reaches 100
       const phases = [];
       if (doJpeg) phases.push("jpeg");
       if (doPdf) phases.push("pdf");
+      if (doPrint) phases.push("print");
       if (doEmail) phases.push("email");
-      const slice = Math.floor(95 / phases.length); // leave room for final 5%
+      // Reserve last 5% for the "Finishing trip..." finalization animation
+      const slice = Math.floor(95 / phases.length);
       let cursor = 0;
       for (const phase of phases) {
         const from = cursor;
         const to = cursor + slice;
         if (phase === "jpeg") await exportJpegPhase(from, to);
         else if (phase === "pdf") await exportPdfPhase(from, to);
+        else if (phase === "print") await printPhase(from, to);
         else if (phase === "email") {
           await runPhase("Opening mail app...", async () => {
             await new Promise((r) => setTimeout(r, 250));
             openMailApp();
-          }, from, to, 600);
+          }, from, to, 800);
         }
         cursor = to;
       }
-      setBusyStep("Finishing trip...");
-      try { await api.post(`/trip-sessions/${session.session_id}/finish`); } catch { /* ignore */ }
-      setProgress(100);
+      // Final settle animation 95 → 100 — driver sees the bar reach the end.
+      await runPhase("Finishing trip...", async () => {
+        try { await api.post(`/trip-sessions/${session.session_id}/finish`); } catch { /* ignore */ }
+      }, cursor, 100, 700);
+      // Hold the 100% complete bar visibly for 600ms before closing.
+      await new Promise((r) => setTimeout(r, 600));
       toast.success("Trip sheet exported & finished");
       onOpenChange(false);
-      setTimeout(() => window.location.reload(), 600);
+      setTimeout(() => window.location.reload(), 350);
     } catch (e) {
       toast.error("Export failed: " + (e?.message || "unknown"));
     } finally {
@@ -164,7 +192,7 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
             <span className="text-2xl font-black tracking-tight">Send your trip sheet</span>
           </DialogTitle>
           <DialogDescription className="text-[var(--tm-text-soft)]">
-            Pick one or more options. Email opens your device&apos;s mail app with the message pre-filled — attach the JPEG or PDF before sending.
+            Pick one or more options. Each runs in order, with a progress bar so you can see what&apos;s happening.
           </DialogDescription>
         </DialogHeader>
 
@@ -175,6 +203,9 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
           <Option icon={<FileText className="h-5 w-5" />} label="Export as PDF"
             description="Letter-size PDF identical to the paper form"
             checked={doPdf} onCheckedChange={setDoPdf} testId="export-pdf" disabled={busy} />
+          <Option icon={<Printer className="h-5 w-5" />} label="Print"
+            description="Opens your device&apos;s print dialog (network or attached printer)"
+            checked={doPrint} onCheckedChange={setDoPrint} testId="export-print" disabled={busy} />
           <Option icon={<Mail className="h-5 w-5" />} label="Open email app"
             description="Opens your mail app with subject and body pre-filled"
             checked={doEmail} onCheckedChange={setDoEmail} testId="export-email" disabled={busy} />
@@ -208,7 +239,7 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
           <div data-testid="export-progress" className="mt-3 space-y-2" aria-live="polite">
             <div className="flex items-center justify-between text-xs">
               <span className="inline-flex items-center gap-2 text-[var(--tm-navy)] font-bold">
-                <Loader2 className="h-4 w-4 animate-spin text-[var(--tm-orange)]" />
+                <Loader2 className="h-4 w-4 animate-spin text-[var(--tm-blue)]" />
                 {busyStep || "Working..."}
               </span>
               <span data-testid="export-progress-pct" className="font-mono text-[var(--tm-text-soft)] tabular-nums">
@@ -217,7 +248,7 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
             </div>
             <div className="h-2 w-full bg-[var(--tm-surface-2)] rounded-full overflow-hidden">
               <div
-                className="h-full bg-[var(--tm-orange)] transition-[width] duration-150 ease-out"
+                className="h-full bg-[var(--tm-blue)] transition-[width] duration-150 ease-out"
                 style={{ width: `${progress}%` }}
               />
             </div>
