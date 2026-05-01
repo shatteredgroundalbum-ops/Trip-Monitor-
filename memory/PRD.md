@@ -304,15 +304,60 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
     component itself already visually verified in iter 11 via
     `studio-tab-clean`).
 
+- ✅ **Pro Mapping Studio — anchor refactor (Delivery 1.1)** (2026-02-?? fork — iter 13):
+  - User reclassified the Studio from a "design tool" to a strict
+    "mapping tool" → logo + QR placement MUST be anchor-based, not
+    drag-to-rect. Assets render in the Preview pane only; the
+    mapping canvas never shows uploaded asset imagery on a
+    committed element.
+  - New **handedness toggle** (data-testid=`studio-handedness`)
+    swaps which pane sits on which side of the viewport
+    (`xl:flex-row` ↔ `xl:flex-row-reverse`) so left-handed and
+    right-handed drivers both get their stylus hand free.
+  - **Two pane labels made explicit**: "Mapping · tap to mark"
+    (blue, `studio-mapping-pane`) vs "Preview · live output"
+    (orange, `studio-preview-pane`). Default tab is now Clean
+    Render so drivers see their reconstruction as they work.
+  - **Logo / QR anchor tools** replace the old drag-rect tools:
+      - `placementMode='fast'`: single tap commits a
+        `logo_anchor`/`qr_anchor` element with `mode:'center'` +
+        default 18% / 15% scale.
+      - `placementMode='precise'`: 4 taps → commit with
+        `mode:'corners'` + axis-aligned bbox derived from the
+        tapped corners.
+      - Guardrail: tapping either tool before the matching asset
+        is uploaded triggers a toast error and does NOT commit.
+  - **Ghost preview** — when a logo/qr tool is armed AND the
+    asset is uploaded AND placementMode='fast', a 35%-opacity
+    thumbnail of the asset follows the pointer before commit
+    (testids `studio-ghost-logo` / `studio-ghost-qr`).
+  - `MarkupOverlay` logo/qr rendering: navy outlined circle +
+    center dot (logo) / small outlined square + center dot
+    (qr) — markers only, never the asset image itself.
+  - `CleanElement` logo/qr rendering branches on `mode='center'`
+    (compute bbox from scale) vs `mode='corners'` (use stored
+    bbox). Asset `<image>` renders at the anchor.
+  - Testing: iter 13 → **14/14 PASS** via
+    testing_agent_v3_fork. Zero bugs found.
+
 ## Prioritized Backlog
 - P1: Pro Mapping Studio polish (Delivery 2)
    - Replace `window.prompt()` for grid rows/cols with an inline
      popover (mobile Safari reliability + automation friendliness).
-   - Extract CleanReconstructionCanvas, InspectorPane, AssetsPane
-     into sibling files so ProMappingStudio.jsx drops under ~400
-     LoC from its current ~870.
-   - Validation pass on Lock (flag overlapping elements,
-     out-of-bounds coords).
+   - Extract CleanReconstructionCanvas, MarkupOverlay,
+     DraftOverlay, InspectorPane, AssetsPane, CleanElement,
+     CleanTextLayer into sibling files so
+     ProMappingStudio.jsx drops under ~400 LoC from its current
+     ~1,018.
+   - Precise-mode ghost quad: once 3 corners of a 4-corner logo
+     anchor are tapped, preview the forming bbox so the driver
+     sees the final region before committing the 4th tap.
+   - Post-commit resize slider for logo/QR anchors (currently
+     scale is hardcoded at 0.18 / 0.15 in Fast mode).
+   - Throttle `hoverPt` updates to ~30fps to reduce iPad stylus
+     render churn (~120Hz pointermove).
+   - Validation pass on Lock (overlapping elements, out-of-bounds
+     coords).
    - Multi-select + move + scale of already-drawn elements.
    - Deep undo/redo stack (current is single-level).
    - Expose `data-testid="paper-sheet-schema-version"` on the
@@ -320,13 +365,14 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
    - Add stable testids to SessionWizard step-2 Load-Type buttons
      (session-load-store / session-load-warehouse / session-load-dairy
      / session-load-water) so automation can construct an active
-     trip session.
+     trip session for dashboard preview testing.
    - True font-level typography for the Custom Trace (today it
      stores user strokes as smoothed SVG paths — not an actual
      font). Consider a letter-segmentation pass + OT font
      generation. Out of scope for D1 but listed here for completeness.
 - P1: Real social-login OAuth wiring (Facebook / Instagram / LinkedIn) — currently UI placeholders
-- P1: Replace QR placeholder with real GoDriver install QR (the new QR-box element makes this per-template now)
+- P1: Replace QR placeholder with real GoDriver install QR (the new QR-anchor element makes this per-template now)
+- P2: Template gallery (browsable + cloneable community templates — one driver maps Werner's sheet once → every Werner driver skips mapping; soft growth loop)
 - P2: Cloud backup for templates (Google Drive / OneDrive — driver opt-in)
 - P2: Multi-page trip envelopes (stage-2 scan → secondary template)
 - P2: History screen to re-open finished sheets
