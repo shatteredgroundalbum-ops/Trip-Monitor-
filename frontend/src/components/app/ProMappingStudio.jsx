@@ -180,6 +180,9 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   const onPointerUp = () => {
     if (!draft) return;
     const d = draft;
+    // Tap-accumulation tools build their geometry across multiple taps —
+    // pointer-up must be a hard no-op so the draft survives between taps.
+    if (["triangle", "corners", "bullet"].includes(d.tool)) return;
     if (d.tool === "line" && d.start && d.end) {
       if (dist(d.start, d.end) > 0.01) pushElement("line", { from: d.start, to: d.end });
       else setDraft(null);
@@ -233,8 +236,9 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
       });
       setFieldLabel("");
     } else if (["triangle", "corners", "bullet"].includes(d.tool)) {
-      // Tap-accumulation tools — pointer-up does NOT reset the draft.
-      // Auto-commit happens inside onPointerDown on the Nth tap.
+      // Unreachable — guarded at the top of onPointerUp. Kept as
+      // a documentation anchor so future drag-tool additions don't
+      // accidentally reintroduce the iter-11 regression.
     } else {
       setDraft(null);
     }

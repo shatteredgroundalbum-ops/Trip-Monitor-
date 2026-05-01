@@ -252,24 +252,81 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
   - Privacy: mileage still never renders in Preview / export.
   - Tested 19/19 PASS via testing_agent_v3_fork (iter 10).
 
+- ✅ **Pro Mapping Studio (reconstruction-based) — Delivery 1** (2026-02-?? fork — iter 11+12):
+  - Major UX redesign per user spec: "Draw it on the left. Clean it on
+    the right. Label what each area means. Lock it as the final print
+    template." The scan is a markup surface only — the clean vector
+    reconstruction on the right IS the export.
+  - New `<ProMappingStudio />` (~870 LoC) replaces the 6-primitive
+    editor as the default Pro flow. Old editor kept behind a
+    `studio-toggle-legacy` button for drivers who prefer it.
+  - New `/app/frontend/src/lib/pro-mapping-v2.js` exposes the
+    reconstruction schema (schema.version=2), 5 font presets
+    (Arial / Times / Roboto / Courier / Condensed), 13 studio
+    tools, Ramer-Douglas-Peucker + Catmull-Rom smoothing helpers
+    for the Custom Trace tool.
+  - 13 tools wired:
+      boundary (4 anchors, MUST be placed first — gates every other
+      tool so drivers can never mis-frame the working area),
+      line, rect, circle, triangle (3 taps), curve (freehand drag),
+      corner_box (4 taps), grid (drag + rows×cols prompt),
+      text_marker (drag a dash, assign field name), bullet
+      (dot + text-start), logo (box + asset upload), qr_box (box +
+      asset upload), trace (freehand stroke → RDP-simplified +
+      Catmull-Rom smoothed SVG path so hand-traced thick letters
+      come out clean).
+  - 3-tab right pane: Clean Render (live vector reconstruction —
+    same component `<CleanReconstructionCanvas />` that
+    `<DynamicPaperSheet />` uses for export), Inspector (element
+    list with delete), Assets (logo + QR upload panel).
+  - `<DynamicPaperSheet />` branches on `template.schema.version ===
+    2` → renders `<CleanReconstructionCanvas />` (pure vector, no
+    scan). Legacy photographic-overlay path preserved for older
+    templates (Quick Map + 6-primitive Pro editor).
+  - Google Fonts updated (`index.html`) to include Roboto + Roboto
+    Condensed so the font presets actually render.
+  - Privacy: mileage still never renders in preview OR export.
+  - Save vs Lock: Save persists unlocked (driver can keep editing).
+    Lock requires 1+ elements AND 4/4 anchors (can't lock a
+    malformed template).
+  - Fixes during validation (iter 11 → iter 12):
+      1. Rules-of-hooks violation (from prior iter) — preemptively
+         avoided by placing `if (!scan?.data_url)` guard AFTER all
+         hooks in the new studio.
+      2. Tap-accumulation regression: `onPointerUp` catch-all else
+         wiped draft.points between taps so triangle / corners /
+         bullet never auto-committed. Fixed with explicit hard
+         `return` guard at the top of onPointerUp for
+         `['triangle','corners','bullet']`. Retested 3/3 PASS.
+  - Testing: iter 11 → 20/23 PASS (3 tap tools broken). iter 12 →
+    5/5 retested PASS (2 dashboard e2e items BLOCKED by unrelated
+    SessionWizard step-2 automation limitation — clean-render
+    component itself already visually verified in iter 11 via
+    `studio-tab-clean`).
+
 ## Prioritized Backlog
-- P1: Pro Mapping Editor — Delivery 2
-   - Validation pass (flag missing required fields, overlapping
-     boxes, out-of-bounds coords) before allowing Finish.
+- P1: Pro Mapping Studio polish (Delivery 2)
+   - Replace `window.prompt()` for grid rows/cols with an inline
+     popover (mobile Safari reliability + automation friendliness).
+   - Extract CleanReconstructionCanvas, InspectorPane, AssetsPane
+     into sibling files so ProMappingStudio.jsx drops under ~400
+     LoC from its current ~870.
+   - Validation pass on Lock (flag overlapping elements,
+     out-of-bounds coords).
    - Multi-select + move + scale of already-drawn elements.
    - Deep undo/redo stack (current is single-level).
-   - Split ProMappingEditor.jsx (725 LoC) into
-     ProMappingEditor.jsx + ProMappingOverlays.jsx + ProMappingPanes.jsx
-     — natural boundaries at overlay renderers and right-pane
-     renderers.
-   - Smart field-suggestion pass — pre-anchor Order #, Driver,
-     BOL, Date, etc. from OCR labels so typical driver tap count
-     drops from 13 → ~3.
-   - Graceful fallback when a Pro-Mapping label doesn't match a
-     preset key — render the unmapped label as placeholder text
-     at the anchor so the driver sees WHERE it will print.
+   - Expose `data-testid="paper-sheet-schema-version"` on the
+     clean render so tests can directly observe the branching.
+   - Add stable testids to SessionWizard step-2 Load-Type buttons
+     (session-load-store / session-load-warehouse / session-load-dairy
+     / session-load-water) so automation can construct an active
+     trip session.
+   - True font-level typography for the Custom Trace (today it
+     stores user strokes as smoothed SVG paths — not an actual
+     font). Consider a letter-segmentation pass + OT font
+     generation. Out of scope for D1 but listed here for completeness.
 - P1: Real social-login OAuth wiring (Facebook / Instagram / LinkedIn) — currently UI placeholders
-- P1: Replace QR placeholder with real GoDriver install QR
+- P1: Replace QR placeholder with real GoDriver install QR (the new QR-box element makes this per-template now)
 - P2: Cloud backup for templates (Google Drive / OneDrive — driver opt-in)
 - P2: Multi-page trip envelopes (stage-2 scan → secondary template)
 - P2: History screen to re-open finished sheets
