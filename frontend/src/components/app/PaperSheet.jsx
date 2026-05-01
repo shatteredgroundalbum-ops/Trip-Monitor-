@@ -54,13 +54,13 @@ const PaperSheet = forwardRef(({ session, profile }, ref) => {
         </div>
       </div>
 
-      {/* Driver info box */}
+      {/* Driver info box — NOTE: total_trip_miles intentionally NOT printed.
+          Mileage is internal-only per privacy rule. */}
       <div style={{ marginTop: 16, width: 280, border: "1px solid #000", borderCollapse: "collapse" }}>
         <InfoRow label="Driver ID" value={session.driver_id} />
         <InfoRow label="Tractor #" value={session.truck_number} />
         <InfoRow label="Order #" value={session.order_number} />
-        <InfoRow label="BOL #" value={session.bol_number} />
-        <InfoRow label="Total Miles" value={session.total_trip_miles ? `${Number(session.total_trip_miles).toLocaleString()} mi` : ""} last />
+        <InfoRow label="BOL #" value={session.bol_number} last />
       </div>
 
       {/* Bullets */}

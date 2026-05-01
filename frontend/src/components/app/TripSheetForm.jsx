@@ -18,12 +18,13 @@ const EVENT_LABELS = Object.fromEntries(EVENT_CODES.map((e) => [e.code, e.label]
 const isRowFilled = (r) =>
   !!(r && (r.event_code || r.location_name || r.stop_city || r.trailer_number || r.departure_time));
 
-export default function TripSheetForm({ session, onChange }) {
+export default function TripSheetForm({ session, onChange, mileageMode = "workflow" }) {
   const [local, setLocal] = useState(session);
   const [savedLocations, setSavedLocations] = useState([]);
   const [savedTrailers, setSavedTrailers] = useState([]);
   const [savedCities, setSavedCities] = useState([]);
   const [activeIdx, setActiveIdx] = useState(0);
+  const isSegment = mileageMode === "segment";
 
   useEffect(() => {
     setLocal(session);
@@ -42,6 +43,18 @@ export default function TripSheetForm({ session, onChange }) {
       } catch { /* ignore */ }
     })();
   }, []);
+
+  // In segment mode, auto-recompute total_trip_miles from each row's segment_miles.
+  useEffect(() => {
+    if (!isSegment || !local) return;
+    const sum = (local.rows || []).reduce(
+      (acc, r) => acc + (Number(r.segment_miles) || 0),
+      0
+    );
+    if ((Number(local.total_trip_miles) || 0) !== sum) {
+      setLocal((p) => ({ ...p, total_trip_miles: sum > 0 ? sum : null }));
+    }
+  }, [isSegment, local]);
 
   // Auto-save with debounce
   useEffect(() => {
@@ -136,46 +149,67 @@ export default function TripSheetForm({ session, onChange }) {
     }
   };
 
+  const totalSegmentMiles = (local.rows || []).reduce((a, r) => a + (Number(r.segment_miles) || 0), 0);
+  const totalMiles = isSegment ? totalSegmentMiles : (Number(local.total_trip_miles) || 0);
+
   return (
     <div className="space-y-6">
-      {/* Total Trip Miles — required at finish (round trip) */}
+      {/* Total Trip Miles — required at finish. In WORKFLOW mode driver
+          types the round-trip total. In SEGMENT mode this card is read-only
+          and shows the running sum of per-stop segment miles. */}
       <div
         data-testid="trip-miles-card"
+        data-mode={isSegment ? "segment" : "workflow"}
         className={`rounded-md p-5 shadow-sm border-2 ${
-          (Number(local.total_trip_miles) || 0) > 0
+          totalMiles > 0
             ? "bg-[var(--tm-blue)]/5 border-[var(--tm-blue)]"
             : "bg-[var(--tm-orange)]/5 border-[var(--tm-orange)]"
         }`}
       >
         <div className="flex items-center justify-between mb-2">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-orange)] font-bold">
+            <div className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-orange)] font-bold flex items-center gap-1.5">
               Required
+              <span className="text-[var(--tm-text-muted)]">·</span>
+              <span className="text-[var(--tm-blue)]">{isSegment ? "Segment Mode" : "Workflow Mode"}</span>
             </div>
-            <div className="text-base font-bold text-[var(--tm-navy)]">Total Trip Miles (Round Trip)</div>
+            <div className="text-base font-bold text-[var(--tm-navy)]">
+              Total Trip Miles {isSegment ? "(Auto-summed)" : "(Round Trip)"}
+            </div>
             <div className="text-xs text-[var(--tm-text-soft)]">
-              Enter total miles for the entire trip — we&apos;ll roll it into your daily totals & milestones.
+              {isSegment
+                ? "Add the miles between each stop below; we'll keep this running total."
+                : "Enter total miles for the entire trip — internal only, never on the printed sheet."}
             </div>
           </div>
-          {(Number(local.total_trip_miles) || 0) > 0 && (
+          {totalMiles > 0 && (
             <span className="text-[10px] uppercase tracking-wider text-[var(--tm-blue)] font-bold whitespace-nowrap">
               ✓ Saved
             </span>
           )}
         </div>
-        <Input
-          data-testid="trip-miles-input"
-          type="number"
-          inputMode="numeric"
-          min="0"
-          placeholder="e.g. 542"
-          value={local.total_trip_miles ?? ""}
-          onChange={(e) => {
-            const v = e.target.value;
-            setLocal((p) => ({ ...p, total_trip_miles: v === "" ? null : Math.max(0, Number(v)) }));
-          }}
-          className="h-14 text-2xl font-black bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md"
-        />
+        {isSegment ? (
+          <div
+            data-testid="trip-miles-segment-total"
+            className="h-14 flex items-center justify-center text-3xl font-black bg-white border border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md tabular-nums"
+          >
+            {totalSegmentMiles.toLocaleString()} <span className="text-base font-bold text-[var(--tm-text-soft)] ml-2">mi</span>
+          </div>
+        ) : (
+          <Input
+            data-testid="trip-miles-input"
+            type="number"
+            inputMode="numeric"
+            min="0"
+            placeholder="e.g. 542"
+            value={local.total_trip_miles ?? ""}
+            onChange={(e) => {
+              const v = e.target.value;
+              setLocal((p) => ({ ...p, total_trip_miles: v === "" ? null : Math.max(0, Number(v)) }));
+            }}
+            className="h-14 text-2xl font-black bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md"
+          />
+        )}
       </div>
 
       {/* Meta card */}
@@ -247,6 +281,8 @@ export default function TripSheetForm({ session, onChange }) {
                   key={idx}
                   row={row}
                   hasTemp={hasTemp}
+                  isSegment={isSegment}
+                  rowIndex={idx}
                   savedLocations={savedLocations}
                   savedTrailers={savedTrailers}
                   savedCities={savedCities}
@@ -370,7 +406,7 @@ function RowSummary({ row, onEdit }) {
   );
 }
 
-function RowCard({ row, hasTemp, savedLocations, savedTrailers, savedCities, onChange, onDuplicate, onLocationBlur, onTrailerBlur, onCityBlur, onContinue, onBack, isLast }) {
+function RowCard({ row, hasTemp, isSegment, rowIndex, savedLocations, savedTrailers, savedCities, onChange, onDuplicate, onLocationBlur, onTrailerBlur, onCityBlur, onContinue, onBack, isLast }) {
   const [tempWarn, setTempWarn] = useState(false);
 
   const longPressHandlers = useLongPress(
@@ -454,6 +490,33 @@ function RowCard({ row, hasTemp, savedLocations, savedTrailers, savedCities, onC
       </div>
 
       <div className="p-4 pt-0 space-y-3 border-t border-[var(--tm-border)]">
+        {isSegment && (
+          <div
+            className="bg-[var(--tm-blue)]/8 border border-[var(--tm-blue)]/40 rounded-md p-3 mt-3"
+            data-testid={`row-${row.seq}-segment-card`}
+          >
+            <Label>
+              {rowIndex === 0 ? "Miles from start to this stop" : "Miles since previous stop"}
+            </Label>
+            <Input
+              data-testid={`row-${row.seq}-segment-miles`}
+              type="number"
+              inputMode="numeric"
+              min="0"
+              placeholder="e.g. 142"
+              value={row.segment_miles ?? ""}
+              onChange={(e) => {
+                const v = e.target.value;
+                onChange({ segment_miles: v === "" ? null : Math.max(0, Number(v)) });
+              }}
+              className="h-12 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md text-lg font-bold tabular-nums"
+            />
+            <div className="text-[10px] uppercase tracking-wider text-[var(--tm-text-muted)] mt-1">
+              Use your GPS / map app. Internal-only — never on the printed sheet.
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3 pt-3">
           <div>
             <Label>Event Code</Label>

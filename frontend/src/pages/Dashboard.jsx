@@ -224,7 +224,7 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
-            <TripSheetForm session={session} onChange={setSession} />
+            <TripSheetForm session={session} onChange={setSession} mileageMode={profile?.mileage_mode || "workflow"} />
           </section>
         ) : (
           <section className="mb-8">

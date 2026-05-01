@@ -68,6 +68,8 @@ class DriverProfile(BaseModel):
     # Experience (new spec)
     years_experience: Optional[int] = Field(default=None, ge=0, le=80)
     lifetime_miles: Optional[int] = Field(default=None, ge=0, le=20_000_000)
+    # Mileage tracking mode — "workflow" (free, default) or "segment" (premium)
+    mileage_mode: Optional[str] = Field(default="workflow")
     # Existing legacy
     home_address: Optional[str] = Field(default=None, max_length=200)
     dispatcher_email: Optional[EmailStr] = None
@@ -89,6 +91,7 @@ class TripRow(BaseModel):
     trailer_type: Optional[str] = None
     trailer_type_custom: Optional[str] = None
     temperature: Optional[int] = None
+    segment_miles: Optional[int] = Field(default=None, ge=0, le=10000)  # miles since previous stop (segment mode)
 
 
 class RoadExpense(BaseModel):
@@ -227,6 +230,8 @@ async def save_profile(profile: DriverProfile, user: User = Depends(get_current_
         profile.truck_assignment_type = norm.get(profile.truck_assignment_type, profile.truck_assignment_type)
     if profile.truck_assignment_type and profile.truck_assignment_type not in ("Permanent", "Slip Seat"):
         raise HTTPException(status_code=422, detail="truck_assignment_type must be 'Permanent' or 'Slip Seat'")
+    if profile.mileage_mode and profile.mileage_mode not in ("workflow", "segment"):
+        raise HTTPException(status_code=422, detail="mileage_mode must be 'workflow' or 'segment'")
 
     data = profile.model_dump(exclude_none=False)
     data["user_id"] = user.user_id  # always owner
@@ -334,7 +339,16 @@ async def finish_session(session_id: str, user: User = Depends(get_current_user)
         raise HTTPException(status_code=404, detail="Not found")
     if existing.get("status") == "finished":
         raise HTTPException(status_code=409, detail="Session already finished")
+
+    # If the driver is on segment mode, prefer the sum of row segments when set
+    profile_doc = await db.driver_profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
+    mode = (profile_doc.get("mileage_mode") or "workflow").lower()
     miles = existing.get("total_trip_miles")
+    if mode == "segment":
+        seg_total = sum(int(r.get("segment_miles") or 0) for r in (existing.get("rows") or []))
+        if seg_total > 0:
+            miles = seg_total
+
     try:
         miles_int = int(miles) if miles not in (None, "") else 0
     except (TypeError, ValueError):
@@ -347,12 +361,139 @@ async def finish_session(session_id: str, user: User = Depends(get_current_user)
     now = datetime.now(timezone.utc).isoformat()
     await db.trip_sessions.update_one(
         {"session_id": session_id, "user_id": user.user_id},
-        {"$set": {"status": "finished", "finished_at": now, "updated_at": now}},
+        {"$set": {
+            "status": "finished",
+            "finished_at": now,
+            "updated_at": now,
+            "total_trip_miles": miles_int,
+            "mileage_mode_at_finish": mode,
+        }},
     )
     doc = await db.trip_sessions.find_one(
         {"session_id": session_id, "user_id": user.user_id}, {"_id": 0}
     )
     return doc
+
+
+@api_router.get("/trip-sessions/{session_id}/recap")
+async def trip_recap(session_id: str, user: User = Depends(get_current_user)):
+    """Internal trip recap shown after a trip is finished.
+    Surfaces this trip's miles + updated career total + daily/weekly totals
+    + the next mileage milestone + any badges unlocked by this trip.
+    Does NOT touch any printed/exported document.
+    """
+    trip = await db.trip_sessions.find_one(
+        {"session_id": session_id, "user_id": user.user_id}, {"_id": 0}
+    )
+    if not trip:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    profile_doc = await db.driver_profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
+    baseline = int(profile_doc.get("lifetime_miles") or 0)
+    years = int(profile_doc.get("years_experience") or 0)
+    tz_name = profile_doc.get("time_zone") or "UTC"
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = timezone.utc
+
+    this_trip_miles = int(trip.get("total_trip_miles") or 0)
+
+    # Sum of all finished trips ≤ this trip's finished_at (so career_after = baseline + sum_up_to_this)
+    finished_at = trip.get("finished_at")
+    finished_total = await db.trip_sessions.count_documents(
+        {"user_id": user.user_id, "status": "finished"}
+    )
+
+    # All-finished miles
+    miles_total_in_app = 0
+    async for d in db.trip_sessions.aggregate([
+        {"$match": {"user_id": user.user_id, "status": "finished"}},
+        {"$group": {"_id": None, "miles": {"$sum": {"$ifNull": ["$total_trip_miles", 0]}}}},
+    ]):
+        miles_total_in_app = int(d.get("miles") or 0)
+
+    # Miles before this trip (career snapshot prior to recap)
+    miles_before = miles_total_in_app - this_trip_miles
+    career_before = baseline + miles_before
+    career_after = baseline + miles_total_in_app
+
+    # Today / week miles (local tz)
+    now_local = datetime.now(tz)
+    today_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start_local = today_start_local - timedelta(days=6)
+    today_start_utc = today_start_local.astimezone(timezone.utc).isoformat()
+    week_start_utc = week_start_local.astimezone(timezone.utc).isoformat()
+
+    miles_today = 0
+    async for d in db.trip_sessions.aggregate([
+        {"$match": {"user_id": user.user_id, "status": "finished", "finished_at": {"$gte": today_start_utc}}},
+        {"$group": {"_id": None, "miles": {"$sum": {"$ifNull": ["$total_trip_miles", 0]}}}},
+    ]):
+        miles_today = int(d.get("miles") or 0)
+
+    miles_week = 0
+    async for d in db.trip_sessions.aggregate([
+        {"$match": {"user_id": user.user_id, "status": "finished", "finished_at": {"$gte": week_start_utc}}},
+        {"$group": {"_id": None, "miles": {"$sum": {"$ifNull": ["$total_trip_miles", 0]}}}},
+    ]):
+        miles_week = int(d.get("miles") or 0)
+
+    # Next milestone (smallest miles tier above career_after)
+    next_milestone = None
+    for tier in MILES_TIERS:
+        if career_after < tier:
+            next_milestone = {
+                "label": _miles_label(tier),
+                "threshold": tier,
+                "remaining": tier - career_after,
+                "progress_pct": round(career_after / tier * 100),
+            }
+            break
+
+    # Badges unlocked by THIS trip = earned_now AND NOT earned_before
+    def badges_at(miles_val, year_val, trips_val):
+        out = set()
+        for t in MILES_TIERS:
+            if miles_val >= t:
+                out.add(f"miles_{t}")
+        for t in YEARS_TIERS:
+            if year_val >= t:
+                out.add(f"years_{t}")
+        for t in TRIPS_TIERS:
+            if trips_val >= t:
+                out.add(f"trips_{t}")
+        return out
+
+    earned_after = badges_at(career_after, years, finished_total)
+    earned_before = badges_at(career_before, years, finished_total - 1)
+    new_ids = earned_after - earned_before
+    new_badges = []
+    for nid in sorted(new_ids):
+        if nid.startswith("miles_"):
+            n = int(nid.split("_")[1])
+            new_badges.append({"id": nid, "category": "miles", "label": _miles_label(n)})
+        elif nid.startswith("trips_"):
+            n = int(nid.split("_")[1])
+            new_badges.append({"id": nid, "category": "trips", "label": f"{n} Trips"})
+        elif nid.startswith("years_"):
+            n = int(nid.split("_")[1])
+            new_badges.append({"id": nid, "category": "years", "label": f"{n} Year{'s' if n != 1 else ''} of Service"})
+
+    return {
+        "session_id": session_id,
+        "finished_at": finished_at,
+        "trip_miles": this_trip_miles,
+        "career_before": career_before,
+        "career_after": career_after,
+        "miles_today": miles_today,
+        "miles_week": miles_week,
+        "next_milestone": next_milestone,
+        "new_badges": new_badges,
+        "trips_total": finished_total,
+        "mileage_mode": (profile_doc.get("mileage_mode") or "workflow"),
+    }
 
 
 @api_router.post("/trip-sessions/{session_id}/reopen")

@@ -4,10 +4,10 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Button } from "../ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
-import { US_STATES, DRIVER_TYPES, TRUCK_MAKES, TRUCK_COLORS, ROLE_LABEL } from "../../data/constants";
+import { US_STATES, DRIVER_TYPES, TRUCK_MAKES, TRUCK_COLORS, ROLE_LABEL, MILEAGE_MODES } from "../../data/constants";
 import { api } from "../../lib/api";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowRight, Check, Trophy } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Trophy, Sparkles, Lock } from "lucide-react";
 
 const STEP_TITLES = ["About you", "Your truck", "Experience & milestones"];
 const STEP_BLURBS = [
@@ -35,6 +35,8 @@ const DEFAULT_FORM = {
   // experience
   years_experience: "",
   lifetime_miles: "",
+  // mileage tracking mode
+  mileage_mode: "workflow",
   // legacy carry-overs (still supported by backend)
   driver_id: "",
   home_terminal: "",
@@ -343,6 +345,60 @@ function ExperienceStep({ form, update }) {
           placeholder="e.g. 850000"
           className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)] h-12 rounded-md" />
       </Field>
+
+      {/* Mileage tracking mode */}
+      <div className="pt-2">
+        <Label className="text-xs uppercase tracking-wider text-[var(--tm-text-soft)]">
+          Mileage Tracking Method
+        </Label>
+        <p className="text-[11px] text-[var(--tm-text-muted)] mt-1 mb-2">
+          How would you like to log miles per trip? Internal-only — never appears on the printed sheet.
+        </p>
+        <div className="grid gap-2" data-testid="profile-mileage-mode">
+          {MILEAGE_MODES.map((m) => {
+            const selected = form.mileage_mode === m.id;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                data-testid={`mileage-mode-${m.id}`}
+                onClick={() => update("mileage_mode", m.id)}
+                className={`text-left p-3 rounded-md border-2 transition-colors ${
+                  selected
+                    ? "bg-[var(--tm-orange)] border-[var(--tm-orange)] text-white"
+                    : "bg-white border-[var(--tm-border)] hover:border-[var(--tm-blue)]"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="font-bold text-sm flex items-center gap-1.5">
+                    {m.label}
+                  </div>
+                  <span
+                    className={`text-[9px] uppercase tracking-[0.2em] font-bold px-1.5 py-0.5 rounded-full inline-flex items-center gap-1 ${
+                      m.premium
+                        ? selected ? "bg-white/20 text-white" : "bg-[var(--tm-navy)] text-white"
+                        : selected ? "bg-white/20 text-white" : "bg-[var(--tm-blue)]/15 text-[var(--tm-blue)]"
+                    }`}
+                  >
+                    {m.premium
+                      ? <><Sparkles className="h-2.5 w-2.5" /> Premium</>
+                      : <>Free</>}
+                  </span>
+                </div>
+                <div className={`text-[11px] mt-0.5 ${selected ? "text-white/85" : "text-[var(--tm-text-muted)]"}`}>
+                  {m.blurb}
+                </div>
+                {m.premium && !selected && (
+                  <div className="text-[10px] uppercase tracking-wider mt-1 text-[var(--tm-text-muted)] inline-flex items-center gap-1">
+                    <Lock className="h-2.5 w-2.5" />
+                    Available now — paid in a future release
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </>
   );
 }

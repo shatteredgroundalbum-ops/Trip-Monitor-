@@ -4,6 +4,7 @@ import { Checkbox } from "../ui/checkbox";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import PaperSheet from "./PaperSheet";
+import TripRecap from "./TripRecap";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
@@ -19,6 +20,7 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
   const [busy, setBusy] = useState(false);
   const [busyStep, setBusyStep] = useState("");
   const [progress, setProgress] = useState(0);
+  const [recapSessionId, setRecapSessionId] = useState(null);
   const paperRef = useRef(null);
 
   const baseName = `TripSheet_${session.order_number || "NO-ORDER"}_${(profile?.full_name || "driver").replace(/\s+/g, "_")}`;
@@ -176,8 +178,10 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
       // Hold the 100% complete bar visibly for 600ms before closing.
       await new Promise((r) => setTimeout(r, 600));
       toast.success("Trip sheet exported & finished");
+      const finishedSessionId = session.session_id;
       onOpenChange(false);
-      setTimeout(() => window.location.reload(), 350);
+      // Pop the internal Trip Recap so the driver sees miles + milestone progress.
+      setTimeout(() => setRecapSessionId(finishedSessionId), 250);
     } catch (e) {
       toast.error("Export failed: " + (e?.message || "unknown"));
     } finally {
@@ -278,6 +282,16 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
           <PaperSheet ref={paperRef} session={session} profile={profile} />
         </div>
       </DialogContent>
+
+      <TripRecap
+        sessionId={recapSessionId}
+        open={!!recapSessionId}
+        onClose={() => {
+          setRecapSessionId(null);
+          // Refresh dashboard data after the driver sees their recap.
+          setTimeout(() => window.location.reload(), 200);
+        }}
+      />
     </Dialog>
   );
 }

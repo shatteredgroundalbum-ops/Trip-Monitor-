@@ -1,0 +1,67 @@
+{
+  "summary": "Iter 9 verified end-to-end: mileage-mode (workflow/segment) profile selector + PaperSheet privacy rule + TripRecap celebration modal all pass. 9/9 new pytest cases green; 24/24 iter7+iter8 regression still green (33/33 backend total). E2E Playwright covered: workflow-mode trip form, PaperSheet has NO 'Total Miles' text, segment-mode auto-sum (142+87+122=351 mi), Finish&Export -> TripRecap modal opens with correct values (career 999,700 -> 1,000,051, next milestone 2M Miles @ 50%, 1M Miles badge unlocked).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/trip-sessions/{id}/recap", "issue": "Spec says 'non-finished or missing session returns 404' but the implementation only 404s on missing — it returns 200 for an active (not-yet-finished) session. Currently benign because the UI only opens the recap AFTER /finish succeeded, but the contract as written in the request is slightly looser than the server enforces. Consider also rejecting status!='finished' with 404 for defense-in-depth."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter9_mileage_recap.py",
+    "/app/test_reports/pytest/iter9_results.xml",
+    "/app/backend/tests/test_iter7_role_achievements_miles.py",
+    "/app/backend/tests/test_iter8_pwa_weekly.py"
+  ],
+  "tests_executed": {
+    "backend_iter9": {
+      "TestProfileMileageMode::test_valid_modes_accepted[workflow]": "PASS",
+      "TestProfileMileageMode::test_valid_modes_accepted[segment]": "PASS",
+      "TestProfileMileageMode::test_invalid_mode_422": "PASS (mileage_mode='garbage' => 422)",
+      "TestFinishSegmentAutoSum::test_segment_mode_auto_sums_when_total_missing": "PASS (rows 142+87+122 -> total_trip_miles=351 on finish)",
+      "TestFinishSegmentAutoSum::test_segment_mode_422_when_no_segments_and_no_total": "PASS",
+      "TestFinishSegmentAutoSum::test_workflow_mode_still_needs_total_trip_miles": "PASS (workflow ignores segment_miles, requires explicit total)",
+      "TestTripRecap::test_recap_shape_with_milestone_and_badge": "PASS (career_before=999700, career_after=1000051, next_milestone=2M Miles, new_badges includes miles_1000000 label='1M Miles')",
+      "TestTripRecap::test_recap_missing_session_404": "PASS",
+      "TestTripRecap::test_recap_unauth_401": "PASS"
+    },
+    "backend_regression_iter7+iter8": "24/24 PASS",
+    "frontend_e2e": {
+      "dashboard loads with session_token cookie": "PASS",
+      "workflow mode: trip-miles-input visible (count=1), trip-miles-card data-mode='workflow', trip-miles-segment-total absent, row-1-segment-miles absent": "PASS",
+      "PaperSheet (data-testid='paper-sheet') opened from preview-btn — literal 'Total Miles' ABSENT and lowercase 'total miles' ABSENT from innerText": "PASS (privacy rule honored)",
+      "segment mode: trip-miles-input absent, trip-miles-segment-total visible, card data-mode='segment', row-1-segment-miles input rendered": "PASS",
+      "typing 142 into row-1-segment-miles updates segment-total to '142 mi' within ~1.5s": "PASS",
+      "backend-persisted rows 142+87+122 auto-sum to '351 mi' in segment-total on reload": "PASS",
+      "Finish&Export -> finish-export-btn -> 12-15s animation -> trip-recap-dialog opens": "PASS",
+      "recap-trip-miles='351 mi'; recap-career-before='999,700'; recap-career-after='1,000,051'": "PASS",
+      "recap-today='351 mi'; recap-week='351 mi'": "PASS",
+      "recap-next-milestone = '2M Miles · 999,949 mi to go · 50%'": "PASS",
+      "recap-new-badges contains recap-new-badge-miles_1000000 labeled '1M Miles'": "PASS",
+      "trip-recap-done closes the dialog (count 1 -> 0)": "PASS",
+      "RTI brand-separation invariant: 'RTI' only appears inside the hidden PaperSheet (preview/export), NOT on TripRecap or Dashboard": "PASS"
+    }
+  },
+  "action_items": [
+    "OPTIONAL: tighten GET /api/trip-sessions/{id}/recap to 404 when status != 'finished' — the spec asks for non-finished+missing => 404 but server only 404s on missing. No user-facing impact today since UI only shows recap after /finish."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/server.py is now 888 lines — consider splitting (trips, recap, achievements, stats, auth) into sub-routers. This was already flagged in iter 8 at 747 lines; the threshold has grown.",
+    "recap endpoint uses `miles_before = miles_total_in_app - this_trip_miles` which implicitly assumes THIS trip is finished and included in the sum; returning a recap on a non-finished trip would report career_before == baseline + miles_total_in_app (and career_after equal to career_before), which is misleading. Reinforces the 404 tightening recommendation.",
+    "FinishExportDialog: TripRecap state `recapSessionId` is kept on the dialog even after onOpenChange — fine, but worth verifying no stale recap can open for a previous trip after a second Finish&Export in the same mount."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter9_mileage_recap.py (NEW)"
+  ],
+  "success_rate": {"backend": "100% (9/9 iter9 + 24/24 regression = 33/33)", "frontend": "100% (14/14 e2e checks)"},
+  "test_credentials": "Test user injected via mongosh per /app/memory/test_credentials.md (user_id=tm_iter9_ui_<ts>, token=tm_iter9_ui_session_<ts>). Cleaned up post-run.",
+  "seed_data_creation": "Seeded 1 test user with driver_profile {mileage_mode:'workflow'->'segment', lifetime_miles:999700, time_zone:'UTC'}. Created 1 active trip-session via POST /api/trip-sessions (session_id=ts_0af3fc7b5971, rows[0..2].segment_miles=142,87,122). Finished via UI -> auto-summed to total_trip_miles=351. All test data (users, sessions, profiles, trips) cleaned up after run.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter 9 is fully green. Key learnings for next iter: (1) mileage_mode UI branching is purely from profile.mileage_mode; set it via POST /api/profile before hitting /dashboard. (2) Segment rows are only active in the UI one-at-a-time (only the selected stop tab renders the segment input), so when writing UI tests for more than one row use PUT /api/trip-sessions/{id} to seed all rows at once then reload. (3) FinishExportDialog requires ~12-15s for its 0->100% animation before TripRecap opens; the progress bar animates across 4 phases. (4) POST /api/profile REQUIRES full_name — remember to include it in any profile payload. (5) Recap endpoint does not currently 404 on non-finished sessions (only on missing). Flagged as minor.",
+  "rca of the issue": "N/A — no failures. Initial test failure in iter9 test file was due to missing 'full_name' in POST /api/profile payloads (server enforces it as a required Pydantic field); fixed by including full_name in all profile payloads."
+}

@@ -119,6 +119,27 @@ export const DRIVER_ROLES = [
 
 export const ROLE_LABEL = Object.fromEntries(DRIVER_ROLES.map((r) => [r.id, r.label]));
 
+// Mileage tracking modes — driver picks one during onboarding.
+export const MILEAGE_MODES = [
+  {
+    id: "workflow",
+    label: "Workflow Round Trip",
+    short: "Workflow",
+    blurb: "Type the round-trip total your dispatch / company workflow shows.",
+    premium: false,
+  },
+  {
+    id: "segment",
+    label: "Segment-Based Manual",
+    short: "Segment",
+    blurb: "Enter miles between each stop. We total them automatically.",
+    premium: true,
+  },
+];
+
+export const MILEAGE_MODE_LABEL = Object.fromEntries(MILEAGE_MODES.map((m) => [m.id, m.label]));
+
+
 // Driver type — used inside the onboarding wizard "Driver info" step.
 export const DRIVER_TYPES = [
   { id: "Permanent", label: "Permanent Driver", blurb: "Same truck every shift." },
