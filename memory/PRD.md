@@ -98,6 +98,36 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
   - Backend tests: 5/5 PASS in
     `/app/backend/tests/test_iter8_pwa_weekly.py`. iter 7 regression
     still 19/19 PASS.
+- ✅ **Trip Recap & Mileage Tracking modes (2026-02-?? fork — iter 9)**:
+  - Onboarding step 3 now picks mileage tracking method:
+    `workflow` (free / default — driver types one round-trip total) or
+    `segment` (premium — per-stop "miles since previous stop", auto-summed).
+  - DriverProfile gained `mileage_mode`, TripRow gained `segment_miles`.
+    `/profile` validates the mode (workflow|segment, else 422).
+  - TripSheetForm is mode-aware: workflow renders the single big number
+    input, segment turns the top card into a read-only running total and
+    surfaces a `segment_miles` input on each active row card. Active-row
+    summaries propagate the running sum back to `total_trip_miles`.
+  - `/finish` auto-uses the sum of `rows[].segment_miles` as the saved
+    `total_trip_miles` when (a) profile.mileage_mode='segment' AND (b) the
+    explicit total is missing/0. Workflow mode still requires the explicit
+    total. Stores `mileage_mode_at_finish` for auditability.
+  - New `GET /trip-sessions/{id}/recap` (finished trips only — 404 on
+    unfinished/missing) returns `{trip_miles, career_before, career_after,
+    miles_today, miles_week, next_milestone:{label,threshold,remaining,
+    progress_pct}, new_badges[], trips_total, mileage_mode}`.
+    "New badges" are precisely those that flipped earned by THIS trip.
+  - New `<TripRecap />` celebration modal pops automatically once
+    FinishExportDialog hits 100%. Shows this trip's miles, career
+    before→after with arrow, today/week tiles, next-milestone progress,
+    and any badges unlocked this trip. Internal-only — never exported.
+  - **PRIVACY rule honored**: removed the "Total Miles" row from
+    `PaperSheet`. `total_trip_miles` is now strictly internal — never on
+    JPEG/PDF/print/email outputs. Verified by automated assertion against
+    `paper-sheet` innerText.
+  - Backend tests: 9/9 PASS in
+    `/app/backend/tests/test_iter9_mileage_recap.py`. iter 7 + iter 8
+    regression still 24/24 PASS. Frontend e2e 14/14 PASS.
 - ✅ Pre-seeded major US cities/states + 10 event codes + 5 trailer types.
 
 ## Prioritized Backlog

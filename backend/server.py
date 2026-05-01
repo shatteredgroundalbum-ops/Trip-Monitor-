@@ -387,6 +387,10 @@ async def trip_recap(session_id: str, user: User = Depends(get_current_user)):
     )
     if not trip:
         raise HTTPException(status_code=404, detail="Not found")
+    if trip.get("status") != "finished":
+        # Recap only makes sense after a trip is finished; the math relies on
+        # this trip's miles already being part of the cumulative sum.
+        raise HTTPException(status_code=404, detail="Recap unavailable for unfinished trips")
 
     profile_doc = await db.driver_profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
     baseline = int(profile_doc.get("lifetime_miles") or 0)
