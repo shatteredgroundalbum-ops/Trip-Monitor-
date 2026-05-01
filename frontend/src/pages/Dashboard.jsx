@@ -92,6 +92,13 @@ export default function Dashboard() {
         <div className="max-w-4xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
           <BrandLockupCompact />
           <div className="flex items-center gap-2">
+            {session && (
+              <Button data-testid="header-preview-btn" variant="outline" size="sm"
+                onClick={() => setShowPreview(true)}
+                className="h-9 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
+                <Eye className="h-4 w-4" />
+              </Button>
+            )}
             <Button data-testid="history-btn" variant="outline" size="sm"
               onClick={() => navigate("/history")}
               className="h-9 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
@@ -111,7 +118,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 md:px-6 py-6 pb-32">
+      <main className="max-w-4xl mx-auto px-4 md:px-6 py-6 pb-44">
         {session ? (
           <>
             <div className="mb-6">
@@ -137,7 +144,7 @@ export default function Dashboard() {
       </main>
 
       {session && (
-        <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-[var(--tm-border)]">
+        <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-[var(--tm-border)]" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
           <div className="max-w-4xl mx-auto px-4 md:px-6 py-3 flex gap-2">
             <Button data-testid="preview-btn" variant="outline" onClick={() => setShowPreview(true)}
               className="h-12 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
