@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Button } from "../ui/button";
@@ -13,6 +13,7 @@ export default function DriverProfileDialog({ open, initial, onSaved }) {
     full_name: "", home_terminal: "", time_zone: "America/Chicago",
     driver_id: "", truck_assignment_type: "Permanent",
     truck_number: "", license_plate: "", home_address: "",
+    dispatcher_email: "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -33,11 +34,15 @@ export default function DriverProfileDialog({ open, initial, onSaved }) {
     }
     setSaving(true);
     try {
-      const res = await api.post("/profile", form);
+      // Strip empty dispatcher_email so backend EmailStr validator passes
+      const payload = { ...form };
+      if (!payload.dispatcher_email) delete payload.dispatcher_email;
+      const res = await api.post("/profile", payload);
       toast.success("Profile saved");
       onSaved(res.data);
     } catch (e) {
-      toast.error("Failed to save profile");
+      const msg = e?.response?.data?.detail;
+      toast.error(typeof msg === "string" ? msg : "Failed to save profile");
     } finally {
       setSaving(false);
     }
@@ -57,6 +62,9 @@ export default function DriverProfileDialog({ open, initial, onSaved }) {
             </span>
             <span className="text-2xl font-black tracking-tight">Driver Profile</span>
           </DialogTitle>
+          <DialogDescription className="text-[var(--tm-text-soft)]">
+            Your profile auto-fills the driver details on every trip sheet.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 mt-2">
@@ -109,6 +117,12 @@ export default function DriverProfileDialog({ open, initial, onSaved }) {
           </div>
           <Field label="Home Address (optional)">
             <Input data-testid="profile-address" value={form.home_address || ""} onChange={(e) => update("home_address", e.target.value)}
+              className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)] h-12 rounded-md" />
+          </Field>
+          <Field label="Default Dispatcher Email (optional)">
+            <Input data-testid="profile-dispatcher" type="email" placeholder="dispatcher@example.com"
+              value={form.dispatcher_email || ""}
+              onChange={(e) => update("dispatcher_email", e.target.value)}
               className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)] h-12 rounded-md" />
           </Field>
         </div>

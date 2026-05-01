@@ -3,13 +3,15 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import asyncio
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta
 import httpx
+import resend
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -17,6 +19,11 @@ load_dotenv(ROOT_DIR / '.env')
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
+
+RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
+SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'onboarding@resend.dev')
+if RESEND_API_KEY:
+    resend.api_key = RESEND_API_KEY
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -33,15 +40,16 @@ class User(BaseModel):
 
 
 class DriverProfile(BaseModel):
-    user_id: str
-    full_name: str
-    home_terminal: str
-    time_zone: str
-    driver_id: str
+    user_id: Optional[str] = None
+    full_name: str = Field(min_length=1, max_length=120)
+    home_terminal: str = Field(min_length=1, max_length=120)
+    time_zone: str = Field(min_length=1, max_length=80)
+    driver_id: str = Field(min_length=1, max_length=40)
     truck_assignment_type: str  # "Permanent" or "Slip Seat"
-    truck_number: Optional[str] = None
-    license_plate: Optional[str] = None
-    home_address: Optional[str] = None
+    truck_number: Optional[str] = Field(default=None, max_length=40)
+    license_plate: Optional[str] = Field(default=None, max_length=40)
+    home_address: Optional[str] = Field(default=None, max_length=200)
+    dispatcher_email: Optional[EmailStr] = None
 
 
 class TripRow(BaseModel):
@@ -177,10 +185,16 @@ async def get_profile(user: User = Depends(get_current_user)):
 
 
 @api_router.post("/profile")
-async def save_profile(profile: Dict[str, Any], user: User = Depends(get_current_user)):
-    profile["user_id"] = user.user_id
+async def save_profile(profile: DriverProfile, user: User = Depends(get_current_user)):
+    if profile.truck_assignment_type not in ("Permanent", "Slip Seat"):
+        raise HTTPException(status_code=422, detail="truck_assignment_type must be 'Permanent' or 'Slip Seat'")
+    if profile.truck_assignment_type == "Permanent" and not (profile.truck_number or "").strip():
+        raise HTTPException(status_code=422, detail="truck_number is required for Permanent assignment")
+
+    data = profile.model_dump(exclude_none=False)
+    data["user_id"] = user.user_id  # always owner
     await db.driver_profiles.update_one(
-        {"user_id": user.user_id}, {"$set": profile}, upsert=True
+        {"user_id": user.user_id}, {"$set": data}, upsert=True
     )
     doc = await db.driver_profiles.find_one({"user_id": user.user_id}, {"_id": 0})
     return doc
@@ -387,7 +401,57 @@ async def bump_city(payload: Dict[str, Any], user: User = Depends(get_current_us
 
 @api_router.get("/")
 async def root():
-    return {"app": "RTI Trip Management", "status": "ok"}
+    return {"app": "Trip Monitor Driver Edition", "status": "ok"}
+
+
+# ============ EMAIL (Resend) ============
+class EmailAttachment(BaseModel):
+    filename: str = Field(min_length=1, max_length=200)
+    content_b64: str = Field(min_length=1)  # base64-encoded file bytes
+    content_type: str = Field(default="application/octet-stream", max_length=100)
+
+
+class SendTripEmailRequest(BaseModel):
+    recipient: EmailStr
+    subject: str = Field(min_length=1, max_length=300)
+    html_body: str = Field(min_length=1, max_length=50000)
+    attachments: List[EmailAttachment] = Field(default_factory=list, max_length=4)
+
+
+@api_router.post("/email/send-trip-sheet")
+async def send_trip_sheet_email(
+    payload: SendTripEmailRequest,
+    user: User = Depends(get_current_user),
+):
+    if not RESEND_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Email provider not configured. Set RESEND_API_KEY in backend env.",
+        )
+
+    params = {
+        "from": SENDER_EMAIL,
+        "to": [payload.recipient],
+        "subject": payload.subject,
+        "html": payload.html_body,
+    }
+    if payload.attachments:
+        params["attachments"] = [
+            {
+                "filename": a.filename,
+                "content": a.content_b64,
+                "content_type": a.content_type,
+            }
+            for a in payload.attachments
+        ]
+
+    try:
+        result = await asyncio.to_thread(resend.Emails.send, params)
+        email_id = result.get("id") if isinstance(result, dict) else None
+        return {"status": "success", "email_id": email_id, "recipient": payload.recipient}
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Resend send failed: {e}")
+        raise HTTPException(status_code=502, detail=f"Email send failed: {e}")
 
 
 app.include_router(api_router)

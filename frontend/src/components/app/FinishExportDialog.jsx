@@ -1,8 +1,8 @@
 import React, { useState, useRef } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../ui/dialog";
 import { Checkbox } from "../ui/checkbox";
 import { Button } from "../ui/button";
-import { Label } from "../ui/label";
+import { Input } from "../ui/input";
 import PaperSheet from "./PaperSheet";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
@@ -10,10 +10,23 @@ import { toast } from "sonner";
 import { api } from "../../lib/api";
 import { Image, FileText, Mail } from "lucide-react";
 
+const blobToBase64 = (blob) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result || "";
+      const idx = result.indexOf(",");
+      resolve(idx >= 0 ? result.slice(idx + 1) : result);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
 export default function FinishExportDialog({ open, onOpenChange, session, profile }) {
   const [doJpeg, setDoJpeg] = useState(true);
   const [doPdf, setDoPdf] = useState(true);
   const [doEmail, setDoEmail] = useState(false);
+  const [recipient, setRecipient] = useState(profile?.dispatcher_email || "");
   const [busy, setBusy] = useState(false);
   const paperRef = useRef(null);
 
@@ -32,20 +45,16 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const exportJpeg = async () => {
+  const buildJpeg = async () => {
     const canvas = await captureCanvas();
-    await new Promise((resolve) => {
-      canvas.toBlob((blob) => {
-        if (blob) downloadBlob(blob, `${baseName}.jpg`);
-        resolve();
-      }, "image/jpeg", 0.95);
+    return await new Promise((resolve) => {
+      canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.95);
     });
   };
 
-  const exportPdf = async () => {
+  const buildPdfBlob = async () => {
     const canvas = await captureCanvas();
     const imgData = canvas.toDataURL("image/jpeg", 0.95);
-    // Letter portrait
     const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "letter" });
     const pageW = pdf.internal.pageSize.getWidth();
     const pageH = pdf.internal.pageSize.getHeight();
@@ -54,36 +63,79 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
     let h = w / ratio;
     if (h > pageH - 40) { h = pageH - 40; w = h * ratio; }
     pdf.addImage(imgData, "JPEG", (pageW - w) / 2, 20, w, h);
-    pdf.save(`${baseName}.pdf`);
+    return pdf.output("blob");
   };
 
-  const sendEmail = () => {
-    const subject = `Trip Sheet — ${profile?.full_name || ""} — ${new Date().toLocaleDateString()} — Order #${session.order_number}`;
-    const body = `Hello,%0D%0A%0D%0APlease find attached the trip sheet.%0D%0A%0D%0A` +
-      `Driver: ${profile?.full_name || ""}%0D%0A` +
-      `Driver ID: ${session.driver_id}%0D%0A` +
-      `Tractor #: ${session.truck_number || ""}%0D%0A` +
-      `Order #: ${session.order_number}%0D%0A` +
-      `BOL #: ${session.bol_number}%0D%0A%0D%0A` +
-      `Note: please attach the JPEG or PDF saved to your device.%0D%0A%0D%0AThanks.`;
-    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${body}`;
-  };
+  const buildEmailHtml = () => `
+    <div style="font-family:Arial,Helvetica,sans-serif;color:#0E1F47;font-size:14px;line-height:1.5">
+      <p>Hello,</p>
+      <p>Please find attached the trip sheet for Order #${session.order_number}.</p>
+      <table style="border-collapse:collapse;font-size:13px">
+        <tr><td style="padding:2px 8px"><b>Driver:</b></td><td style="padding:2px 8px">${profile?.full_name || ""}</td></tr>
+        <tr><td style="padding:2px 8px"><b>Driver ID:</b></td><td style="padding:2px 8px">${session.driver_id || ""}</td></tr>
+        <tr><td style="padding:2px 8px"><b>Tractor #:</b></td><td style="padding:2px 8px">${session.truck_number || ""}</td></tr>
+        <tr><td style="padding:2px 8px"><b>Order #:</b></td><td style="padding:2px 8px">${session.order_number || ""}</td></tr>
+        <tr><td style="padding:2px 8px"><b>BOL #:</b></td><td style="padding:2px 8px">${session.bol_number || ""}</td></tr>
+      </table>
+      <p style="color:#7B8AA8;font-size:12px;margin-top:24px">Sent automatically by Trip Monitor — Driver Edition.</p>
+    </div>
+  `;
 
   const handleFinish = async () => {
     if (!doJpeg && !doPdf && !doEmail) {
       toast.error("Pick at least one export option");
       return;
     }
+    if (doEmail && !recipient) {
+      toast.error("Enter a recipient email");
+      return;
+    }
     setBusy(true);
     try {
-      if (doJpeg) await exportJpeg();
-      if (doPdf) await exportPdf();
-      if (doEmail) sendEmail();
+      let jpegBlob = null;
+      let pdfBlob = null;
+
+      if (doJpeg || doEmail) jpegBlob = await buildJpeg();
+      if (doPdf || doEmail) pdfBlob = await buildPdfBlob();
+
+      if (doJpeg && jpegBlob) downloadBlob(jpegBlob, `${baseName}.jpg`);
+      if (doPdf && pdfBlob) downloadBlob(pdfBlob, `${baseName}.pdf`);
+
+      if (doEmail) {
+        const attachments = [];
+        if (pdfBlob) {
+          attachments.push({
+            filename: `${baseName}.pdf`,
+            content_b64: await blobToBase64(pdfBlob),
+            content_type: "application/pdf",
+          });
+        }
+        if (jpegBlob) {
+          attachments.push({
+            filename: `${baseName}.jpg`,
+            content_b64: await blobToBase64(jpegBlob),
+            content_type: "image/jpeg",
+          });
+        }
+        const subject = `Trip Sheet — ${profile?.full_name || ""} — ${new Date().toLocaleDateString()} — Order #${session.order_number}`;
+        try {
+          await api.post("/email/send-trip-sheet", {
+            recipient,
+            subject,
+            html_body: buildEmailHtml(),
+            attachments,
+          });
+          toast.success(`Emailed to ${recipient}`);
+        } catch (err) {
+          const msg = err?.response?.data?.detail;
+          toast.error(typeof msg === "string" ? msg : "Email failed — check provider settings");
+        }
+      }
+
       await api.post(`/trip-sessions/${session.session_id}/finish`);
-      toast.success("Trip sheet exported and finished");
+      toast.success("Trip sheet finished");
       onOpenChange(false);
-      // reload to clear active session
-      setTimeout(() => window.location.reload(), 300);
+      setTimeout(() => window.location.reload(), 400);
     } catch (e) {
       toast.error("Export failed: " + (e?.message || "unknown"));
     } finally {
@@ -101,18 +153,44 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
             </span>
             <span className="text-2xl font-black tracking-tight">Send your trip sheet</span>
           </DialogTitle>
+          <DialogDescription className="text-[var(--tm-text-soft)]">
+            Pick one or more export formats. Email sends with the JPEG and PDF auto-attached.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 mt-2">
           <Option icon={<Image className="h-5 w-5" />} label="Save as JPEG"
-            description="Downloads to your photo gallery"
+            description="Downloads to your device"
             checked={doJpeg} onCheckedChange={setDoJpeg} testId="export-jpeg" />
           <Option icon={<FileText className="h-5 w-5" />} label="Export as PDF"
-            description="Saves a PDF identical to the paper form"
+            description="Letter-size PDF identical to the paper form"
             checked={doPdf} onCheckedChange={setDoPdf} testId="export-pdf" />
-          <Option icon={<Mail className="h-5 w-5" />} label="Email"
-            description="Opens your mail app with subject & body prefilled — attach the saved file"
+          <Option icon={<Mail className="h-5 w-5" />} label="Email with attachment"
+            description="Auto-attaches the JPEG and PDF — no manual attaching"
             checked={doEmail} onCheckedChange={setDoEmail} testId="export-email" />
+
+          {doEmail && (
+            <div data-testid="email-recipient-row" className="pl-4">
+              <div className="text-[10px] uppercase tracking-wider text-[var(--tm-text-soft)] mb-1">Recipient email</div>
+              <Input
+                data-testid="email-recipient-input"
+                type="email"
+                placeholder="dispatcher@example.com"
+                value={recipient}
+                onChange={(e) => setRecipient(e.target.value)}
+                className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)] h-12 rounded-md"
+              />
+              {profile?.dispatcher_email && recipient !== profile.dispatcher_email && (
+                <button
+                  type="button"
+                  onClick={() => setRecipient(profile.dispatcher_email)}
+                  className="text-xs text-[var(--tm-blue)] mt-1 underline"
+                >
+                  Use saved dispatcher: {profile.dispatcher_email}
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <Button data-testid="finish-export-btn" onClick={handleFinish} disabled={busy}

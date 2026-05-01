@@ -6,7 +6,7 @@ import DriverProfileDialog from "../components/app/DriverProfileDialog";
 import SessionWizard from "../components/app/SessionWizard";
 import TripSheetForm from "../components/app/TripSheetForm";
 import FinishExportDialog from "../components/app/FinishExportDialog";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
 import { LogOut, UserCog, CheckCircle2, Save, Eye, History, Truck } from "lucide-react";
 import PaperSheet from "../components/app/PaperSheet";
@@ -170,6 +170,9 @@ export default function Dashboard() {
               <span className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-orange)] font-bold block mb-2">Session In Progress</span>
               <span className="text-xl font-black tracking-tight">Continue current session?</span>
             </DialogTitle>
+            <DialogDescription className="text-[var(--tm-text-soft)]">
+              Pick up where you left off, or discard and start a new trip.
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 flex-row">
             <Button data-testid="continue-no-btn" variant="outline" onClick={() => continueSession(false)}
@@ -189,6 +192,9 @@ export default function Dashboard() {
           <DialogContent className="max-w-5xl bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md overflow-auto max-h-[90vh]">
             <DialogHeader>
               <DialogTitle className="text-[var(--tm-navy)]">Paper Preview</DialogTitle>
+              <DialogDescription className="text-[var(--tm-text-soft)]">
+                How the trip sheet will look when exported as JPEG, PDF, or printed.
+              </DialogDescription>
             </DialogHeader>
             <div className="overflow-auto max-h-[75vh] flex justify-center bg-[var(--tm-surface-2)] p-4 rounded-md">
               <PaperSheet ref={previewRef} session={session} profile={profile} />

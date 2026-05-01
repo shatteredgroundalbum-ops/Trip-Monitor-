@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Button } from "../components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -187,6 +187,9 @@ export default function History() {
                 </span>
               </div>
             </DialogTitle>
+            <DialogDescription className="text-[var(--tm-text-soft)]">
+              View, re-export, or re-open this finished trip sheet.
+            </DialogDescription>
           </DialogHeader>
           <div className="flex flex-wrap gap-2 mb-3">
             <Button data-testid="history-export-jpeg" variant="outline" onClick={() => exportFile("jpeg")}

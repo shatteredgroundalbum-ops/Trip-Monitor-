@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Dialog, DialogContent } from "../ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "../ui/dialog";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
@@ -64,6 +64,10 @@ export default function SessionWizard({ open, profile, onCreate, onCancel }) {
         className="max-w-lg bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md"
         hideClose
       >
+        <DialogTitle className="sr-only">Start a new trip</DialogTitle>
+        <DialogDescription className="sr-only">
+          Three-step wizard to start a new trip session.
+        </DialogDescription>
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-[var(--tm-orange)] font-bold">
           <span>Start New Trip</span>
           <span className="text-[var(--tm-text-muted)]">· Step {step} / 3</span>
