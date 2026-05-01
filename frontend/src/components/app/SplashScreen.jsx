@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from "react";
 
 /**
- * Cinematic splash screen — dark background, logo fades in, holds, fades out.
- * The logo image itself is NEVER recolored or filtered.
- * No buttons, no text, no navigation — purely cinematic.
- * Shown ONCE at app launch per session.
+ * Cinematic full-screen splash. The uploaded logo image fills the entire
+ * viewport edge-to-edge. Image is NOT modified — only the wrapping container
+ * fades in and out.
  */
 export default function SplashScreen({ onComplete, durationMs = 2600 }) {
   const [phase, setPhase] = useState("in");
@@ -23,32 +22,27 @@ export default function SplashScreen({ onComplete, durationMs = 2600 }) {
   return (
     <div
       data-testid="splash-screen"
-      className="fixed inset-0 z-[100] flex items-center justify-center"
+      className="fixed inset-0 z-[100] overflow-hidden"
       style={{
-        backgroundColor: "#06122E",
+        backgroundColor: "#FFFFFF",
         opacity: phase === "out" ? 0 : 1,
         transition: "opacity 700ms ease-in-out",
         pointerEvents: phase === "out" ? "none" : "auto",
       }}
       aria-hidden={phase === "out"}
     >
-      <div
-        className="relative flex items-center justify-center"
+      <img
+        src="/trip-monitor-logo.webp"
+        alt="Trip Monitor — Driver Edition"
+        data-testid="splash-logo"
         style={{
-          opacity: phase === "in" ? 0 : 1,
-          transform: phase === "in" ? "scale(0.94)" : "scale(1)",
-          transition: "opacity 700ms ease-out, transform 700ms ease-out",
+          width: "100vw",
+          height: "100vh",
+          objectFit: "contain",
+          objectPosition: "center",
+          display: "block",
         }}
-      >
-        <img
-          src="/trip-monitor-logo.webp"
-          alt="Trip Monitor — Driver Edition"
-          width={280}
-          height={280}
-          style={{ width: 280, height: 280, objectFit: "contain" }}
-          data-testid="splash-logo"
-        />
-      </div>
+      />
     </div>
   );
 }
