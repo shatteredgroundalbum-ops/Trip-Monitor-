@@ -7,10 +7,11 @@ import { Calendar } from "../ui/calendar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { Textarea } from "../ui/textarea";
 import { EVENT_CODES, TRAILER_TYPES, US_STATES, SEED_CITIES, FLAT_CITY_STATES } from "../../data/constants";
-import { Info, Plus, Minus, CalendarIcon, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react";
+import { Info, Plus, Minus, CalendarIcon, AlertTriangle, ChevronDown, ChevronUp, Copy } from "lucide-react";
 import { format, parse } from "date-fns";
 import { api } from "../../lib/api";
 import { toast } from "sonner";
+import useLongPress from "../../lib/useLongPress";
 
 const EVENT_LABELS = Object.fromEntries(EVENT_CODES.map((e) => [e.code, e.label]));
 
@@ -19,6 +20,7 @@ export default function TripSheetForm({ session, onChange }) {
   const [savedLocations, setSavedLocations] = useState([]);
   const [savedTrailers, setSavedTrailers] = useState([]);
   const [savedCities, setSavedCities] = useState([]);
+  const [forceExpandSeq, setForceExpandSeq] = useState(null);
 
   useEffect(() => setLocal(session), [session.session_id]);
 
@@ -66,6 +68,35 @@ export default function TripSheetForm({ session, onChange }) {
     setLocal((p) => ({ ...p, rows: [...p.rows, { seq: p.rows.length + 1 }] }));
   };
 
+  /** Duplicate a row's data into the next empty row, or append a new row if none. */
+  const duplicateRow = (srcIdx) => {
+    let targetSeq = null;
+    setLocal((p) => {
+      const src = p.rows[srcIdx];
+      if (!src) return p;
+      const isEmpty = (r) =>
+        !r.event_code && !r.location_name && !r.stop_city && !r.trailer_number && !r.departure_time;
+      const targetIdx = p.rows.findIndex((r, i) => i > srcIdx && isEmpty(r));
+      if (targetIdx >= 0) {
+        targetSeq = p.rows[targetIdx].seq;
+        const next = p.rows.map((r, i) =>
+          i === targetIdx
+            ? { ...src, seq: r.seq, departure_time: "" }
+            : r
+        );
+        return { ...p, rows: next };
+      }
+      const newSeq = p.rows.length + 1;
+      targetSeq = newSeq;
+      return {
+        ...p,
+        rows: [...p.rows, { ...src, seq: newSeq, departure_time: "" }],
+      };
+    });
+    if (targetSeq !== null) setForceExpandSeq({ seq: targetSeq, ts: Date.now() });
+    toast.success("Stop duplicated to next empty row");
+  };
+
   const bumpLocation = (name) => name && api.post("/locations/bump", { name }).catch(() => {});
   const bumpTrailer = (number, type) => number && api.post("/trailers/bump", { number, type }).catch(() => {});
   const bumpCity = (city, state) => city && state && api.post("/cities/bump", { city, state }).catch(() => {});
@@ -95,15 +126,21 @@ export default function TripSheetForm({ session, onChange }) {
 
       {/* Rows */}
       <div className="space-y-3">
+        <div className="text-[10px] uppercase tracking-wider text-[var(--tm-text-muted)] flex items-center gap-2">
+          <Copy className="h-3 w-3" />
+          <span>Tip: long-press a stop to duplicate it into the next empty row</span>
+        </div>
         {local.rows.map((row, idx) => (
           <RowCard
             key={idx}
             row={row}
             hasTemp={hasTemp}
+            forceExpandSeq={forceExpandSeq}
             savedLocations={savedLocations}
             savedTrailers={savedTrailers}
             savedCities={savedCities}
             onChange={(patch) => updateRow(idx, patch)}
+            onDuplicate={() => duplicateRow(idx)}
             onLocationBlur={() => bumpLocation(row.location_name)}
             onTrailerBlur={() => bumpTrailer(row.trailer_number, row.trailer_type)}
             onCityBlur={() => bumpCity(row.stop_city, row.stop_state)}
@@ -166,9 +203,25 @@ function MetaInput({ label, value, onChange, testId }) {
   );
 }
 
-function RowCard({ row, hasTemp, savedLocations, savedTrailers, savedCities, onChange, onLocationBlur, onTrailerBlur, onCityBlur }) {
+function RowCard({ row, hasTemp, forceExpandSeq, savedLocations, savedTrailers, savedCities, onChange, onDuplicate, onLocationBlur, onTrailerBlur, onCityBlur }) {
   const [expanded, setExpanded] = useState(row.seq <= 1);
   const [tempWarn, setTempWarn] = useState(false);
+
+  // Auto-expand when our seq is targeted (e.g., after duplicate)
+  useEffect(() => {
+    if (forceExpandSeq && forceExpandSeq.seq === row.seq) setExpanded(true);
+  }, [forceExpandSeq, row.seq]);
+
+  const longPressHandlers = useLongPress(
+    () => {
+      if (!hasData) {
+        toast.message("Long-press a stop with data to duplicate it");
+        return;
+      }
+      onDuplicate?.();
+    },
+    { delayMs: 500, onClick: () => setExpanded((e) => !e) }
+  );
 
   const tempChange = (delta) => {
     const current = row.temperature ?? 35;
@@ -198,12 +251,12 @@ function RowCard({ row, hasTemp, savedLocations, savedTrailers, savedCities, onC
   const hasData = row.event_code || row.location_name || row.stop_city || row.trailer_number;
 
   return (
-    <div className={`bg-white border rounded-md transition-colors shadow-sm ${hasData ? "border-[var(--tm-blue)]" : "border-[var(--tm-border)]"}`}>
+    <div className={`bg-white border rounded-md transition-colors shadow-sm select-none ${hasData ? "border-[var(--tm-blue)]" : "border-[var(--tm-border)]"}`}>
       <button
         type="button"
-        onClick={() => setExpanded((e) => !e)}
         data-testid={`row-toggle-${row.seq}`}
         className="w-full flex items-center justify-between p-4 text-left"
+        {...longPressHandlers}
       >
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 flex items-center justify-center bg-[var(--tm-orange)] rounded-md font-black text-white">
@@ -224,6 +277,20 @@ function RowCard({ row, hasTemp, savedLocations, savedTrailers, savedCities, onC
 
       {expanded && (
         <div className="p-4 pt-0 space-y-3 border-t border-[var(--tm-border)]">
+          {hasData && (
+            <div className="flex justify-end pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={(e) => { e.stopPropagation(); onDuplicate?.(); }}
+                data-testid={`row-${row.seq}-duplicate`}
+                className="h-8 text-xs bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md"
+              >
+                <Copy className="h-3 w-3 mr-1" /> Duplicate stop
+              </Button>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Event Code</Label>

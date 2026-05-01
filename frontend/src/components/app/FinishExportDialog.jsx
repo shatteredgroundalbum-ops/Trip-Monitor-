@@ -17,9 +17,23 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
   const [recipient, setRecipient] = useState(profile?.dispatcher_email || "");
   const [busy, setBusy] = useState(false);
   const [busyStep, setBusyStep] = useState("");
+  const [progress, setProgress] = useState(0);
   const paperRef = useRef(null);
 
   const baseName = `TripSheet_${session.order_number || "NO-ORDER"}_${(profile?.full_name || "driver").replace(/\s+/g, "_")}`;
+
+  /** Animate progress smoothly toward target over duration ms. Returns when done. */
+  const animateTo = (start, end, durationMs) =>
+    new Promise((resolve) => {
+      const startedAt = performance.now();
+      const tick = (now) => {
+        const t = Math.min(1, (now - startedAt) / durationMs);
+        setProgress(Math.round(start + (end - start) * t));
+        if (t < 1) requestAnimationFrame(tick);
+        else resolve();
+      };
+      requestAnimationFrame(tick);
+    });
 
   const captureCanvas = async () => {
     const el = paperRef.current;
@@ -34,28 +48,43 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const exportJpeg = async () => {
-    const canvas = await captureCanvas();
-    return await new Promise((resolve) => {
-      canvas.toBlob((blob) => {
-        if (blob) downloadBlob(blob, `${baseName}.jpg`);
-        resolve(blob);
-      }, "image/jpeg", 0.95);
-    });
+  /** Run a phase: animate progress steadily, run actual work, then snap to phase end. */
+  const runPhase = async (label, work, fromPct, toPct, animateMs = 1200) => {
+    setBusyStep(label);
+    // Start a soft animation from fromPct → ~80% of phase range while work runs
+    const softTo = fromPct + (toPct - fromPct) * 0.85;
+    let canceled = false;
+    const animPromise = animateTo(fromPct, softTo, animateMs).then(() => { canceled = true; });
+    const result = await work();
+    // If anim still running, jump to phase end
+    if (!canceled) await animPromise;
+    setProgress(toPct);
+    return result;
   };
 
-  const exportPdf = async () => {
-    const canvas = await captureCanvas();
-    const imgData = canvas.toDataURL("image/jpeg", 0.95);
-    const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "letter" });
-    const pageW = pdf.internal.pageSize.getWidth();
-    const pageH = pdf.internal.pageSize.getHeight();
-    const ratio = canvas.width / canvas.height;
-    let w = pageW - 40;
-    let h = w / ratio;
-    if (h > pageH - 40) { h = pageH - 40; w = h * ratio; }
-    pdf.addImage(imgData, "JPEG", (pageW - w) / 2, 20, w, h);
-    pdf.save(`${baseName}.pdf`);
+  const exportJpegPhase = async (fromPct, toPct) => {
+    return runPhase("Generating JPEG...", async () => {
+      const canvas = await captureCanvas();
+      const blob = await new Promise((res) => canvas.toBlob((b) => res(b), "image/jpeg", 0.95));
+      if (blob) downloadBlob(blob, `${baseName}.jpg`);
+      return blob;
+    }, fromPct, toPct, 1500);
+  };
+
+  const exportPdfPhase = async (fromPct, toPct) => {
+    return runPhase("Generating PDF...", async () => {
+      const canvas = await captureCanvas();
+      const imgData = canvas.toDataURL("image/jpeg", 0.95);
+      const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "letter" });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const ratio = canvas.width / canvas.height;
+      let w = pageW - 40;
+      let h = w / ratio;
+      if (h > pageH - 40) { h = pageH - 40; w = h * ratio; }
+      pdf.addImage(imgData, "JPEG", (pageW - w) / 2, 20, w, h);
+      pdf.save(`${baseName}.pdf`);
+    }, fromPct, toPct, 1800);
   };
 
   const openMailApp = () => {
@@ -87,33 +116,40 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
       return;
     }
     setBusy(true);
+    setProgress(0);
     try {
-      if (doJpeg) {
-        setBusyStep("Generating JPEG...");
-        toast.loading("Saving JPEG to your device...", { id: "exp" });
-        await exportJpeg();
+      // Compute phase budgets so total reaches 100
+      const phases = [];
+      if (doJpeg) phases.push("jpeg");
+      if (doPdf) phases.push("pdf");
+      if (doEmail) phases.push("email");
+      const slice = Math.floor(95 / phases.length); // leave room for final 5%
+      let cursor = 0;
+      for (const phase of phases) {
+        const from = cursor;
+        const to = cursor + slice;
+        if (phase === "jpeg") await exportJpegPhase(from, to);
+        else if (phase === "pdf") await exportPdfPhase(from, to);
+        else if (phase === "email") {
+          await runPhase("Opening mail app...", async () => {
+            await new Promise((r) => setTimeout(r, 250));
+            openMailApp();
+          }, from, to, 600);
+        }
+        cursor = to;
       }
-      if (doPdf) {
-        setBusyStep("Generating PDF...");
-        toast.loading("Saving PDF to your device...", { id: "exp" });
-        await exportPdf();
-      }
-      if (doEmail) {
-        setBusyStep("Opening mail app...");
-        toast.loading("Opening your mail app...", { id: "exp" });
-        // tiny delay so the user sees the toast before app switch
-        await new Promise((r) => setTimeout(r, 250));
-        openMailApp();
-      }
+      setBusyStep("Finishing trip...");
       try { await api.post(`/trip-sessions/${session.session_id}/finish`); } catch { /* ignore */ }
-      toast.success("Trip sheet exported & finished", { id: "exp" });
+      setProgress(100);
+      toast.success("Trip sheet exported & finished");
       onOpenChange(false);
       setTimeout(() => window.location.reload(), 600);
     } catch (e) {
-      toast.error("Export failed: " + (e?.message || "unknown"), { id: "exp" });
+      toast.error("Export failed: " + (e?.message || "unknown"));
     } finally {
       setBusy(false);
       setBusyStep("");
+      setProgress(0);
     }
   };
 
@@ -135,13 +171,13 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
         <div className="space-y-3 mt-2">
           <Option icon={<Image className="h-5 w-5" />} label="Save as JPEG"
             description="Downloads the trip sheet image to your device"
-            checked={doJpeg} onCheckedChange={setDoJpeg} testId="export-jpeg" />
+            checked={doJpeg} onCheckedChange={setDoJpeg} testId="export-jpeg" disabled={busy} />
           <Option icon={<FileText className="h-5 w-5" />} label="Export as PDF"
             description="Letter-size PDF identical to the paper form"
-            checked={doPdf} onCheckedChange={setDoPdf} testId="export-pdf" />
+            checked={doPdf} onCheckedChange={setDoPdf} testId="export-pdf" disabled={busy} />
           <Option icon={<Mail className="h-5 w-5" />} label="Open email app"
             description="Opens your mail app with subject and body pre-filled"
-            checked={doEmail} onCheckedChange={setDoEmail} testId="export-email" />
+            checked={doEmail} onCheckedChange={setDoEmail} testId="export-email" disabled={busy} />
 
           {doEmail && (
             <div data-testid="email-recipient-row" className="pl-4">
@@ -152,6 +188,7 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
                 placeholder="dispatcher@example.com"
                 value={recipient}
                 onChange={(e) => setRecipient(e.target.value)}
+                disabled={busy}
                 className="bg-white border-[var(--tm-border)] text-[var(--tm-navy)] h-12 rounded-md"
               />
               {profile?.dispatcher_email && recipient !== profile.dispatcher_email && (
@@ -167,12 +204,32 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
           )}
         </div>
 
+        {busy && (
+          <div data-testid="export-progress" className="mt-3 space-y-2" aria-live="polite">
+            <div className="flex items-center justify-between text-xs">
+              <span className="inline-flex items-center gap-2 text-[var(--tm-navy)] font-bold">
+                <Loader2 className="h-4 w-4 animate-spin text-[var(--tm-orange)]" />
+                {busyStep || "Working..."}
+              </span>
+              <span data-testid="export-progress-pct" className="font-mono text-[var(--tm-text-soft)] tabular-nums">
+                {progress}%
+              </span>
+            </div>
+            <div className="h-2 w-full bg-[var(--tm-surface-2)] rounded-full overflow-hidden">
+              <div
+                className="h-full bg-[var(--tm-orange)] transition-[width] duration-150 ease-out"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         <Button data-testid="finish-export-btn" onClick={handleFinish} disabled={busy}
           className="w-full h-14 mt-4 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md disabled:opacity-90">
           {busy ? (
-            <span className="inline-flex items-center gap-2" data-testid="export-busy-label">
+            <span className="inline-flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" />
-              {busyStep || "Working..."}
+              {progress}% — {busyStep || "Working..."}
             </span>
           ) : (
             "Finish & Export"
@@ -188,14 +245,16 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
   );
 }
 
-function Option({ icon, label, description, checked, onCheckedChange, testId }) {
+function Option({ icon, label, description, checked, onCheckedChange, testId, disabled }) {
   return (
     <label
-      className={`flex items-start gap-3 p-4 rounded-md border cursor-pointer transition-colors ${
+      className={`flex items-start gap-3 p-4 rounded-md border transition-colors ${
+        disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+      } ${
         checked ? "bg-[var(--tm-surface)] border-[var(--tm-orange)]" : "bg-white border-[var(--tm-border)] hover:border-[var(--tm-blue)]"
       }`}
     >
-      <Checkbox data-testid={testId} checked={checked} onCheckedChange={onCheckedChange}
+      <Checkbox data-testid={testId} checked={checked} onCheckedChange={onCheckedChange} disabled={disabled}
         className="mt-0.5 border-[var(--tm-border)] data-[state=checked]:bg-[var(--tm-orange)] data-[state=checked]:border-[var(--tm-orange)]" />
       <div className="flex-1">
         <div className="flex items-center gap-2 font-bold text-[var(--tm-navy)]">
