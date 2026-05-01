@@ -1,18 +1,22 @@
 import React, { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { Loader2 } from "lucide-react";
+import { Loader2, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import SocialAuthRow from "../components/app/SocialAuthRow";
-import { getLastEmail } from "../lib/auth-storage";
+import { getLastEmail, getSelectedRole } from "../lib/auth-storage";
+import { ROLE_LABEL } from "../data/constants";
 
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 export default function Login() {
+  const navigate = useNavigate();
   const [entered, setEntered] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
   const [email, setEmail] = useState(getLastEmail());
   const [password, setPassword] = useState("");
+  const role = getSelectedRole();
+  const roleLabel = ROLE_LABEL[role];
 
   useEffect(() => {
     const t = setTimeout(() => setEntered(true), 60);
@@ -68,12 +72,26 @@ export default function Login() {
       />
 
       <div className="relative z-10 flex-1 flex flex-col justify-center p-7 md:p-12 max-w-md mx-auto w-full">
+        <button
+          type="button"
+          data-testid="login-back-to-role"
+          onClick={() => navigate("/")}
+          className="self-start mb-4 inline-flex items-center gap-1 text-xs text-[var(--tm-text-soft)] hover:text-[var(--tm-blue)] font-bold uppercase tracking-[0.2em]"
+        >
+          <ArrowLeft className="h-3 w-3" /> Change role
+        </button>
+
         <div className="space-y-2 mb-7">
-          <div data-testid="signin-overline" className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.32em] font-bold">
+          <div data-testid="signin-overline" className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.32em] font-bold flex-wrap">
             <span className="h-px w-8 bg-[var(--tm-blue)]" aria-hidden />
             <span className="text-[var(--tm-orange)]">Driver Edition</span>
             <span className="text-[var(--tm-text-muted)]">·</span>
             <span className="text-[var(--tm-blue)]">Sign in</span>
+            {roleLabel && (
+              <span data-testid="login-role-chip" className="px-2 py-0.5 ml-1 rounded-full bg-[var(--tm-navy)] text-white text-[9px] tracking-[0.2em]">
+                {roleLabel}
+              </span>
+            )}
           </div>
           <h1
             data-testid="signin-headline"

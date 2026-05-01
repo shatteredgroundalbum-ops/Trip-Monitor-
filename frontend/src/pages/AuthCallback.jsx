@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { markSignedUp } from "../lib/auth-storage";
+import { markSignedUp, getSelectedRole, clearSelectedRole } from "../lib/auth-storage";
 
 export default function AuthCallback() {
   const navigate = useNavigate();
@@ -26,9 +26,21 @@ export default function AuthCallback() {
       try {
         const res = await api.post("/auth/session", { session_id: sessionId });
         markSignedUp(res.data?.email);
-        setUser(res.data);
+
+        // If a role was picked on the entry screen, persist it to the user record.
+        const pendingRole = getSelectedRole();
+        let userPayload = res.data;
+        if (pendingRole) {
+          try {
+            await api.post("/auth/role", { role: pendingRole });
+            userPayload = { ...userPayload, role: pendingRole };
+          } catch { /* non-fatal */ }
+          clearSelectedRole();
+        }
+
+        setUser(userPayload);
         window.history.replaceState(null, "", "/dashboard");
-        navigate("/dashboard", { replace: true, state: { user: res.data } });
+        navigate("/dashboard", { replace: true, state: { user: userPayload } });
       } catch (e) {
         setError(e?.response?.data?.detail || "Authentication failed");
         setTimeout(() => navigate("/", { replace: true }), 2000);

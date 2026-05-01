@@ -6,11 +6,13 @@ import DriverProfileDialog from "../components/app/DriverProfileDialog";
 import SessionWizard from "../components/app/SessionWizard";
 import TripSheetForm from "../components/app/TripSheetForm";
 import FinishExportDialog from "../components/app/FinishExportDialog";
+import AchievementsPanel from "../components/app/AchievementsPanel";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
-import { LogOut, UserCog, CheckCircle2, Save, Eye, History, Truck, MapPin, Route, ListChecks, ArrowRight, Plus } from "lucide-react";
+import { LogOut, UserCog, CheckCircle2, Save, Eye, History, Truck, Gauge, Route, ListChecks, ArrowRight, Plus } from "lucide-react";
 import PaperSheet from "../components/app/PaperSheet";
 import { BrandLockupCompact } from "../components/app/BrandLogo";
+import { ROLE_LABEL } from "../data/constants";
 import { toast } from "sonner";
 
 export default function Dashboard() {
@@ -20,6 +22,7 @@ export default function Dashboard() {
   const [session, setSession] = useState(null);
   const [recentTrips, setRecentTrips] = useState([]);
   const [stats, setStats] = useState(null);
+  const [achievements, setAchievements] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [showContinue, setShowContinue] = useState(false);
@@ -34,11 +37,13 @@ export default function Dashboard() {
 
   const refreshStats = async () => {
     try {
-      const [s, recent] = await Promise.all([
+      const [s, recent, ach] = await Promise.all([
         api.get("/stats"),
         api.get("/trip-sessions"),
+        api.get("/achievements"),
       ]);
       setStats(s.data);
+      setAchievements(ach.data);
       const finished = (recent.data || []).filter((t) => t.status === "finished").slice(0, 3);
       setRecentTrips(finished);
     } catch { /* ignore */ }
@@ -136,7 +141,14 @@ export default function Dashboard() {
       <main className="max-w-5xl mx-auto px-4 md:px-6 py-6 pb-56">
         {/* Greeting */}
         <div className="mb-6">
-          <div className="text-[10px] uppercase tracking-[0.3em] text-[var(--tm-blue)] font-bold mb-1">Dashboard</div>
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <div className="text-[10px] uppercase tracking-[0.3em] text-[var(--tm-blue)] font-bold">Dashboard</div>
+            {user?.role && ROLE_LABEL[user.role] && (
+              <span data-testid="dashboard-role-chip" className="px-2 py-0.5 rounded-full bg-[var(--tm-navy)] text-white text-[9px] tracking-[0.2em] uppercase font-bold">
+                {ROLE_LABEL[user.role]}
+              </span>
+            )}
+          </div>
           <h1 className="text-3xl md:text-4xl font-black tracking-tight text-[var(--tm-navy)]">
             Hey, {driverFirstName} 👋
           </h1>
@@ -148,11 +160,19 @@ export default function Dashboard() {
         {/* Stat cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6" data-testid="stats-grid">
           <StatCard
+            icon={<Gauge className="h-4 w-4" />}
+            label="Miles today"
+            value={fmtMiles(stats?.miles_today ?? 0)}
+            sub="rolled up from finished trips"
+            testId="stat-miles-today"
+            tone="orange"
+          />
+          <StatCard
             icon={<Route className="h-4 w-4" />}
-            label="Trips this month"
-            value={stats?.trips_this_month ?? 0}
-            sub={`${stats?.trips_total ?? 0} total`}
-            testId="stat-trips-month"
+            label="Lifetime miles"
+            value={fmtMiles(stats?.miles_lifetime ?? 0)}
+            sub={`${stats?.trips_total ?? 0} trips total`}
+            testId="stat-lifetime-miles"
             tone="blue"
           />
           <StatCard
@@ -164,14 +184,6 @@ export default function Dashboard() {
             tone="navy"
           />
           <StatCard
-            icon={<MapPin className="h-4 w-4" />}
-            label="Most-used stop"
-            value={truncate(stats?.top_location, 14) || "—"}
-            sub="learned from you"
-            testId="stat-top-location"
-            tone="orange"
-          />
-          <StatCard
             icon={<Truck className="h-4 w-4" />}
             label="Current truck"
             value={profile?.truck_number || "—"}
@@ -180,6 +192,13 @@ export default function Dashboard() {
             tone="navy"
           />
         </div>
+
+        {/* Achievements panel */}
+        {achievements && (
+          <div className="mb-6">
+            <AchievementsPanel data={achievements} />
+          </div>
+        )}
 
         {/* Active trip OR Start new trip CTA */}
         {session ? (
@@ -262,23 +281,34 @@ export default function Dashboard() {
           className="fixed left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-[var(--tm-border)]"
           style={{ bottom: 0, paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 56px)" }}
         >
-          <div className="max-w-5xl mx-auto px-4 md:px-6 py-3 flex gap-2">
-            <Button data-testid="preview-btn" variant="outline" onClick={() => setShowPreview(true)}
-              className="h-12 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
-              <Eye className="h-4 w-4 mr-1" /> Preview
-            </Button>
-            <Button data-testid="finish-btn" onClick={() => setShowFinish(true)}
-              className="flex-1 h-12 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md shadow-[0_8px_24px_-12px_rgba(255,95,21,0.55)]">
-              <CheckCircle2 className="h-4 w-4 mr-2" /> Finish &amp; Export
-            </Button>
+          <div className="max-w-5xl mx-auto px-4 md:px-6 py-3 flex flex-col gap-2">
+            {!(Number(session?.total_trip_miles) > 0) && (
+              <div data-testid="finish-miles-warning" className="text-[10px] uppercase tracking-wider font-bold text-[var(--tm-orange)] flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-[var(--tm-orange)] animate-pulse" />
+                Enter Total Trip Miles at the top before you can finish
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button data-testid="preview-btn" variant="outline" onClick={() => setShowPreview(true)}
+                className="h-12 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
+                <Eye className="h-4 w-4 mr-1" /> Preview
+              </Button>
+              <Button data-testid="finish-btn"
+                onClick={() => setShowFinish(true)}
+                disabled={!(Number(session?.total_trip_miles) > 0)}
+                className="flex-1 h-12 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md shadow-[0_8px_24px_-12px_rgba(255,95,21,0.55)] disabled:opacity-60 disabled:cursor-not-allowed">
+                <CheckCircle2 className="h-4 w-4 mr-2" /> Finish &amp; Export
+              </Button>
+            </div>
           </div>
         </div>
       )}
 
-      <DriverProfileDialog open={showProfile} initial={profile}
+      <DriverProfileDialog open={showProfile} initial={profile} role={user?.role}
         onSaved={(p) => {
           setProfile(p);
           setShowProfile(false);
+          refreshStats();
         }} />
 
       {profile && (
@@ -362,6 +392,13 @@ function StatCard({ icon, label, value, sub, testId, tone = "navy" }) {
 function truncate(s, n) {
   if (!s) return s;
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+function fmtMiles(n) {
+  const v = Number(n) || 0;
+  if (v >= 1_000_000) return (v / 1_000_000).toFixed(v % 1_000_000 === 0 ? 0 : 1) + "M";
+  if (v >= 10_000) return Math.round(v / 1000) + "K";
+  return v.toLocaleString();
 }
 
 function formatDate(iso) {

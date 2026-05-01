@@ -138,6 +138,12 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
       toast.error("Pick at least one export option");
       return;
     }
+    const miles = Number(session?.total_trip_miles || 0);
+    if (!miles || miles <= 0) {
+      toast.error("Enter the round-trip total miles before finishing");
+      onOpenChange(false);
+      return;
+    }
     setBusy(true);
     setProgress(0);
     try {

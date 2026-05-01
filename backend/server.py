@@ -32,24 +32,49 @@ EMERGENT_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/
 
 
 # ============ MODELS ============
+ALLOWED_ROLES = {"company_driver", "owner_operator", "lto"}
+
+
 class User(BaseModel):
     user_id: str
     email: str
     name: str
     picture: Optional[str] = None
+    role: Optional[str] = None  # company_driver | owner_operator | lto
 
 
 class DriverProfile(BaseModel):
     user_id: Optional[str] = None
     full_name: str = Field(min_length=1, max_length=120)
-    home_terminal: str = Field(min_length=1, max_length=120)
-    time_zone: str = Field(min_length=1, max_length=80)
-    driver_id: str = Field(min_length=1, max_length=40)
-    truck_assignment_type: str  # "Permanent" or "Slip Seat"
+    # Legacy / RTI-specific fields — kept optional for backward compat
+    home_terminal: Optional[str] = Field(default=None, max_length=120)
+    time_zone: Optional[str] = Field(default="America/Chicago", max_length=80)
+    driver_id: Optional[str] = Field(default=None, max_length=40)
+    # Driver type — accepts new + legacy values
+    truck_assignment_type: Optional[str] = None  # "Permanent" or "Slip Seat" (legacy "Slip-Seating" also accepted)
+    # Personal info (new spec)
+    address: Optional[str] = Field(default=None, max_length=200)
+    city: Optional[str] = Field(default=None, max_length=80)
+    state: Optional[str] = Field(default=None, max_length=40)
+    zip_code: Optional[str] = Field(default=None, max_length=15)
+    phone: Optional[str] = Field(default=None, max_length=40)
+    # Vehicle (new spec)
+    company_id: Optional[str] = Field(default=None, max_length=80)
+    truck_make: Optional[str] = Field(default=None, max_length=80)
+    truck_color: Optional[str] = Field(default=None, max_length=40)
+    truck_color_other: Optional[str] = Field(default=None, max_length=40)
     truck_number: Optional[str] = Field(default=None, max_length=40)
     license_plate: Optional[str] = Field(default=None, max_length=40)
+    # Experience (new spec)
+    years_experience: Optional[int] = Field(default=None, ge=0, le=80)
+    lifetime_miles: Optional[int] = Field(default=None, ge=0, le=20_000_000)
+    # Existing legacy
     home_address: Optional[str] = Field(default=None, max_length=200)
     dispatcher_email: Optional[EmailStr] = None
+
+
+class RoleUpdate(BaseModel):
+    role: str
 
 
 class TripRow(BaseModel):
@@ -83,6 +108,7 @@ class TripSession(BaseModel):
     truck_number: Optional[str] = None
     order_number: str
     bol_number: str
+    total_trip_miles: Optional[int] = None  # required at finish
     rows: List[TripRow]
     road_expenses: List[RoadExpense]
     notes: str = ""
@@ -117,6 +143,15 @@ async def get_current_user(request: Request) -> User:
     if not user_doc:
         raise HTTPException(status_code=401, detail="User not found")
     return User(**user_doc)
+
+
+@api_router.post("/auth/role")
+async def set_user_role(payload: RoleUpdate, user: User = Depends(get_current_user)):
+    role = (payload.role or "").strip().lower()
+    if role not in ALLOWED_ROLES:
+        raise HTTPException(status_code=422, detail=f"role must be one of {sorted(ALLOWED_ROLES)}")
+    await db.users.update_one({"user_id": user.user_id}, {"$set": {"role": role}})
+    return {"user_id": user.user_id, "role": role}
 
 
 @api_router.post("/auth/session")
@@ -186,10 +221,12 @@ async def get_profile(user: User = Depends(get_current_user)):
 
 @api_router.post("/profile")
 async def save_profile(profile: DriverProfile, user: User = Depends(get_current_user)):
-    if profile.truck_assignment_type not in ("Permanent", "Slip Seat"):
+    # Normalize driver-type aliases
+    norm = {"Slip-Seating": "Slip Seat", "Slip Seating": "Slip Seat", "Permanent Driver": "Permanent"}
+    if profile.truck_assignment_type:
+        profile.truck_assignment_type = norm.get(profile.truck_assignment_type, profile.truck_assignment_type)
+    if profile.truck_assignment_type and profile.truck_assignment_type not in ("Permanent", "Slip Seat"):
         raise HTTPException(status_code=422, detail="truck_assignment_type must be 'Permanent' or 'Slip Seat'")
-    if profile.truck_assignment_type == "Permanent" and not (profile.truck_number or "").strip():
-        raise HTTPException(status_code=422, detail="truck_number is required for Permanent assignment")
 
     data = profile.model_dump(exclude_none=False)
     data["user_id"] = user.user_id  # always owner
@@ -271,7 +308,7 @@ async def update_session(session_id: str, payload: Dict[str, Any], user: User = 
         raise HTTPException(status_code=409, detail="Session already finished")
 
     # Whitelist allowed fields
-    allowed = {"rows", "road_expenses", "notes", "order_number", "bol_number", "truck_number"}
+    allowed = {"rows", "road_expenses", "notes", "order_number", "bol_number", "truck_number", "total_trip_miles"}
     update_doc = {k: v for k, v in payload.items() if k in allowed}
     # Allow status only when transitioning to "abandoned"
     if payload.get("status") == "abandoned":
@@ -297,6 +334,16 @@ async def finish_session(session_id: str, user: User = Depends(get_current_user)
         raise HTTPException(status_code=404, detail="Not found")
     if existing.get("status") == "finished":
         raise HTTPException(status_code=409, detail="Session already finished")
+    miles = existing.get("total_trip_miles")
+    try:
+        miles_int = int(miles) if miles not in (None, "") else 0
+    except (TypeError, ValueError):
+        miles_int = 0
+    if miles_int <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="total_trip_miles is required (round-trip miles) before a trip can be finished",
+        )
     now = datetime.now(timezone.utc).isoformat()
     await db.trip_sessions.update_one(
         {"session_id": session_id, "user_id": user.user_id},
@@ -404,6 +451,7 @@ async def get_stats(user: User = Depends(get_current_user)):
     """Aggregate driver stats for the dashboard tiles."""
     now = datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
 
     finished_total = await db.trip_sessions.count_documents(
         {"user_id": user.user_id, "status": "finished"}
@@ -428,6 +476,23 @@ async def get_stats(user: User = Depends(get_current_user)):
     async for doc in cursor:
         total_stops = doc.get("n", 0)
 
+    # Miles aggregation (sum of total_trip_miles on finished trips)
+    miles_pipeline_total = [
+        {"$match": {"user_id": user.user_id, "status": "finished"}},
+        {"$group": {"_id": None, "miles": {"$sum": {"$ifNull": ["$total_trip_miles", 0]}}}},
+    ]
+    miles_total_in_app = 0
+    async for doc in db.trip_sessions.aggregate(miles_pipeline_total):
+        miles_total_in_app = int(doc.get("miles") or 0)
+
+    miles_pipeline_today = [
+        {"$match": {"user_id": user.user_id, "status": "finished", "finished_at": {"$gte": today_start}}},
+        {"$group": {"_id": None, "miles": {"$sum": {"$ifNull": ["$total_trip_miles", 0]}}}},
+    ]
+    miles_today = 0
+    async for doc in db.trip_sessions.aggregate(miles_pipeline_today):
+        miles_today = int(doc.get("miles") or 0)
+
     # Most-used location across all rows
     top_loc_pipeline = [
         {"$match": {"user_id": user.user_id}},
@@ -449,12 +514,89 @@ async def get_stats(user: User = Depends(get_current_user)):
         sort=[("finished_at", -1)],
     )
 
+    # Profile baseline miles
+    profile_doc = await db.driver_profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
+    baseline_miles = int(profile_doc.get("lifetime_miles") or 0)
+
     return {
         "trips_total": finished_total,
         "trips_this_month": finished_month,
         "total_stops": total_stops,
         "top_location": top_location,
         "last_trip": last_finished,
+        "miles_today": miles_today,
+        "miles_in_app": miles_total_in_app,
+        "miles_lifetime": baseline_miles + miles_total_in_app,
+    }
+
+
+# ============ ACHIEVEMENTS ============
+MILES_TIERS = [100_000, 250_000, 500_000, 1_000_000, 2_000_000, 3_000_000, 5_000_000]
+YEARS_TIERS = [1, 5, 10, 15, 20, 25, 30]
+TRIPS_TIERS = [10, 50, 100, 250, 500, 1000]
+
+
+def _miles_label(n: int) -> str:
+    if n >= 1_000_000:
+        whole = n // 1_000_000
+        return f"{whole}M Miles"
+    return f"{n // 1000}K Miles"
+
+
+@api_router.get("/achievements")
+async def get_achievements(user: User = Depends(get_current_user)):
+    """Compute earned + locked badges from profile baseline + finished trips."""
+    profile_doc = await db.driver_profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
+    years = int(profile_doc.get("years_experience") or 0)
+    baseline = int(profile_doc.get("lifetime_miles") or 0)
+    finished_total = await db.trip_sessions.count_documents(
+        {"user_id": user.user_id, "status": "finished"}
+    )
+    miles_in_app = 0
+    async for doc in db.trip_sessions.aggregate([
+        {"$match": {"user_id": user.user_id, "status": "finished"}},
+        {"$group": {"_id": None, "miles": {"$sum": {"$ifNull": ["$total_trip_miles", 0]}}}},
+    ]):
+        miles_in_app = int(doc.get("miles") or 0)
+    total_miles = baseline + miles_in_app
+
+    badges = []
+    for tier in MILES_TIERS:
+        badges.append({
+            "id": f"miles_{tier}",
+            "category": "miles",
+            "label": _miles_label(tier),
+            "threshold": tier,
+            "progress": min(total_miles, tier),
+            "earned": total_miles >= tier,
+        })
+    for tier in YEARS_TIERS:
+        badges.append({
+            "id": f"years_{tier}",
+            "category": "years",
+            "label": f"{tier} Year{'s' if tier != 1 else ''} of Service",
+            "threshold": tier,
+            "progress": min(years, tier),
+            "earned": years >= tier,
+        })
+    for tier in TRIPS_TIERS:
+        badges.append({
+            "id": f"trips_{tier}",
+            "category": "trips",
+            "label": f"{tier} Trips",
+            "threshold": tier,
+            "progress": min(finished_total, tier),
+            "earned": finished_total >= tier,
+        })
+
+    earned_count = sum(1 for b in badges if b["earned"])
+    return {
+        "years_experience": years,
+        "lifetime_miles": total_miles,
+        "trips_total": finished_total,
+        "earned_count": earned_count,
+        "total_count": len(badges),
+        "badges": badges,
     }
 
 

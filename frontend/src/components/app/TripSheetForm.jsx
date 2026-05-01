@@ -51,6 +51,7 @@ export default function TripSheetForm({ session, onChange }) {
         rows: local.rows, road_expenses: local.road_expenses, notes: local.notes,
         order_number: local.order_number, bol_number: local.bol_number,
         truck_number: local.truck_number,
+        total_trip_miles: local.total_trip_miles ?? null,
       }).then(() => onChange?.(local)).catch(() => {});
     }, 600);
     return () => clearTimeout(t);
@@ -137,6 +138,46 @@ export default function TripSheetForm({ session, onChange }) {
 
   return (
     <div className="space-y-6">
+      {/* Total Trip Miles — required at finish (round trip) */}
+      <div
+        data-testid="trip-miles-card"
+        className={`rounded-md p-5 shadow-sm border-2 ${
+          (Number(local.total_trip_miles) || 0) > 0
+            ? "bg-[var(--tm-blue)]/5 border-[var(--tm-blue)]"
+            : "bg-[var(--tm-orange)]/5 border-[var(--tm-orange)]"
+        }`}
+      >
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-orange)] font-bold">
+              Required
+            </div>
+            <div className="text-base font-bold text-[var(--tm-navy)]">Total Trip Miles (Round Trip)</div>
+            <div className="text-xs text-[var(--tm-text-soft)]">
+              Enter total miles for the entire trip — we&apos;ll roll it into your daily totals & milestones.
+            </div>
+          </div>
+          {(Number(local.total_trip_miles) || 0) > 0 && (
+            <span className="text-[10px] uppercase tracking-wider text-[var(--tm-blue)] font-bold whitespace-nowrap">
+              ✓ Saved
+            </span>
+          )}
+        </div>
+        <Input
+          data-testid="trip-miles-input"
+          type="number"
+          inputMode="numeric"
+          min="0"
+          placeholder="e.g. 542"
+          value={local.total_trip_miles ?? ""}
+          onChange={(e) => {
+            const v = e.target.value;
+            setLocal((p) => ({ ...p, total_trip_miles: v === "" ? null : Math.max(0, Number(v)) }));
+          }}
+          className="h-14 text-2xl font-black bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md"
+        />
+      </div>
+
       {/* Meta card */}
       <div className="bg-[var(--tm-surface)] border border-[var(--tm-border)] rounded-md p-5 space-y-3 shadow-sm">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

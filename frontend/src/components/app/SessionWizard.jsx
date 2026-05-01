@@ -42,7 +42,7 @@ export default function SessionWizard({ open, profile, onCreate, onCancel }) {
       session_type: sessionType,
       load_type: finalLoadType,
       has_temperature: hasTemperature,
-      driver_id: profile.driver_id,
+      driver_id: profile?.driver_id || profile?.company_id || "",
       truck_number: truckNumber || profile?.truck_number || "",
       order_number: orderNumber,
       bol_number: bolNumber,
@@ -181,8 +181,8 @@ export default function SessionWizard({ open, profile, onCreate, onCancel }) {
             <h2 className="text-2xl font-black tracking-tight">Trip Details</h2>
             <div className="space-y-3">
               <div className="p-3 bg-white border border-[var(--tm-border)] rounded-md">
-                <div className="text-[10px] uppercase tracking-wider text-[var(--tm-text-muted)] mb-1">Driver ID (from profile)</div>
-                <div data-testid="wizard-driverid" className="font-bold">{profile?.driver_id}</div>
+                <div className="text-[10px] uppercase tracking-wider text-[var(--tm-text-muted)] mb-1">Driver / Company ID (from profile)</div>
+                <div data-testid="wizard-driverid" className="font-bold">{profile?.driver_id || profile?.company_id || "—"}</div>
               </div>
 
               {profile?.truck_assignment_type === "Slip Seat" && (

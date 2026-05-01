@@ -1,0 +1,64 @@
+{
+  "summary": "Iter 7 testing complete. BACKEND: 19/19 new pytest cases PASS in /app/backend/tests/test_iter7_role_achievements_miles.py covering /api/auth/role validation (401/422/200), /api/profile new shape persistence + legacy 'Slip-Seating' alias coercion + neg years/miles 422, trip finish miles guard (422 missing/0, 200 with positive int), /api/stats miles_today/miles_in_app/miles_lifetime, and /api/achievements (>=6 earned for years=12+lifetime=850k, locked progress<threshold, 20 badges total). FRONTEND: RoleSelection page renders all 3 role buttons cleanly with NO 'RTI' anywhere on /, /signup, /login, or /dashboard. Click on role-company_driver navigates to /signup, persists tm_selected_role='company_driver' in localStorage, and shows signup-role-chip ('Company Driver' rendered uppercase via CSS uppercase class). signup-back-to-role returns to /. After setting tm_has_signed_up_before, click on role-lto routes to /login showing login-role-chip. Dashboard with seeded user (role=company_driver, profile years_experience=12, lifetime_miles=850000) renders dashboard-role-chip + all 4 stat tiles (stat-miles-today, stat-lifetime-miles=850K, stat-total-stops, stat-truck=T7) + achievements-panel with achievements-earned='6'. trip-miles-card and trip-miles-input render at top of TripSheetForm; finish-btn is disabled and finish-miles-warning visible while miles is empty. RTI string only present inside hidden paper-sheet (not asserted but not seen on visible body).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AchievementsPanel.jsx",
+        "issue": "Click on achievements-toggle did not expand grid in our run (6 badges before AND after click). Likely caused by the 'Continue current session?' Radix dialog overlay re-mounting and intercepting pointer events on Dashboard. Toggle button itself is wired correctly (setExpanded toggle); when the dialog is closed the toggle works in dev. RECOMMEND: dismiss/close the continue-dialog on Dashboard mount path before allowing click-throughs, OR raise the panel z-index above the Radix overlay (or simply ensure tests close the dialog first via continue-yes/continue-discard buttons rather than Escape).",
+        "selector": "[data-testid='achievements-toggle']",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "Dashboard.jsx + FinishExportDialog.jsx",
+        "issue": "After typing 250 into trip-miles-input and waiting 2.2s for the auto-save debounce, finish-btn remained disabled and finish-miles-warning remained visible in our automated run. This may be the same overlay-intercept issue (continue-dialog open during input), OR the Dashboard's finish-btn disabled flag may be reading from server-state (session.total_trip_miles) but not from local TripSheetForm pending state until next /api/trip-sessions/active refetch. RECOMMEND: verify the disabled prop reads from the live form state debounced into session, and ensure dashboard refreshes session after the PUT completes (or expose a local 'milesEntered' boolean from TripSheetForm via callback).",
+        "selector": "[data-testid='finish-btn']",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "TripSheetForm",
+        "issues": ["No data-testid on the meta info card (DRIVER ID/TRUCK#/ORDER#/BOL# block). Adding data-testid='trip-meta-card' would make automated above/below ordering checks deterministic. Visually verified the trip-miles-card sits at the top, ABOVE the meta block — spec satisfied."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter7_role_achievements_miles.py",
+    "/app/test_reports/pytest/iter7_results.xml"
+  ],
+  "action_items": [
+    "Investigate AchievementsPanel toggle behavior on Dashboard when an active trip + continue-dialog is mounted; ensure the dialog overlay does not block interaction with elements behind it (or auto-close it before user can interact).",
+    "Verify finish-btn disabled state updates within ~1.5s of typing miles when an active session exists. May require: TripSheetForm to optimistically update parent dashboard state on debounced save, or Dashboard to re-fetch /api/trip-sessions/active on save success.",
+    "OPTIONAL: add data-testid='trip-meta-card' to the meta info row in TripSheetForm.jsx for deterministic ordering tests.",
+    "OPTIONAL: add data-testid='continue-dialog-yes' / 'continue-dialog-no' on the SESSION IN PROGRESS dialog buttons so automation can close it cleanly."
+  ],
+  "critical_code_review_comments": [
+    "Backend ALLOWED_ROLES set is correctly enforced lowercase + 422 on garbage; role persisted on user doc. Confirmed end-to-end via mongosh.",
+    "DriverProfile model: ge=0/le=80 on years_experience and ge=0/le=20_000_000 on lifetime_miles produce clean 422 with helpful Pydantic messages.",
+    "Profile alias normalization map covers 'Slip-Seating' and 'Slip Seating' and 'Permanent Driver' — verified Slip-Seating round-trips to 'Slip Seat'.",
+    "trip_sessions/finish miles guard: parses int defensively (try/except), 0/None/empty all yield 422. Correct.",
+    "/api/stats miles_lifetime = profile.lifetime_miles + sum(finished trips total_trip_miles). Verified via aggregation pipeline + GET response.",
+    "/api/achievements pure derivation from profile + finished trips — deterministic, no DB write. Total badges = MILES_TIERS(7)+YEARS_TIERS(7)+TRIPS_TIERS(6) = 20. Earned-count for years=12 + lifetime=850k is 6 (1yr,5yr,10yr svc + 100K,250K,500K miles), matches spec assertion '>=6'.",
+    "RoleSelection page: clean, no RTI, three buttons + navigation works. localStorage 'tm_selected_role' persists; legacy 'tm_has_signed_up_before' steers to /login vs /signup correctly.",
+    "Splash screen overlays the page on first load — automated tests must set sessionStorage.tm_splash_seen='1' before navigating, otherwise role buttons receive no clicks. Documented in context_for_next_testing_agent.",
+    "AchievementsPanel default visible = last-3-earned + first-3-locked = 6 cards. Spec says toggle reveals all 20; component logic supports it but a Radix dialog mounted on top of dashboard appears to intercept the click in real usage. Worth confirming with user-flow testing where the continue-dialog was already dismissed."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter7_role_achievements_miles.py (new file, 19 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (19/19 iter7 tests PASS)",
+    "frontend": "~85% (role flow + dashboard tiles + achievements panel + miles guard render OK; toggle expand and post-fill enable behavior need re-verification with continue-dialog dismissed first)"
+  },
+  "test_credentials": "Backend pytest auto-seeds its own user via pymongo (TestAuthRole module fixture). FE Playwright session: cookie session_token=tm_iter7_fe_session_1777638473715 bound to user_id=tm_iter7_fe_1777638473715 (email iter7.fe@rti.test, role=company_driver). Driver profile pre-seeded with years_experience=12, lifetime_miles=850000, truck_make='Peterbilt', truck_color='Blue', truck_number='T7'. Active trip session ts_iter7fe_1777638473767 with 8 empty rows.",
+  "seed_data_creation": "Created 1 FE test user + session + driver_profile + 1 active trip_session via mongosh. Created 1 backend pytest user + session per pytest module via pymongo fixture (auto-cleanup at module teardown).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "BACKEND: All iter7 endpoints verified — /api/auth/role, /api/profile new fields + legacy alias, /api/trip-sessions/{id}/finish miles guard, /api/stats miles fields, /api/achievements 20-badge derivation. Test file at /app/backend/tests/test_iter7_role_achievements_miles.py — re-run with `MONGO_URL=mongodb://localhost:27017 DB_NAME=test_database REACT_APP_BACKEND_URL=<from frontend/.env> pytest backend/tests/test_iter7_role_achievements_miles.py`. FRONTEND: Two minor issues to revalidate after fix — (1) achievements-toggle expands grid to 20 only when continue-dialog is closed cleanly; (2) finish-btn enable after typing miles. Both look like Radix overlay interaction quirks rather than core logic bugs. To bypass, the next test agent should call /api/trip-sessions/{id} PUT to clear active or click continue-dialog Yes/No first. Splash screen MUST be skipped via sessionStorage.tm_splash_seen='1' or role buttons will silently no-op. RTI brand-separation invariant holds — no 'RTI' anywhere on /, /signup, /login, /dashboard, or visible TripSheetForm.",
+  "rca of the issue": "Achievements toggle + finish-btn behaviors most likely root-caused by the Radix continue-dialog (Session in Progress) re-asserting itself on Dashboard mount and intercepting pointer events on the elements behind it. Pressing Escape dismisses visually but the dialog re-mounts on subsequent re-render cycles. Recommended mitigation: add data-testids to the dialog's Yes/No buttons and explicitly close in tests; or in production, ensure Dashboard does not re-mount the dialog after first dismissal."
+}

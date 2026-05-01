@@ -59,7 +59,8 @@ const PaperSheet = forwardRef(({ session, profile }, ref) => {
         <InfoRow label="Driver ID" value={session.driver_id} />
         <InfoRow label="Tractor #" value={session.truck_number} />
         <InfoRow label="Order #" value={session.order_number} />
-        <InfoRow label="BOL #" value={session.bol_number} last />
+        <InfoRow label="BOL #" value={session.bol_number} />
+        <InfoRow label="Total Miles" value={session.total_trip_miles ? `${Number(session.total_trip_miles).toLocaleString()} mi` : ""} last />
       </div>
 
       {/* Bullets */}

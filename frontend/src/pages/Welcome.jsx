@@ -1,15 +1,10 @@
-import React, { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { hasSignedUpBefore } from "../lib/auth-storage";
+import React from "react";
+import RoleSelection from "./RoleSelection";
 
 /**
- * Auto-routes to /signup for first-time visitors and /login for returning ones,
- * based on a localStorage flag set after the first successful sign-in.
+ * Entry point of the app — shows the role selection screen so drivers
+ * can pick how they identify before signing up or signing in.
  */
 export default function Welcome() {
-  const navigate = useNavigate();
-  useEffect(() => {
-    navigate(hasSignedUpBefore() ? "/login" : "/signup", { replace: true });
-  }, [navigate]);
-  return null;
+  return <RoleSelection />;
 }

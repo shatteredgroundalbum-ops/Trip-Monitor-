@@ -94,3 +94,56 @@ export const TIME_ZONES = [
   "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
   "America/Phoenix", "America/Anchorage", "Pacific/Honolulu",
 ];
+
+// Driver role catalog used by the role-selection screen and onboarding flow.
+export const DRIVER_ROLES = [
+  {
+    id: "company_driver",
+    label: "Company Driver",
+    short: "Company",
+    blurb: "I drive for a fleet on a regular schedule.",
+  },
+  {
+    id: "owner_operator",
+    label: "Owner-Operator (O/O)",
+    short: "O/O",
+    blurb: "I own my truck and contract independently.",
+  },
+  {
+    id: "lto",
+    label: "Lease-to-Purchase Operator (LTO)",
+    short: "LTO",
+    blurb: "I'm leasing toward owning my truck.",
+  },
+];
+
+export const ROLE_LABEL = Object.fromEntries(DRIVER_ROLES.map((r) => [r.id, r.label]));
+
+// Driver type — used inside the onboarding wizard "Driver info" step.
+export const DRIVER_TYPES = [
+  { id: "Permanent", label: "Permanent Driver", blurb: "Same truck every shift." },
+  { id: "Slip Seat", label: "Slip-Seating Driver", blurb: "Different truck per shift." },
+];
+
+// Truck makes commonly seen at North-American freight terminals.
+export const TRUCK_MAKES = [
+  "Freightliner", "Kenworth", "Peterbilt", "Volvo", "Mack",
+  "International", "Western Star", "Ford", "Hino", "Other",
+];
+
+// Standard truck colors. "Other" opens a free-text entry.
+export const TRUCK_COLORS = [
+  { id: "White",    swatch: "#FFFFFF" },
+  { id: "Black",    swatch: "#1A1A1A" },
+  { id: "Silver",   swatch: "#BFC4CB" },
+  { id: "Gray",     swatch: "#6B7280" },
+  { id: "Red",      swatch: "#D73B3B" },
+  { id: "Blue",     swatch: "#1E78FF" },
+  { id: "Navy",     swatch: "#0E1F47" },
+  { id: "Green",    swatch: "#2F7D2F" },
+  { id: "Yellow",   swatch: "#F4C61F" },
+  { id: "Orange",   swatch: "#FF5F15" },
+  { id: "Maroon",   swatch: "#800020" },
+  { id: "Brown",    swatch: "#5C3A1E" },
+  { id: "Other",    swatch: null },
+];
