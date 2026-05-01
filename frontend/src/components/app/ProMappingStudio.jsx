@@ -232,6 +232,9 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
         fieldName, value: fieldName,
       });
       setFieldLabel("");
+    } else if (["triangle", "corners", "bullet"].includes(d.tool)) {
+      // Tap-accumulation tools — pointer-up does NOT reset the draft.
+      // Auto-commit happens inside onPointerDown on the Nth tap.
     } else {
       setDraft(null);
     }

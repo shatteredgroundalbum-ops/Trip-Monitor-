@@ -1,0 +1,34 @@
+{
+  "summary": "Iter 12 narrow retest of the 3 previously-failing tap-accumulation tools in ProMappingStudio. FIX VERIFIED: onPointerUp's new `else if (['triangle','corners','bullet'].includes(d.tool)) { /* no-op */ }` branch (ProMappingStudio.jsx line 235-237) correctly preserves the in-progress draft between taps. All 3 tools now auto-commit on the expected Nth tap. Triangle: 3rd tap goes 0->1 element. Corners: 4th tap goes 1->2 element. Bullet (with field-input text 'Driver Bullet'): 2nd tap goes 2->3 element. studio-inspector-list shows 'TRIANGLE triangle', 'CORNER BOX corner_box', 'BULLET Driver Bullet ARIAL / HELVETICA'. Secondary dashboard schema.version===2 clean SVG render case: seeded driver_profiles row so DriverProfileDialog did NOT auto-open; Template saved from Studio with schema.version=2 navigates to /dashboard with 'Template activated' toast. However the preview modal requires an active trip session, which requires a 3-step Start-New-Trip wizard (When? -> Load Type -> Template pick). Test got past step 1 (session-type-new) and into step 2 (Load Type: Store/Warehouse + Dairy/Water sub-question); wizard-next-2 stayed disabled because the test harness could not auto-select the correct Load Type combination for this driver. Without an active session the paper-sheet preview is not reachable, so the SVG-vs-<img> assertion could not be executed. Code path looks correct per DynamicPaperSheet.jsx L22 (schema.version===2 -> <CleanReconstructionCanvas>) but was not visually verified in this run.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_12.json"],
+  "tests_executed": {
+    "studio-tool-triangle: 3 taps on studio-canvas -> studio-count goes 0 -> 0 -> 1 ELEMENT on 3rd tap": "PASS",
+    "studio-tool-corners: 4 taps -> studio-count reaches 2 ELEMENTS on 4th tap (1 corner_box added)": "PASS",
+    "studio-tool-bullet: fill studio-field-input='Driver Bullet' -> tap dot (no commit) -> tap text-start -> 3 ELEMENTS (bullet added)": "PASS",
+    "studio-inspector-list shows TRIANGLE/CORNER BOX/BULLET rows after the 3 tap flows": "PASS",
+    "studio-save persists schema.version=2 and routes to /dashboard with 'Template activated' toast": "PASS (regression)",
+    "Dashboard DynamicPaperSheet renders inline <svg> (rects/lines) for schema.version===2 — NOT <img>": "BLOCKED — could not construct an active trip session via SessionWizard in automation (wizard-next-2 disabled until the Load Type sub-option combo is chosen); DriverProfileDialog NOT blocking this run (profile pre-seeded)",
+    "paper-sheet innerText contains no 'miles' text or numeric mileage (privacy rule)": "BLOCKED — same as above, paper-sheet was never reached"
+  },
+  "critical_code_review_comments": [
+    "ProMappingStudio.jsx onPointerUp (line 235-237) fix is correct and minimal. Consider making this branch assertive: `if (['triangle','corners','bullet'].includes(d.tool)) return;` at the top of onPointerUp so future drag-tool additions cannot accidentally reintroduce the regression.",
+    "ProMappingStudio.jsx still uses window.prompt() for grid rows/cols (line 205-206) — unreliable on mobile Safari and blocks automated UI tests. Replace with an inline popover.",
+    "ProMappingStudio.jsx is ~870 lines in one file, over the 700-line guideline. Extract CleanReconstructionCanvas, InspectorPane, AssetsPane into sibling files to shrink the main file under ~400 lines.",
+    "SessionWizard step 2 (Load Type) has a disabled Next that does NOT expose a single stable testid indicating which sub-option is selected. Add data-testid attributes to session-load-store/session-load-warehouse/session-load-dairy/session-load-water and expose wizard-load-ready state so automated tests can drive this flow.",
+    "DynamicPaperSheet renders the clean-render SVG only when the active trip session has a linked template whose schema.version===2 — recommend exposing a data-testid='paper-sheet-schema-version' attribute on the outer <div data-testid='paper-sheet'> to make the version branching directly observable from tests."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only)", "frontend": "5/7 checks PASS, 2 BLOCKED (not failing)"},
+  "test_credentials": "Mongo-injected session -> cookie session_token=tm_iter12_session_1777675276358 on driver-sheets-1.preview.emergentagent.com; pre-seeded driver_profiles row so DriverProfileDialog does not auto-open. All TEST data cleaned up post-run (db.users/db.user_sessions/db.driver_profiles deleteMany({user_id:/^tm_iter12/})).",
+  "seed_data_creation": "Injected users + user_sessions + driver_profiles row in test_database for driver.test@riversidetransport.test. Synthetic 5x5 PNG written to /tmp/test_scan_iter12.png used as scan upload.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The 3 tap-accumulation tools (triangle/corners/bullet) are verified working. Canvas in Pro Studio is only ~184x184 px on desktop viewport — ALL tap coordinates MUST be computed as fractions of the canvas bounding_box (see the pt(fx, fy) helper in this iteration's script); earlier attempts that hardcoded px offsets like box.x+200 landed OUTSIDE the canvas and silently did nothing. For the dashboard schema.version===2 paper-sheet assertion, the blocker is SessionWizard step 2 (Load Type) — either (a) pre-insert a trip_sessions document directly in MongoDB with template_id pointing at the saved v2 template and reload /dashboard, or (b) have the main agent add stable testids (session-load-store, session-load-warehouse, session-load-dairy, session-load-water) to the SessionWizard step-2 option buttons so automation can drive it. DynamicPaperSheet.jsx L22 branching to CleanReconstructionCanvas for schema.version===2 is code-confirmed correct but not visually verified this run.",
+  "rca of the issue": "Iter 11 bug RCA was precise: onPointerUp fell into the trailing `else { setDraft(null); }` for tap-accumulation tools and wiped draft.points between taps. Iter 12 confirms the fix: explicit `else if (['triangle','corners','bullet'].includes(d.tool)) { /* no-op */ }` branch preserves the accumulator so onPointerDown's auto-commit on the Nth tap (length===3 for triangle, length===4 for corners, second-tap for bullet) now fires as designed."
+}
