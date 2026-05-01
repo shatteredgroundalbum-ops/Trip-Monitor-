@@ -179,7 +179,7 @@ export default function TripSheetForm({ session, onChange }) {
       </div>
 
       {/* Meta card */}
-      <div className="bg-[var(--tm-surface)] border border-[var(--tm-border)] rounded-md p-5 space-y-3 shadow-sm">
+      <div data-testid="trip-meta-card" className="bg-[var(--tm-surface)] border border-[var(--tm-border)] rounded-md p-5 space-y-3 shadow-sm">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Meta label="Driver ID" value={local.driver_id} />
           <Meta label="Truck #" value={local.truck_number || "—"} />

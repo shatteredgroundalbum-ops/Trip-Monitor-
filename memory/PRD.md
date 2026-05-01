@@ -39,13 +39,47 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
   stops collapse into tappable summaries, future stops hidden until reached,
   stepper dots 1–8, auto-save unchanged, exported PaperSheet still renders all
   8 rows. Resolves prior accordion expansion bug.
+- ✅ **Role-based driver onboarding (2026-02-?? fork)**:
+  - New `RoleSelection` entry screen with 3 role cards: Company Driver,
+    Owner-Operator (O/O), Lease-to-Purchase Operator (LTO).
+  - Selected role persists in localStorage and posts to new
+    `POST /api/auth/role` endpoint after Emergent OAuth callback;
+    `User` model now carries optional `role`.
+  - Login + CreateAccount pages display a role chip + `Change role` back link.
+  - DriverProfileDialog rewritten into 3 NEW steps:
+    1. Personal info (Full Name *, optional Address/City/State/ZIP/Phone)
+    2. Driver info (Permanent vs Slip-Seating, Company ID, Truck Make from
+       list of 10, Truck Color swatch picker w/ "Other" free-text, Truck #,
+       License Plate)
+    3. Experience & milestones init (Years driving + Lifetime miles)
+  - Backend `DriverProfile` accepts the new fields + legacy `Slip-Seating`
+    alias (normalised to `Slip Seat`). Years/miles validated 0–80 / 0–20M.
+  - `total_trip_miles` (round-trip) is now a REQUIRED field at the top of
+    the trip workflow (visible card with `data-testid='trip-miles-card'`).
+    Backend rejects `POST /trip-sessions/{id}/finish` with 422 when missing/0.
+    Dashboard finish button is disabled + shows `finish-miles-warning` until
+    the value is positive; auto-save persists it via the existing PUT.
+  - `/api/stats` extended with `miles_today`, `miles_in_app`, `miles_lifetime`
+    (= profile baseline + sum of finished trip miles).
+  - New `/api/achievements` endpoint computes 20 deterministic badges from
+    profile + finished trips: 7 mileage tiers (100K…5M), 7 service-year tiers
+    (1…30), 6 trip-count tiers (10…1000). Surfaced on Dashboard via the
+    new `AchievementsPanel` component (earned medals + locked progress bars,
+    "Show all" toggle).
+  - Dashboard stats reshuffled to lead with **Miles today** + **Lifetime
+    miles** + Total stops + Current truck. Role chip rendered next to
+    "Dashboard" overline.
+  - PaperSheet gained a "Total Miles" row in the driver info box so the
+    exported document also carries the round-trip mileage.
+  - Backend tests: 19/19 PASS in
+    `/app/backend/tests/test_iter7_role_achievements_miles.py`.
 - ✅ Pre-seeded major US cities/states + 10 event codes + 5 trailer types.
 
 ## Prioritized Backlog
+- P1: PWA install manifest + service worker for home-screen install + offline support
+- P1: "This week" 7-bar mini-trend graph on the Dashboard
+- P1: Real social-login OAuth wiring (Google works via Emergent OAuth; FB / IG / LinkedIn / Email-password remain UI placeholders that toast "coming soon")
 - P1: Replace QR placeholder with real GoDriver install QR
-- P1: History screen to re-open finished sheets
-- P1: Real social-login OAuth wiring (Google / Facebook / Instagram / LinkedIn) — buttons exist as UI placeholders only
-- P2: "This week" 7-bar mini-trend on dashboard
-- P2: PWA install manifest for home-screen install
-- P2: Offline support via service worker
+- P2: History screen to re-open finished sheets
 - P2: Automatic email attachment via backend (SendGrid/Resend)
+- P2: Company / Admin onboarding flow (multi-tenant: company creation + branding upload + custom trip-sheet templates)
