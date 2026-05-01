@@ -29,14 +29,23 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
 ## What's Been Implemented (2026-02)
 - ✅ Backend: auth (session/me/logout), profile CRUD, trip-sessions CRUD,
   locations/trailers/cities learning endpoints (bump counters).
-- ✅ Frontend: Login, AuthCallback, Dashboard, DriverProfileDialog,
-  SessionWizard (3-step), TripSheetForm (accordion rows, stepper, warning),
-  PaperSheet (replica), FinishExportDialog, preview modal, continue prompt.
+- ✅ Frontend: Welcome → CreateAccount/Login split flow, AuthCallback, redesigned
+  Dashboard (stats + active trip + recent trips), DriverProfileDialog,
+  SessionWizard (3-step), PaperSheet (replica), FinishExportDialog with
+  JPEG/PDF/Print/mailto and 0–100% progress, preview modal, continue prompt,
+  Trip Monitor splash video, long-press row duplicate.
+- ✅ TripSheetForm refactored to a **progressive 1-stop-at-a-time wizard**
+  (2026-02-?? fork): activeRowIndex driven, "Continue/Back" buttons, completed
+  stops collapse into tappable summaries, future stops hidden until reached,
+  stepper dots 1–8, auto-save unchanged, exported PaperSheet still renders all
+  8 rows. Resolves prior accordion expansion bug.
 - ✅ Pre-seeded major US cities/states + 10 event codes + 5 trailer types.
 
 ## Prioritized Backlog
 - P1: Replace QR placeholder with real GoDriver install QR
 - P1: History screen to re-open finished sheets
+- P1: Real social-login OAuth wiring (Google / Facebook / Instagram / LinkedIn) — buttons exist as UI placeholders only
+- P2: "This week" 7-bar mini-trend on dashboard
 - P2: PWA install manifest for home-screen install
 - P2: Offline support via service worker
 - P2: Automatic email attachment via backend (SendGrid/Resend)
