@@ -22,8 +22,43 @@ const DynamicPaperSheet = forwardRef(({ session, profile, template }, ref) => {
   if (source !== "scanned" || !template?.scan?.data_url) {
     return <PaperSheet ref={ref} session={session} profile={profile} />;
   }
-  return <ScannedPaperSheet ref={ref} session={session} profile={profile} template={template} />;
+  // Pro-Mapping flow persists line_label + point elements under
+  // template.schema.elements. Synthesize template.fields on the fly so
+  // the photographic overlay renderer below still works unchanged.
+  const effective = template.fields && Object.keys(template.fields).length
+    ? template
+    : { ...template, fields: elementsToFields(template.schema?.elements || []) };
+  return <ScannedPaperSheet ref={ref} session={session} profile={profile} template={effective} />;
 });
+
+/** Map pro-mapping schema elements to a PaperSheet-style fields{} object
+ *  by case-insensitive label matching. Keeps a single photographic
+ *  renderer downstream — DynamicPaperSheet doesn't care which mapping
+ *  flow the driver used. */
+function elementsToFields(elements) {
+  const out = {};
+  const byLabel = (lbl) => (lbl || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const presetMap = {
+    date: "date", driverid: "driver_id", driver: "driver_id",
+    truck: "truck_number", tractor: "truck_number", trucknumber: "truck_number",
+    ordernumber: "order_number", order: "order_number",
+    bolnumber: "bol_number", bol: "bol_number",
+    pickup: "pickup_location", drop: "drop_location", dropoff: "drop_location",
+    city: "stop_city", state: "stop_state",
+    departuretime: "departure_time", time: "departure_time",
+    trailernumber: "trailer_number", trailer: "trailer_number",
+    trailertype: "trailer_type", type: "trailer_type",
+    notes: "notes",
+  };
+  for (const el of elements) {
+    if (el.kind !== "line_label" && el.kind !== "point") continue;
+    const match = presetMap[byLabel(el.label)];
+    if (!match) continue;
+    const anchor = el.kind === "line_label" ? el.geometry.to : el.geometry;
+    out[match] = { label: el.label, type: "text", x: anchor.x, y: anchor.y, anchor: "topleft" };
+  }
+  return out;
+}
 
 DynamicPaperSheet.displayName = "DynamicPaperSheet";
 export default DynamicPaperSheet;

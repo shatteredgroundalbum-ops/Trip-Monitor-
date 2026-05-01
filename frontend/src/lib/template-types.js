@@ -75,6 +75,81 @@ export const PRESET_FIELDS_BY_ID = Object.fromEntries(
   PRESET_FIELDS.map((f) => [f.id, f])
 );
 
+/**
+ * Pro-Mapping element kinds. Each kind has a distinct geometry shape
+ * (see below) and is rendered with its own visual treatment on the
+ * markup canvas + in the Schema/Form/Preview panes.
+ *
+ *  - 'point'      : single anchor. geometry = { x, y }
+ *  - 'circle'     : loose region. geometry = { cx, cy, r }
+ *  - 'box'        : drag-drawn rectangle. geometry = { x, y, w, h }
+ *  - 'corners'    : precision rectangle from 4 tapped corners.
+ *                   geometry = { x, y, w, h, points: [{x,y}...4] }
+ *  - 'line_label' : label → field binding. geometry = { from:{x,y}, to:{x,y}, label:str }
+ *  - 'sequential' : ordered repeating series. geometry = { positions:[{x,y}...] }
+ *
+ * All coordinates are normalized 0..1 against the scan dimensions so a
+ * template renders identically on any export surface.
+ */
+export const ELEMENT_KINDS = [
+  { id: "point",       label: "Point",          blurb: "Single tap · logos, titles, icons" },
+  { id: "circle",      label: "Circle",         blurb: "Loose region · free-text areas" },
+  { id: "box",         label: "Box",            blurb: "Drag a rectangle · structural regions" },
+  { id: "corners",     label: "4-Corner",       blurb: "Tap 4 corners · precision rectangles" },
+  { id: "line_label",  label: "Line + Label",   blurb: "Label → field · data binding" },
+  { id: "sequential",  label: "Sequential",     blurb: "Numbered taps · repeating entries" },
+];
+
+export const ELEMENT_KINDS_BY_ID = Object.fromEntries(
+  ELEMENT_KINDS.map((k) => [k.id, k])
+);
+
+/**
+ * Given a tap at normalized (x, y) and an OCR word list, return the
+ * coordinates of the closest word's top-left corner if it's within
+ * `thresholdPx` in scan-pixel space — otherwise return the original tap.
+ *
+ * This is the "Snap + Lock" heuristic: we pull taps onto OCR-detected
+ * word edges so the geometry stays clean + predictable.
+ *
+ * @param {{x:number, y:number}} pt        Tap in normalized coords.
+ * @param {Array} ocrWords                 Normalized words from scan-pipeline.
+ * @param {number} widthPx                 Scan width in pixels.
+ * @param {number} heightPx                Scan height in pixels.
+ * @param {number} [thresholdPx=28]        Snap distance in pixels.
+ * @returns {{x:number,y:number,snapped:boolean}}
+ */
+export function snapToNearestWord(pt, ocrWords, widthPx, heightPx, thresholdPx = 28) {
+  if (!ocrWords || !ocrWords.length || !widthPx || !heightPx) {
+    return { x: pt.x, y: pt.y, snapped: false };
+  }
+  const px = pt.x * widthPx;
+  const py = pt.y * heightPx;
+  let best = null;
+  let bestDist = thresholdPx * thresholdPx;
+  for (const w of ocrWords) {
+    // Check snap to each of the word's four corners + center
+    const corners = [
+      { x: w.x, y: w.y },
+      { x: w.x + w.w, y: w.y },
+      { x: w.x, y: w.y + w.h },
+      { x: w.x + w.w, y: w.y + w.h },
+      { x: w.x + w.w / 2, y: w.y + w.h / 2 },
+    ];
+    for (const c of corners) {
+      const dx = c.x * widthPx - px;
+      const dy = c.y * heightPx - py;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestDist) {
+        bestDist = d2;
+        best = c;
+      }
+    }
+  }
+  if (best) return { x: best.x, y: best.y, snapped: true };
+  return { x: pt.x, y: pt.y, snapped: false };
+}
+
 /** Build a fresh empty template skeleton. */
 export function emptyTemplate({ name, source }) {
   const now = new Date().toISOString();

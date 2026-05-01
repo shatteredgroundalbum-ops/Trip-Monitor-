@@ -17,6 +17,7 @@ import { Button } from "../components/ui/button";
 import { toast } from "sonner";
 import { BrandLockupCompact } from "../components/app/BrandLogo";
 import TemplateMappingWizard from "../components/app/TemplateMappingWizard";
+import ProMappingEditor from "../components/app/ProMappingEditor";
 import { normalizeCapture, runOcr, formatBytes } from "../lib/scan-pipeline";
 import {
   saveTemplate,
@@ -53,6 +54,7 @@ export default function TemplateSetup() {
   const [ocrStatus, setOcrStatus] = useState("");
   const [ocrWords, setOcrWords] = useState([]);
   const [draftTemplate, setDraftTemplate] = useState(null);
+  const [mapMode, setMapMode] = useState("quick"); // "quick" (13-tap) | "pro" (markup editor)
   const [templates, setTemplates] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [bytes, setBytes] = useState(0);
@@ -330,15 +332,53 @@ export default function TemplateSetup() {
                       </>
                     )}
                   </Button>
-                  <Button
-                    data-testid="template-setup-continue-map"
-                    disabled={busy}
-                    onClick={handleContinueToMap}
-                    className="h-11 flex-1 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md"
-                  >
-                    Continue to map <Check className="h-4 w-4 ml-1" />
-                  </Button>
                 </div>
+                {/* Map-mode picker */}
+                <div
+                  className="grid grid-cols-2 gap-2 bg-[var(--tm-surface)] border border-[var(--tm-border)] rounded-md p-2"
+                  data-testid="mapmode-picker"
+                >
+                  <button
+                    type="button"
+                    data-testid="mapmode-quick"
+                    onClick={() => setMapMode("quick")}
+                    className={`p-3 rounded-md border-2 text-left transition-colors ${
+                      mapMode === "quick"
+                        ? "bg-white border-[var(--tm-orange)]"
+                        : "bg-white border-[var(--tm-border)] hover:border-[var(--tm-blue)]"
+                    }`}
+                  >
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--tm-blue)] font-bold">Quick</div>
+                    <div className="text-sm font-bold">Quick Map</div>
+                    <div className="text-[10px] text-[var(--tm-text-soft)] mt-0.5">
+                      13 taps · ~90 sec · drops typed values over the scan.
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="mapmode-pro"
+                    onClick={() => setMapMode("pro")}
+                    className={`p-3 rounded-md border-2 text-left transition-colors ${
+                      mapMode === "pro"
+                        ? "bg-white border-[var(--tm-orange)]"
+                        : "bg-white border-[var(--tm-border)] hover:border-[var(--tm-blue)]"
+                    }`}
+                  >
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--tm-orange)] font-bold">Pro · New</div>
+                    <div className="text-sm font-bold">Pro Mapping</div>
+                    <div className="text-[10px] text-[var(--tm-text-soft)] mt-0.5">
+                      Pixel-perfect · 6 markup tools · split schema / form / preview pane.
+                    </div>
+                  </button>
+                </div>
+                <Button
+                  data-testid="template-setup-continue-map"
+                  disabled={busy}
+                  onClick={handleContinueToMap}
+                  className="h-11 w-full bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md"
+                >
+                  Continue to {mapMode === "pro" ? "Pro Mapping" : "Quick Map"} <Check className="h-4 w-4 ml-1" />
+                </Button>
                 {ocrWords.length > 0 && (
                   <div className="text-[11px] uppercase tracking-wider text-[var(--tm-text-soft)] font-bold flex items-center gap-1">
                     <CircleDot className="h-3 w-3 text-[var(--tm-blue)]" />
@@ -356,11 +396,19 @@ export default function TemplateSetup() {
         )}
 
         {step === "Map" && draftTemplate && (
-          <TemplateMappingWizard
-            template={draftTemplate}
-            onDone={handleMapDone}
-            onCancel={() => setStep("Capture")}
-          />
+          mapMode === "pro" ? (
+            <ProMappingEditor
+              template={draftTemplate}
+              onDone={handleMapDone}
+              onCancel={() => setStep("Capture")}
+            />
+          ) : (
+            <TemplateMappingWizard
+              template={draftTemplate}
+              onDone={handleMapDone}
+              onCancel={() => setStep("Capture")}
+            />
+          )
         )}
       </main>
     </div>
