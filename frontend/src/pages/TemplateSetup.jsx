@@ -20,7 +20,6 @@ import TemplateMappingWizard from "../components/app/TemplateMappingWizard";
 import ProMappingEditor from "../components/app/ProMappingEditor";
 import { normalizeCapture, runOcr, formatBytes } from "../lib/scan-pipeline";
 import {
-  saveTemplate,
   listTemplates,
   deleteTemplate,
   totalStorageBytes,
@@ -125,7 +124,9 @@ export default function TemplateSetup() {
     const tpl = emptyTemplate({ source: "scanned", name: `Scan ${templates.length + 1}` });
     tpl.scan = scan;
     tpl.ocr_words = ocrWords;
-    await saveTemplate(tpl);
+    // NB: do NOT persist yet. Quick Map + Pro Mapping both call
+    // saveTemplate on their own Finish step. Cancelling before Finish
+    // should NOT leave an orphan zero-field template in IndexedDB.
     setDraftTemplate(tpl);
     setStep("Map");
   };

@@ -115,8 +115,9 @@ export default function ProMappingEditor({ template, onDone, onCancel }) {
         break;
       }
       case "circle": {
-        // first tap = center; start drag → final tap = radius
-        setDraft({ kind: "circle", cx: pt.x, cy: pt.y, r: 0.02 });
+        // first tap = center; drag sets radius. Start at r=0 so a
+        // no-drag tap+release does NOT commit an accidental circle.
+        setDraft({ kind: "circle", cx: pt.x, cy: pt.y, r: 0, dragged: false });
         break;
       }
       case "box": {
@@ -178,7 +179,7 @@ export default function ProMappingEditor({ template, onDone, onCancel }) {
     } else if (draft.kind === "circle") {
       const dx = pt.x - draft.cx;
       const dy = pt.y - draft.cy;
-      setDraft({ ...draft, r: Math.sqrt(dx * dx + dy * dy) });
+      setDraft({ ...draft, r: Math.sqrt(dx * dx + dy * dy), dragged: true });
     } else if (draft.kind === "line_label") {
       setDraft({ ...draft, to: pt });
     }
@@ -188,7 +189,7 @@ export default function ProMappingEditor({ template, onDone, onCancel }) {
     if (!draft) return;
     if (draft.kind === "box" && draft.w > 0.01 && draft.h > 0.01) {
       commitElement("box", { x: draft.x, y: draft.y, w: draft.w, h: draft.h });
-    } else if (draft.kind === "circle" && draft.r > 0.015) {
+    } else if (draft.kind === "circle" && draft.dragged && draft.r > 0.015) {
       commitElement("circle", { cx: draft.cx, cy: draft.cy, r: draft.r });
     }
     // line_label / corners / sequential commit via additional taps; no up-action.

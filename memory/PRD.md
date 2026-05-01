@@ -214,10 +214,62 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
     still 401 unauth, regression unbroken.
 - ✅ Pre-seeded major US cities/states + 10 event codes + 5 trailer types.
 
+- ✅ **Pro Mapping Editor — Delivery 1** (2026-02-?? fork — iter 10):
+  - New `<ProMappingEditor />` (725 LoC) — stylus-AND-finger visual
+    annotation canvas with SVG overlay. 6 markup primitives shipped:
+    point / circle (drag) / box (drag) / 4-corner rectangle /
+    line+label (2-tap binding) / sequential (n-tap series). All
+    committed elements normalized 0..1 to the scan dimensions.
+  - `Snap + Lock` heuristic via new `snapToNearestWord()` helper
+    (template-types.js) — taps within 28 px of an OCR word corner
+    are pulled onto that corner; finger taps use 28 px, stylus taps
+    18 px. Toggleable via `pro-mapping-snap-toggle`.
+  - Right-side 3-tab inspector (Schema / Form / Preview):
+    - Schema : live element list with kind icon + label + geometry summary
+    - Form   : blank-form reconstruction drawn purely from coords
+    - Preview: photographic export preview via DynamicPaperSheet
+  - Undo (single-level) pops the latest draft or last committed
+    element. Multi-tap tools (corners, sequential) have an explicit
+    Commit button so the driver can finalize before running out of
+    taps.
+  - `TemplateSetup.jsx` now surfaces a `mapmode-picker` between the
+    capture step and the mapping step so the driver picks between
+    Quick Map (13-tap preset walk) and Pro Mapping (free-form
+    markup) — "progressive disclosure" per user spec.
+  - `DynamicPaperSheet.jsx` synthesizes a `fields{}` map on the fly
+    from `template.schema.elements[]` (line_label + point kinds)
+    so the photographic export renderer stays single-path — the
+    exporter doesn't care which mapping flow produced the template.
+  - Fixes during validation:
+    1. React hooks-order bug (useMemo after early-return) → early
+       return moved below all hooks.
+    2. `handleContinueToMap` no longer persists the template before
+       mapping — Finish step in each editor is now the single save
+       point so a cancelled flow doesn't orphan a zero-field template
+       in IndexedDB.
+    3. Circle tool: a tap without drag no longer commits an
+       accidental default-radius circle (gated on `dragged` flag).
+  - Privacy: mileage still never renders in Preview / export.
+  - Tested 19/19 PASS via testing_agent_v3_fork (iter 10).
+
 ## Prioritized Backlog
+- P1: Pro Mapping Editor — Delivery 2
+   - Validation pass (flag missing required fields, overlapping
+     boxes, out-of-bounds coords) before allowing Finish.
+   - Multi-select + move + scale of already-drawn elements.
+   - Deep undo/redo stack (current is single-level).
+   - Split ProMappingEditor.jsx (725 LoC) into
+     ProMappingEditor.jsx + ProMappingOverlays.jsx + ProMappingPanes.jsx
+     — natural boundaries at overlay renderers and right-pane
+     renderers.
+   - Smart field-suggestion pass — pre-anchor Order #, Driver,
+     BOL, Date, etc. from OCR labels so typical driver tap count
+     drops from 13 → ~3.
+   - Graceful fallback when a Pro-Mapping label doesn't match a
+     preset key — render the unmapped label as placeholder text
+     at the anchor so the driver sees WHERE it will print.
 - P1: Real social-login OAuth wiring (Facebook / Instagram / LinkedIn) — currently UI placeholders
 - P1: Replace QR placeholder with real GoDriver install QR
-- P2: Smart field-suggestion pass during mapping (scan OCR words for labels like "Order #", "Driver", "BOL" and pre-anchor matching pins — drops typical tap count from 13 → ~3)
 - P2: Cloud backup for templates (Google Drive / OneDrive — driver opt-in)
 - P2: Multi-page trip envelopes (stage-2 scan → secondary template)
 - P2: History screen to re-open finished sheets
