@@ -50,8 +50,8 @@ export const STUDIO_TOOLS = [
   { id: "grid",     label: "Grid",          blurb: "Drag bbox, then set rows × cols" },
   { id: "text",     label: "Text Marker",   blurb: "Dash where text prints, then name the field" },
   { id: "bullet",   label: "Bullet Point",  blurb: "Tap the dot, then the text start" },
-  { id: "logo",     label: "Logo Area",     blurb: "Drag the logo box" },
-  { id: "qr",       label: "QR Code Box",   blurb: "Drag the QR box" },
+  { id: "logo",     label: "Logo Anchor",   blurb: "Upload logo in Assets → tap center (Fast) or 4 corners (Precise). Asset renders in Preview only." },
+  { id: "qr",       label: "QR Anchor",     blurb: "Upload QR in Assets → tap center (Fast) or 4 corners (Precise). Asset renders in Preview only." },
   { id: "trace",    label: "Custom Trace",  blurb: "Draw thick letters — we clean the strokes" },
 ];
 

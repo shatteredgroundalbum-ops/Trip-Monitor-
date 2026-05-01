@@ -1,0 +1,38 @@
+{
+  "summary": "Iter 13 — frontend-only e2e validation of the anchor-based logo/QR refactor in ProMappingStudio (handedness toggle + ghost preview + fast/precise placement modes + privacy 'mapping vs preview' rule). 14/14 checks PASS. Verified: (1) handedness default 'right' -> studio-split has xl:flex-row + label 'Right-handed'; click flips to xl:flex-row-reverse + 'Left-handed'; second click reverts. (2) studio-mapping-pane shows 'Mapping · tap to mark', studio-preview-pane shows 'Preview · live output', default tab is studio-tab-clean (orange-active). (3) Boundary 4-anchor gate works (tools enabled at 4/4). (4) Guardrail: tapping studio-tool-logo without a logo asset triggers the 'Upload a LOGO in the Assets tab first' toast and does NOT increment studio-count. Same path for QR. (5) Logo upload via studio-logo-file surfaces studio-logo-change. (6) studio-placement-mode shows when tool=logo|qr; studio-placement-fast is selected by default (tm-blue bg). (7) Ghost preview: pointer-move on studio-canvas spawns data-testid=studio-ghost-logo with computed opacity=0.35 (and studio-ghost-qr equivalent for QR). (8) FAST mode = ONE tap on studio-canvas commits a logo_anchor → studio-count goes 0->1. (9) Privacy rule: with hover cleared, studio-canvas contains only 1 <img> (the scan); the committed logo renders as a navy outlined circle + dot (svg circles count=6 = 4 anchors + outline + dot). (10) studio-tab-clean shows the logo as a real <image> node inside paper-sheet. (11) PRECISE mode: 4 taps required — count stays at 1 after taps 1-3, jumps to 2 on the 4th tap. (12) QR full flow: guardrail without upload, upload via studio-qr-file, ghost-qr appears on hover, 1 fast-tap commits qr_anchor (count -> 3). (13) studio-toggle-legacy round-trips into pro-studio-legacy and back to pro-studio with state preserved (3 elements / 4 anchors). (14) Schema state survives the legacy round-trip.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/test_reports/iteration_13.json"],
+  "tests_executed": {
+    "handedness_toggle_default_right_then_left_then_right": "PASS (xl:flex-row <-> xl:flex-row-reverse + label 'Right-handed' <-> 'Left-handed')",
+    "pane_labels_and_default_tab_clean": "PASS",
+    "boundary_gate_4_anchors": "PASS (anchors 4/4)",
+    "guardrail_logo_no_upload_toast_no_commit": "PASS (toast 'Upload a LOGO...' shown, count stays 0)",
+    "logo_upload_surfaces_change_button": "PASS",
+    "placement_mode_visible_fast_default_selected": "PASS",
+    "ghost_logo_appears_at_35pct_opacity_on_hover": "PASS (opacity=0.35)",
+    "fast_mode_one_tap_commits_logo_anchor": "PASS (count 0->1)",
+    "mapping_canvas_marker_only_no_committed_asset_img": "PASS (canvas <img>=1 scan-only, svg circles=6)",
+    "preview_clean_renders_logo_as_image": "PASS (1 <image> node in paper-sheet svg)",
+    "precise_mode_4_taps_required_to_commit": "PASS (count after 3 taps=1, after 4th=2)",
+    "qr_full_flow_guardrail_upload_ghost_fast_commit": "PASS (ghost-qr present, count 2->3 on 1 tap)",
+    "legacy_toggle_round_trip_preserves_state": "PASS",
+    "schema_state_persists_across_legacy_round_trip": "PASS (3 elements · anchors 4/4)"
+  },
+  "critical_code_review_comments": [
+    "ProMappingStudio.jsx is now ~1018 lines (still >700-line guideline). Recommend extracting CleanReconstructionCanvas, MarkupOverlay, DraftOverlay, InspectorPane, AssetsPane, CleanReconstructionPreview, CleanElement, CleanTextLayer, valueForField into sibling files to bring the main file under ~400 lines.",
+    "ghost preview only fires when placementMode==='fast' (line 213). For PRECISE mode users, no visual feedback exists between taps other than the 4 blue dots. Consider adding a translucent ghost-quad once 3 corners exist so users see the bbox they're forming.",
+    "logo_anchor / qr_anchor 'fast' mode hardcodes scale: 0.18 (line 136) and 0.15 default in CleanElement. There's no UI to resize after commit. Either expose a slider in Inspector or document the limitation.",
+    "onPointerMove computes hoverPt for every pointermove regardless of needs — the React setState batches but on iPad with stylus this can be ~120Hz. Throttle hoverPt updates to ~30fps to reduce render churn.",
+    "window.prompt() for grid rows/cols (line ~248) remains from prior iters — unreliable on mobile Safari, blocks automation.",
+    "Privacy rule is correctly enforced for COMMITTED elements (mapping shows marker only). The transient ghost-preview img IS rendered on the mapping canvas; the spec explicitly allows this. No issue, just noting for future regression."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only)", "frontend": "14/14 PASS (100%)"},
+  "test_credentials": "Mongo-injected session_token=tm_iter13_session_1777677112442 (cookie path=/, secure, sameSite=None) on driver-sheets-1.preview.emergentagent.com; pre-seeded driver_profiles row so DriverProfileDialog did NOT auto-open. All TEST data deleted post-run (1 user + 1 session + 1 profile).",
+  "seed_data_creation": "Synthetic 5x5 PNGs at /tmp/test_scan_iter13.png, /tmp/test_logo_iter13.png, /tmp/test_qr_iter13.png. MongoDB users + user_sessions + driver_profiles for tm_iter13_* user-id range (cleaned).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All anchor-based logo/QR features verified working end-to-end via the public preview URL. Path into Studio: cookie session -> /templates -> pick-scan -> set_input_files on template-setup-file-input -> mapmode-pro -> template-setup-continue-map -> pro-studio. Canvas in Studio is ~184px wide on a 1920px viewport because max-width:720 + Pick layout container — ALWAYS compute tap coords as fractions of bounding_box (helper `tap(fx, fy)` in this iter's script). Ghost preview triggers reliably on real `page.mouse.move(x,y)`; no need to dispatch synthetic pointermove. For schema.version===2 -> DynamicPaperSheet -> CleanReconstructionCanvas component-level branching in dashboard, the SessionWizard step-2 Load-Type sub-options still don't have stable testids (carried over from iter 12) — that dashboard e2e remains BLOCKED until main agent adds session-load-store / session-load-warehouse / session-load-dairy / session-load-water testids OR a direct trip_sessions Mongo seed is used.",
+  "rca of the issue": "N/A — no bugs found. The refactor is solid: onPointerDown logo/qr branches enforce asset-required guardrail before committing; FAST commits via pushElement immediately while PRECISE accumulates via setDraft; the iter-12 onPointerUp early-return is correctly extended to include 'logo' and 'qr' (line 232) so PRECISE-mode mid-tap drafts survive between taps. MarkupOverlay (line ~617-645) renders mapping-canvas markers only; CleanElement (line ~888-938) renders the actual <image> in the preview SVG. handedness flips a single class on studio-split with no layout-recompute side effects observed."
+}

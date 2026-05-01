@@ -4,11 +4,12 @@ import { toast } from "sonner";
 import {
   Crosshair, Minus, Square, Circle as CircleIcon, Triangle, Spline, Grid3x3,
   AlignLeft, Dot as DotIcon, Image as ImageIcon, QrCode as QrIcon, PenTool,
-  Undo2, Trash2, Save, Lock, X, Type, Eye, SlidersHorizontal, Layers,
+  Undo2, Trash2, Save, Lock, X, Eye, SlidersHorizontal, Layers,
+  ArrowLeftRight, Target, Maximize2,
 } from "lucide-react";
 import {
   STUDIO_TOOLS, FONT_PRESETS, FONT_PRESETS_BY_ID, STUDIO_FIELD_PRESETS,
-  emptyStudioSchema, uid, normRect, workingArea, cleanTrace, elementBBox,
+  emptyStudioSchema, uid, normRect, workingArea, cleanTrace,
 } from "../../lib/pro-mapping-v2";
 import { saveTemplate, setActiveTemplateId } from "../../lib/template-store";
 import ProMappingEditor from "./ProMappingEditor";
@@ -36,8 +37,11 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   const [draft, setDraft] = useState(null);
   const [fieldLabel, setFieldLabel] = useState("");
   const [fontSel, setFontSel] = useState("arial");
-  const [tab, setTab] = useState("inspector"); // inspector | clean | assets
+  const [tab, setTab] = useState("clean"); // clean | inspector | assets — preview-first per spec
   const [saving, setSaving] = useState(false);
+  const [handedness, setHandedness] = useState("right"); // right-handed: mapping on left, preview on right. left-handed: swapped.
+  const [placementMode, setPlacementMode] = useState("fast"); // 'fast' (1-tap center) | 'precise' (4-corner) — logo/qr only
+  const [hoverPt, setHoverPt] = useState(null); // for ghost-preview of logo/QR assets
   const canvasRef = useRef(null);
   const logoInputRef = useRef(null);
   const qrInputRef = useRef(null);
@@ -111,11 +115,47 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
       case "line":
       case "rect":
       case "circle":
-      case "logo":
-      case "qr":
       case "grid":
         setDraft({ tool, start: pt, end: pt });
         break;
+      case "logo":
+      case "qr": {
+        // Anchor-based placement — NO dragging. The scan is a mapping
+        // surface, not a design surface. Uploaded assets live only
+        // in the preview.
+        const assetKind = tool === "logo" ? "logo" : "qr";
+        const assetUrl = schema.assets[assetKind]?.data_url;
+        if (!assetUrl) {
+          toast.error(`Upload a ${tool.toUpperCase()} in the Assets tab first`);
+          return;
+        }
+        if (placementMode === "fast") {
+          // Single tap = center anchor. Preview scales the asset
+          // using a sensible default (20% of working-area width).
+          pushElement(assetKind === "logo" ? "logo_anchor" : "qr_anchor", {
+            mode: "center", center: pt, scale: 0.18,
+          });
+          toast.success(`${assetKind.toUpperCase()} anchored (fast)`);
+        } else {
+          // Precise mode — accumulate 4 corner taps.
+          const prev = draft?.points || [];
+          const next = [...prev, pt];
+          if (next.length === 4) {
+            const xs = next.map((p) => p.x), ys = next.map((p) => p.y);
+            pushElement(assetKind === "logo" ? "logo_anchor" : "qr_anchor", {
+              mode: "corners",
+              corners: next,
+              x: Math.min(...xs), y: Math.min(...ys),
+              w: Math.max(...xs) - Math.min(...xs),
+              h: Math.max(...ys) - Math.min(...ys),
+            });
+            toast.success(`${assetKind.toUpperCase()} anchored (4 corners)`);
+          } else {
+            setDraft({ tool, points: next });
+          }
+        }
+        break;
+      }
       case "curve":
       case "trace":
         setDraft({ tool, points: [pt] });
@@ -167,10 +207,16 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   };
 
   const onPointerMove = (e) => {
-    if (!draft) return;
     const pt = canvasPt(e);
     if (!pt) return;
-    if (["line", "rect", "circle", "logo", "qr", "grid", "text"].includes(draft.tool)) {
+    // Track hover for ghost preview (logo/qr asset shadow following the stylus).
+    if ((tool === "logo" || tool === "qr") && placementMode === "fast") {
+      setHoverPt(pt);
+    } else if (hoverPt) {
+      setHoverPt(null);
+    }
+    if (!draft) return;
+    if (["line", "rect", "circle", "grid", "text"].includes(draft.tool)) {
       setDraft({ ...draft, end: pt });
     } else if (["curve", "trace"].includes(draft.tool)) {
       setDraft({ ...draft, points: [...draft.points, pt] });
@@ -182,7 +228,8 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
     const d = draft;
     // Tap-accumulation tools build their geometry across multiple taps —
     // pointer-up must be a hard no-op so the draft survives between taps.
-    if (["triangle", "corners", "bullet"].includes(d.tool)) return;
+    // logo/qr in 'precise' placement mode fall into this same bucket.
+    if (["triangle", "corners", "bullet", "logo", "qr"].includes(d.tool)) return;
     if (d.tool === "line" && d.start && d.end) {
       if (dist(d.start, d.end) > 0.01) pushElement("line", { from: d.start, to: d.end });
       else setDraft(null);
@@ -193,14 +240,6 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
     } else if (d.tool === "circle" && d.start && d.end) {
       const r = dist(d.start, d.end);
       if (r > 0.012) pushElement("circle", { cx: d.start.x, cy: d.start.y, r });
-      else setDraft(null);
-    } else if (d.tool === "logo" && d.start && d.end) {
-      const r = normRect(d.start.x, d.start.y, d.end.x, d.end.y);
-      if (r.w > 0.02 && r.h > 0.02) pushElement("logo", r);
-      else setDraft(null);
-    } else if (d.tool === "qr" && d.start && d.end) {
-      const r = normRect(d.start.x, d.start.y, d.end.x, d.end.y);
-      if (r.w > 0.02 && r.h > 0.02) pushElement("qr_box", r);
       else setDraft(null);
     } else if (d.tool === "grid" && d.start && d.end) {
       const r = normRect(d.start.x, d.start.y, d.end.x, d.end.y);
@@ -235,7 +274,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
         fieldName, value: fieldName,
       });
       setFieldLabel("");
-    } else if (["triangle", "corners", "bullet"].includes(d.tool)) {
+    } else if (["triangle", "corners", "bullet", "logo", "qr"].includes(d.tool)) {
       // Unreachable — guarded at the top of onPointerUp. Kept as
       // a documentation anchor so future drag-tool additions don't
       // accidentally reintroduce the iter-11 regression.
@@ -298,6 +337,32 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
             className="h-7 text-[10px] bg-white border-[var(--tm-border)] text-[var(--tm-navy)]">
             <Layers className="h-3 w-3 mr-1" /> Use Legacy Editor
           </Button>
+          <Button variant="outline" size="sm"
+            data-testid="studio-handedness"
+            onClick={() => setHandedness((h) => h === "right" ? "left" : "right")}
+            title={handedness === "right" ? "Switch to left-handed (mapping on left)" : "Switch to right-handed (mapping on right)"}
+            className="h-7 text-[10px] bg-white border-[var(--tm-border)] text-[var(--tm-navy)]">
+            <ArrowLeftRight className="h-3 w-3 mr-1" />
+            {handedness === "right" ? "Right-handed" : "Left-handed"}
+          </Button>
+          {(tool === "logo" || tool === "qr") && (
+            <div className="inline-flex rounded-md border border-[var(--tm-border)] overflow-hidden" data-testid="studio-placement-mode">
+              <button type="button"
+                data-testid="studio-placement-fast"
+                onClick={() => { setPlacementMode("fast"); setDraft(null); }}
+                className={`h-7 px-2 text-[10px] uppercase tracking-wider font-bold inline-flex items-center gap-1 ${
+                  placementMode === "fast" ? "bg-[var(--tm-blue)] text-white" : "bg-white text-[var(--tm-navy)]"}`}>
+                <Target className="h-3 w-3" /> Fast · 1 tap
+              </button>
+              <button type="button"
+                data-testid="studio-placement-precise"
+                onClick={() => { setPlacementMode("precise"); setDraft(null); }}
+                className={`h-7 px-2 text-[10px] uppercase tracking-wider font-bold inline-flex items-center gap-1 border-l border-[var(--tm-border)] ${
+                  placementMode === "precise" ? "bg-[var(--tm-blue)] text-white" : "bg-white text-[var(--tm-navy)]"}`}>
+                <Maximize2 className="h-3 w-3" /> Precise · 4 corners
+              </button>
+            </div>
+          )}
         </div>
         <div className="px-3 pb-2 flex items-center gap-1 overflow-x-auto" data-testid="studio-toolbar">
           {STUDIO_TOOLS.map((t) => {
@@ -357,17 +422,24 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
         </div>
       </div>
 
-      {/* Split body */}
-      <div className="flex flex-col xl:flex-row gap-3 p-3 flex-1">
-        {/* Left: markup canvas over the scan */}
-        <div className="flex-1 min-w-0">
-          <div className="text-[10px] uppercase tracking-[0.2em] font-bold text-[var(--tm-text-muted)] mb-1">Mark on scan</div>
+      {/* Split body — two-window layout per spec:
+           Left = MAPPING (input only, never manipulate assets here)
+           Right = PREVIEW (output only, renders uploaded assets).
+           Handedness swaps which side each pane sits on. */}
+      <div className={`flex flex-col gap-3 p-3 flex-1 ${handedness === "right" ? "xl:flex-row" : "xl:flex-row-reverse"}`}
+        data-testid="studio-split">
+        {/* Mapping canvas */}
+        <div className="flex-1 min-w-0" data-testid="studio-mapping-pane">
+          <div className="text-[10px] uppercase tracking-[0.2em] font-bold text-[var(--tm-blue)] mb-1 flex items-center gap-1.5">
+            <Target className="h-3 w-3" /> Mapping · tap to mark
+          </div>
           <div
             ref={canvasRef}
             className="relative mx-auto select-none border-2 border-[var(--tm-border)] rounded-md overflow-hidden bg-white shadow-sm touch-none"
             style={{ maxWidth: 720, cursor: "crosshair" }}
             data-testid="studio-canvas"
             onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
+            onPointerLeave={() => setHoverPt(null)}
           >
             <img src={scan.data_url} alt={template.name} draggable={false} className="block w-full h-auto" />
             <svg viewBox="0 0 1 1" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
@@ -387,6 +459,21 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
               {/* Draft */}
               {draft && <DraftOverlay draft={draft} />}
             </svg>
+            {/* Ghost preview — faint asset thumbnail follows the stylus
+                BEFORE commit. Tap commits at the ghost center. */}
+            {hoverPt && (tool === "logo" || tool === "qr") && placementMode === "fast" && schema.assets[tool === "logo" ? "logo" : "qr"]?.data_url && (
+              <div data-testid={`studio-ghost-${tool}`}
+                className="absolute pointer-events-none"
+                style={{
+                  left: `${hoverPt.x * 100}%`, top: `${hoverPt.y * 100}%`,
+                  transform: "translate(-50%, -50%)",
+                  width: "18%", aspectRatio: "1 / 1",
+                  opacity: 0.35,
+                }}>
+                <img src={schema.assets[tool === "logo" ? "logo" : "qr"].data_url}
+                  alt="ghost" className="w-full h-full object-contain" draggable={false} />
+              </div>
+            )}
             <div className="absolute inset-0 pointer-events-none">
               {Object.entries(schema.boundaries).map(([corner, pt]) => pt && (
                 <span key={corner} style={{ left: `${pt.x * 100}%`, top: `${pt.y * 100}%` }}
@@ -398,9 +485,12 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
           </div>
         </div>
 
-        {/* Right: clean reconstruction + tabs */}
-        <aside className="w-full xl:w-[420px] shrink-0 bg-white border border-[var(--tm-border)] rounded-md flex flex-col">
-          <div className="flex border-b border-[var(--tm-border)]" data-testid="studio-tabs">
+        {/* Preview / inspector / assets pane */}
+        <aside className="w-full xl:w-[420px] shrink-0 bg-white border border-[var(--tm-border)] rounded-md flex flex-col" data-testid="studio-preview-pane">
+          <div className="text-[10px] uppercase tracking-[0.2em] font-bold text-[var(--tm-orange)] px-3 pt-2 flex items-center gap-1.5">
+            <Eye className="h-3 w-3" /> Preview · live output
+          </div>
+          <div className="flex border-b border-[var(--tm-border)] mt-1" data-testid="studio-tabs">
             {[
               { id: "clean", label: "Clean Render", icon: Eye },
               { id: "inspector", label: "Inspector", icon: SlidersHorizontal },
@@ -524,9 +614,35 @@ function MarkupOverlay({ el }) {
         </>
       );
     case "logo":
-      return <rect x={g.x} y={g.y} width={g.w} height={g.h} fill="rgba(14,31,71,0.1)" stroke="rgba(14,31,71,0.8)" strokeWidth="0.003" strokeDasharray="0.006 0.003" />;
+    case "logo_anchor": {
+      // MAPPING canvas — marker only. Asset lives in preview.
+      if (el.kind === "logo_anchor" && g.mode === "center") {
+        return (
+          <>
+            <circle cx={g.center.x} cy={g.center.y} r="0.014" fill="none" stroke="#0E1F47" strokeWidth="0.004" />
+            <circle cx={g.center.x} cy={g.center.y} r="0.003" fill="#0E1F47" />
+          </>
+        );
+      }
+      const geom = el.kind === "logo_anchor" ? g : g;
+      return <rect x={geom.x} y={geom.y} width={geom.w} height={geom.h}
+        fill="none" stroke="#0E1F47" strokeWidth="0.003" strokeDasharray="0.006 0.003" />;
+    }
     case "qr_box":
-      return <rect x={g.x} y={g.y} width={g.w} height={g.h} fill="rgba(0,0,0,0.05)" stroke="#000" strokeWidth="0.003" />;
+    case "qr_anchor": {
+      if (el.kind === "qr_anchor" && g.mode === "center") {
+        return (
+          <>
+            <rect x={g.center.x - 0.012} y={g.center.y - 0.012} width="0.024" height="0.024"
+              fill="none" stroke="#000" strokeWidth="0.004" />
+            <circle cx={g.center.x} cy={g.center.y} r="0.003" fill="#000" />
+          </>
+        );
+      }
+      const geom = el.kind === "qr_anchor" ? g : g;
+      return <rect x={geom.x} y={geom.y} width={geom.w} height={geom.h}
+        fill="none" stroke="#000" strokeWidth="0.003" />;
+    }
     default:
       return null;
   }
@@ -546,7 +662,7 @@ function DraftOverlay({ draft }) {
     const r = Math.sqrt((draft.start.x - draft.end.x) ** 2 + (draft.start.y - draft.end.y) ** 2);
     return <circle cx={draft.start.x} cy={draft.start.y} r={r} fill={fill} stroke={stroke} strokeWidth="0.003" strokeDasharray="0.006 0.003" />;
   }
-  if (["logo", "qr", "grid"].includes(draft.tool) && draft.start && draft.end) {
+  if (draft.tool === "grid" && draft.start && draft.end) {
     const r = normRect(draft.start.x, draft.start.y, draft.end.x, draft.end.y);
     return <rect x={r.x} y={r.y} width={r.w} height={r.h} fill={fill} stroke={stroke} strokeWidth="0.003" strokeDasharray="0.006 0.003" />;
   }
@@ -559,6 +675,10 @@ function DraftOverlay({ draft }) {
     return <path d={d} fill="none" stroke={stroke} strokeWidth="0.003" />;
   }
   if (draft.tool === "triangle" && draft.points) {
+    return draft.points.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="0.008" fill={stroke} />);
+  }
+  if (["logo", "qr"].includes(draft.tool) && draft.points) {
+    // Precise 4-corner mode for logo/QR — same visual language as corners/triangle.
     return draft.points.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="0.008" fill={stroke} />);
   }
   if (draft.tool === "bullet" && draft.dot) {
@@ -765,30 +885,54 @@ function CleanElement({ el, ws, px, wsDim, assets, fontFamilyOf: _ff, session: _
       const pxStroke = Math.max(2, (g.strokeWidth || 0.006) * 600);
       return <path d={d} fill="none" stroke="#0E1F47" strokeWidth={pxStroke} strokeLinecap="round" strokeLinejoin="round" />;
     }
-    case "logo": {
-      const p = px(ws({ x: g.x, y: g.y }));
-      const W = wsDim(g.w, "w"); const H = wsDim(g.h, "h");
+    case "logo":
+    case "logo_anchor": {
+      let boxX, boxY, boxW, boxH;
+      if (el.kind === "logo_anchor" && g.mode === "center") {
+        const c = px(ws(g.center));
+        const scale = g.scale || 0.18;
+        boxW = wsDim(scale, "w");
+        boxH = boxW; // square default; image preserveAspectRatio handles fitting
+        boxX = c.x - boxW / 2;
+        boxY = c.y - boxH / 2;
+      } else {
+        const p = px(ws({ x: g.x, y: g.y }));
+        boxX = p.x; boxY = p.y;
+        boxW = wsDim(g.w, "w"); boxH = wsDim(g.h, "h");
+      }
       if (assets?.logo?.data_url) {
-        return <image href={assets.logo.data_url} x={p.x} y={p.y} width={W} height={H} preserveAspectRatio="xMidYMid meet" />;
+        return <image href={assets.logo.data_url} x={boxX} y={boxY} width={boxW} height={boxH} preserveAspectRatio="xMidYMid meet" />;
       }
       return (
         <g>
-          <rect x={p.x} y={p.y} width={W} height={H} fill="none" stroke="#000" strokeWidth={sw} strokeDasharray="8 4" />
-          <text x={p.x + W / 2} y={p.y + H / 2} textAnchor="middle" dominantBaseline="middle"
+          <rect x={boxX} y={boxY} width={boxW} height={boxH} fill="none" stroke="#000" strokeWidth={sw} strokeDasharray="8 4" />
+          <text x={boxX + boxW / 2} y={boxY + boxH / 2} textAnchor="middle" dominantBaseline="middle"
             fill="#8A92AB" fontSize={11} fontWeight="700" fontFamily="Arial, sans-serif">LOGO</text>
         </g>
       );
     }
-    case "qr_box": {
-      const p = px(ws({ x: g.x, y: g.y }));
-      const W = wsDim(g.w, "w"); const H = wsDim(g.h, "h");
+    case "qr_box":
+    case "qr_anchor": {
+      let boxX, boxY, boxW, boxH;
+      if (el.kind === "qr_anchor" && g.mode === "center") {
+        const c = px(ws(g.center));
+        const scale = g.scale || 0.15;
+        boxW = wsDim(scale, "w");
+        boxH = boxW;
+        boxX = c.x - boxW / 2;
+        boxY = c.y - boxH / 2;
+      } else {
+        const p = px(ws({ x: g.x, y: g.y }));
+        boxX = p.x; boxY = p.y;
+        boxW = wsDim(g.w, "w"); boxH = wsDim(g.h, "h");
+      }
       if (assets?.qr?.data_url) {
-        return <image href={assets.qr.data_url} x={p.x} y={p.y} width={W} height={H} preserveAspectRatio="xMidYMid meet" />;
+        return <image href={assets.qr.data_url} x={boxX} y={boxY} width={boxW} height={boxH} preserveAspectRatio="xMidYMid meet" />;
       }
       return (
         <g>
-          <rect x={p.x} y={p.y} width={W} height={H} fill="none" stroke="#000" strokeWidth={sw} />
-          <text x={p.x + W / 2} y={p.y + H / 2} textAnchor="middle" dominantBaseline="middle"
+          <rect x={boxX} y={boxY} width={boxW} height={boxH} fill="none" stroke="#000" strokeWidth={sw} />
+          <text x={boxX + boxW / 2} y={boxY + boxH / 2} textAnchor="middle" dominantBaseline="middle"
             fill="#8A92AB" fontSize={10} fontWeight="700" fontFamily="Arial, sans-serif">QR</text>
         </g>
       );
