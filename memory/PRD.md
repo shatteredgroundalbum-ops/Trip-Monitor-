@@ -71,15 +71,39 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
     "Dashboard" overline.
   - PaperSheet gained a "Total Miles" row in the driver info box so the
     exported document also carries the round-trip mileage.
-  - Backend tests: 19/19 PASS in
-    `/app/backend/tests/test_iter7_role_achievements_miles.py`.
+- ✅ **PWA + Dashboard polish (2026-02-?? fork — iter 8)**:
+  - Manifest upgraded with proper 192×192 + 512×512 icons, theme color
+    aligned to brand orange, plus app shortcuts ("Start a new trip",
+    "Trip history") so Android long-press the home-screen icon offers
+    them.
+  - Service worker bumped to `trip-monitor-v2` (cache invalidation),
+    network-first /api/ GETs with cache fallback, cache-first static
+    shell, navigations fall back to cached SPA shell when offline.
+    Registered only in production builds.
+  - New `<InstallPrompt />` listens to `beforeinstallprompt` and offers a
+    one-tap install card; falls back to step-by-step iOS Safari
+    instructions when the native event isn't available. Auto-hides if the
+    app is already installed (display-mode: standalone) or recently
+    dismissed (7-day cooldown via `tm_install_dismissed_at`).
+  - New global `<OfflineBanner />` mounted in App.js — sticky orange bar
+    when `navigator.onLine === false`, auto-replaces with a brief blue
+    "Back online — syncing" pulse on reconnect.
+  - New `GET /api/stats/week` endpoint returns 7 daily buckets oldest →
+    newest in the user's profile time_zone (falls back to UTC), each
+    with `{date, label, is_today, miles, trips}` plus totals
+    (`miles_total_7d`, `trips_total_7d`, `miles_max`).
+  - New `<WeeklyTrend />` mini-chart on the Dashboard renders pure-CSS
+    7 bars; today highlighted in brand orange, other days blue, empty
+    days a faint dashed outline. No charting libraries. Tooltip per bar.
+  - Backend tests: 5/5 PASS in
+    `/app/backend/tests/test_iter8_pwa_weekly.py`. iter 7 regression
+    still 19/19 PASS.
 - ✅ Pre-seeded major US cities/states + 10 event codes + 5 trailer types.
 
 ## Prioritized Backlog
-- P1: PWA install manifest + service worker for home-screen install + offline support
-- P1: "This week" 7-bar mini-trend graph on the Dashboard
 - P1: Real social-login OAuth wiring (Google works via Emergent OAuth; FB / IG / LinkedIn / Email-password remain UI placeholders that toast "coming soon")
 - P1: Replace QR placeholder with real GoDriver install QR
 - P2: History screen to re-open finished sheets
 - P2: Automatic email attachment via backend (SendGrid/Resend)
 - P2: Company / Admin onboarding flow (multi-tenant: company creation + branding upload + custom trip-sheet templates)
+- P2: "Trip recap" celebration card on Finish (miles earned, badges unlocked, next milestone)
