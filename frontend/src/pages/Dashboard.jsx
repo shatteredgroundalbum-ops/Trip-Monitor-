@@ -118,7 +118,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 md:px-6 py-6 pb-44">
+      <main className="max-w-4xl mx-auto px-4 md:px-6 py-6 pb-56">
         {session ? (
           <>
             <div className="mb-6">
@@ -144,7 +144,13 @@ export default function Dashboard() {
       </main>
 
       {session && (
-        <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-[var(--tm-border)]" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+        <div
+          className="fixed left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-[var(--tm-border)]"
+          style={{
+            bottom: 0,
+            paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 56px)",
+          }}
+        >
           <div className="max-w-4xl mx-auto px-4 md:px-6 py-3 flex gap-2">
             <Button data-testid="preview-btn" variant="outline" onClick={() => setShowPreview(true)}
               className="h-12 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">

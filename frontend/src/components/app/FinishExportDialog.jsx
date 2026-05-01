@@ -8,19 +8,7 @@ import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { api } from "../../lib/api";
-import { Image, FileText, Mail } from "lucide-react";
-
-const blobToBase64 = (blob) =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result || "";
-      const idx = result.indexOf(",");
-      resolve(idx >= 0 ? result.slice(idx + 1) : result);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+import { Image, FileText, Mail, Loader2 } from "lucide-react";
 
 export default function FinishExportDialog({ open, onOpenChange, session, profile }) {
   const [doJpeg, setDoJpeg] = useState(true);
@@ -28,6 +16,7 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
   const [doEmail, setDoEmail] = useState(false);
   const [recipient, setRecipient] = useState(profile?.dispatcher_email || "");
   const [busy, setBusy] = useState(false);
+  const [busyStep, setBusyStep] = useState("");
   const paperRef = useRef(null);
 
   const baseName = `TripSheet_${session.order_number || "NO-ORDER"}_${(profile?.full_name || "driver").replace(/\s+/g, "_")}`;
@@ -45,14 +34,17 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const buildJpeg = async () => {
+  const exportJpeg = async () => {
     const canvas = await captureCanvas();
     return await new Promise((resolve) => {
-      canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.95);
+      canvas.toBlob((blob) => {
+        if (blob) downloadBlob(blob, `${baseName}.jpg`);
+        resolve(blob);
+      }, "image/jpeg", 0.95);
     });
   };
 
-  const buildPdfBlob = async () => {
+  const exportPdf = async () => {
     const canvas = await captureCanvas();
     const imgData = canvas.toDataURL("image/jpeg", 0.95);
     const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "letter" });
@@ -63,88 +55,70 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
     let h = w / ratio;
     if (h > pageH - 40) { h = pageH - 40; w = h * ratio; }
     pdf.addImage(imgData, "JPEG", (pageW - w) / 2, 20, w, h);
-    return pdf.output("blob");
+    pdf.save(`${baseName}.pdf`);
   };
 
-  const buildEmailHtml = () => `
-    <div style="font-family:Arial,Helvetica,sans-serif;color:#0E1F47;font-size:14px;line-height:1.5">
-      <p>Hello,</p>
-      <p>Please find attached the trip sheet for Order #${session.order_number}.</p>
-      <table style="border-collapse:collapse;font-size:13px">
-        <tr><td style="padding:2px 8px"><b>Driver:</b></td><td style="padding:2px 8px">${profile?.full_name || ""}</td></tr>
-        <tr><td style="padding:2px 8px"><b>Driver ID:</b></td><td style="padding:2px 8px">${session.driver_id || ""}</td></tr>
-        <tr><td style="padding:2px 8px"><b>Tractor #:</b></td><td style="padding:2px 8px">${session.truck_number || ""}</td></tr>
-        <tr><td style="padding:2px 8px"><b>Order #:</b></td><td style="padding:2px 8px">${session.order_number || ""}</td></tr>
-        <tr><td style="padding:2px 8px"><b>BOL #:</b></td><td style="padding:2px 8px">${session.bol_number || ""}</td></tr>
-      </table>
-      <p style="color:#7B8AA8;font-size:12px;margin-top:24px">Sent automatically by Trip Monitor — Driver Edition.</p>
-    </div>
-  `;
+  const openMailApp = () => {
+    const subject = `Trip Sheet — ${profile?.full_name || ""} — ${new Date().toLocaleDateString()} — Order #${session.order_number}`;
+    const lines = [
+      "Hello,",
+      "",
+      "Please find the trip sheet attached.",
+      "",
+      `Driver: ${profile?.full_name || ""}`,
+      `Driver ID: ${session.driver_id || ""}`,
+      `Tractor #: ${session.truck_number || ""}`,
+      `Order #: ${session.order_number || ""}`,
+      `BOL #: ${session.bol_number || ""}`,
+      "",
+      "Note: please attach the JPEG or PDF saved to your device.",
+      "",
+      "Thanks,",
+      profile?.full_name || "",
+    ];
+    const body = lines.join("\r\n");
+    const to = recipient ? encodeURIComponent(recipient) : "";
+    window.location.href = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
 
   const handleFinish = async () => {
     if (!doJpeg && !doPdf && !doEmail) {
       toast.error("Pick at least one export option");
       return;
     }
-    if (doEmail && !recipient) {
-      toast.error("Enter a recipient email");
-      return;
-    }
     setBusy(true);
     try {
-      let jpegBlob = null;
-      let pdfBlob = null;
-
-      if (doJpeg || doEmail) jpegBlob = await buildJpeg();
-      if (doPdf || doEmail) pdfBlob = await buildPdfBlob();
-
-      if (doJpeg && jpegBlob) downloadBlob(jpegBlob, `${baseName}.jpg`);
-      if (doPdf && pdfBlob) downloadBlob(pdfBlob, `${baseName}.pdf`);
-
-      if (doEmail) {
-        const attachments = [];
-        if (pdfBlob) {
-          attachments.push({
-            filename: `${baseName}.pdf`,
-            content_b64: await blobToBase64(pdfBlob),
-            content_type: "application/pdf",
-          });
-        }
-        if (jpegBlob) {
-          attachments.push({
-            filename: `${baseName}.jpg`,
-            content_b64: await blobToBase64(jpegBlob),
-            content_type: "image/jpeg",
-          });
-        }
-        const subject = `Trip Sheet — ${profile?.full_name || ""} — ${new Date().toLocaleDateString()} — Order #${session.order_number}`;
-        try {
-          await api.post("/email/send-trip-sheet", {
-            recipient,
-            subject,
-            html_body: buildEmailHtml(),
-            attachments,
-          });
-          toast.success(`Emailed to ${recipient}`);
-        } catch (err) {
-          const msg = err?.response?.data?.detail;
-          toast.error(typeof msg === "string" ? msg : "Email failed — check provider settings");
-        }
+      if (doJpeg) {
+        setBusyStep("Generating JPEG...");
+        toast.loading("Saving JPEG to your device...", { id: "exp" });
+        await exportJpeg();
       }
-
-      await api.post(`/trip-sessions/${session.session_id}/finish`);
-      toast.success("Trip sheet finished");
+      if (doPdf) {
+        setBusyStep("Generating PDF...");
+        toast.loading("Saving PDF to your device...", { id: "exp" });
+        await exportPdf();
+      }
+      if (doEmail) {
+        setBusyStep("Opening mail app...");
+        toast.loading("Opening your mail app...", { id: "exp" });
+        // tiny delay so the user sees the toast before app switch
+        await new Promise((r) => setTimeout(r, 250));
+        openMailApp();
+      }
+      try { await api.post(`/trip-sessions/${session.session_id}/finish`); } catch { /* ignore */ }
+      toast.success("Trip sheet exported & finished", { id: "exp" });
       onOpenChange(false);
-      setTimeout(() => window.location.reload(), 400);
+      setTimeout(() => window.location.reload(), 600);
     } catch (e) {
-      toast.error("Export failed: " + (e?.message || "unknown"));
+      toast.error("Export failed: " + (e?.message || "unknown"), { id: "exp" });
     } finally {
       setBusy(false);
+      setBusyStep("");
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(v) => !busy && onOpenChange(v)}>
       <DialogContent data-testid="finish-dialog" className="max-w-lg bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md">
         <DialogHeader>
           <DialogTitle className="text-[var(--tm-navy)]">
@@ -154,24 +128,24 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
             <span className="text-2xl font-black tracking-tight">Send your trip sheet</span>
           </DialogTitle>
           <DialogDescription className="text-[var(--tm-text-soft)]">
-            Pick one or more export formats. Email sends with the JPEG and PDF auto-attached.
+            Pick one or more options. Email opens your device&apos;s mail app with the message pre-filled — attach the JPEG or PDF before sending.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 mt-2">
           <Option icon={<Image className="h-5 w-5" />} label="Save as JPEG"
-            description="Downloads to your device"
+            description="Downloads the trip sheet image to your device"
             checked={doJpeg} onCheckedChange={setDoJpeg} testId="export-jpeg" />
           <Option icon={<FileText className="h-5 w-5" />} label="Export as PDF"
             description="Letter-size PDF identical to the paper form"
             checked={doPdf} onCheckedChange={setDoPdf} testId="export-pdf" />
-          <Option icon={<Mail className="h-5 w-5" />} label="Email with attachment"
-            description="Auto-attaches the JPEG and PDF — no manual attaching"
+          <Option icon={<Mail className="h-5 w-5" />} label="Open email app"
+            description="Opens your mail app with subject and body pre-filled"
             checked={doEmail} onCheckedChange={setDoEmail} testId="export-email" />
 
           {doEmail && (
             <div data-testid="email-recipient-row" className="pl-4">
-              <div className="text-[10px] uppercase tracking-wider text-[var(--tm-text-soft)] mb-1">Recipient email</div>
+              <div className="text-[10px] uppercase tracking-wider text-[var(--tm-text-soft)] mb-1">Recipient (optional pre-fill)</div>
               <Input
                 data-testid="email-recipient-input"
                 type="email"
@@ -194,8 +168,15 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
         </div>
 
         <Button data-testid="finish-export-btn" onClick={handleFinish} disabled={busy}
-          className="w-full h-14 mt-4 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md">
-          {busy ? "Exporting..." : "Finish & Export"}
+          className="w-full h-14 mt-4 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md disabled:opacity-90">
+          {busy ? (
+            <span className="inline-flex items-center gap-2" data-testid="export-busy-label">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {busyStep || "Working..."}
+            </span>
+          ) : (
+            "Finish & Export"
+          )}
         </Button>
 
         {/* Hidden render target for html2canvas */}

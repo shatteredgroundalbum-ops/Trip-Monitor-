@@ -64,14 +64,21 @@ export default function History() {
     const baseName = `TripSheet_${viewing.order_number || "NO-ORDER"}_${(profile?.full_name || "driver").replace(/\s+/g, "_")}`;
     try {
       if (kind === "jpeg") {
+        toast.loading("Saving JPEG...", { id: "h-exp" });
         const canvas = await captureCanvas();
-        canvas.toBlob((blob) => {
-          if (!blob) return;
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a"); a.href = url; a.download = `${baseName}.jpg`; a.click();
-          setTimeout(() => URL.revokeObjectURL(url), 1000);
-        }, "image/jpeg", 0.95);
+        await new Promise((resolve) => {
+          canvas.toBlob((blob) => {
+            if (blob) {
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a"); a.href = url; a.download = `${baseName}.jpg`; a.click();
+              setTimeout(() => URL.revokeObjectURL(url), 1000);
+            }
+            resolve();
+          }, "image/jpeg", 0.95);
+        });
+        toast.success("JPEG saved", { id: "h-exp" });
       } else if (kind === "pdf") {
+        toast.loading("Saving PDF...", { id: "h-exp" });
         const canvas = await captureCanvas();
         const imgData = canvas.toDataURL("image/jpeg", 0.95);
         const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "letter" });
@@ -83,14 +90,27 @@ export default function History() {
         if (h > pageH - 40) { h = pageH - 40; w = h * ratio; }
         pdf.addImage(imgData, "JPEG", (pageW - w) / 2, 20, w, h);
         pdf.save(`${baseName}.pdf`);
+        toast.success("PDF saved", { id: "h-exp" });
       } else if (kind === "email") {
         const subject = `Trip Sheet — ${profile?.full_name || ""} — ${formatDate(viewing.finished_at || viewing.created_at)} — Order #${viewing.order_number}`;
-        const body = `Hello,%0D%0A%0D%0APlease find attached the trip sheet.%0D%0A%0D%0A` +
-          `Driver: ${profile?.full_name || ""}%0D%0AOrder #: ${viewing.order_number}%0D%0ABOL #: ${viewing.bol_number}%0D%0A%0D%0AThanks.`;
-        window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${body}`;
+        const lines = [
+          "Hello,", "",
+          "Please find the trip sheet attached.", "",
+          `Driver: ${profile?.full_name || ""}`,
+          `Order #: ${viewing.order_number || ""}`,
+          `BOL #: ${viewing.bol_number || ""}`, "",
+          "Note: please attach the JPEG or PDF saved to your device.", "",
+          "Thanks,", profile?.full_name || "",
+        ];
+        const body = lines.join("\r\n");
+        const to = profile?.dispatcher_email ? encodeURIComponent(profile.dispatcher_email) : "";
+        toast.loading("Opening your mail app...", { id: "h-exp" });
+        await new Promise((r) => setTimeout(r, 200));
+        window.location.href = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        toast.success("Mail app opened", { id: "h-exp" });
       }
     } catch {
-      toast.error("Export failed");
+      toast.error("Export failed", { id: "h-exp" });
     }
   };
 
