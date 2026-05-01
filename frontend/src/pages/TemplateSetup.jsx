@@ -17,7 +17,7 @@ import { Button } from "../components/ui/button";
 import { toast } from "sonner";
 import { BrandLockupCompact } from "../components/app/BrandLogo";
 import TemplateMappingWizard from "../components/app/TemplateMappingWizard";
-import ProMappingEditor from "../components/app/ProMappingEditor";
+import ProMappingStudio from "../components/app/ProMappingStudio";
 import { normalizeCapture, runOcr, formatBytes } from "../lib/scan-pipeline";
 import {
   listTemplates,
@@ -365,10 +365,10 @@ export default function TemplateSetup() {
                         : "bg-white border-[var(--tm-border)] hover:border-[var(--tm-blue)]"
                     }`}
                   >
-                    <div className="text-[10px] uppercase tracking-wider text-[var(--tm-orange)] font-bold">Pro · New</div>
-                    <div className="text-sm font-bold">Pro Mapping</div>
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--tm-orange)] font-bold">Pro · Studio</div>
+                    <div className="text-sm font-bold">Pro Mapping Studio</div>
                     <div className="text-[10px] text-[var(--tm-text-soft)] mt-0.5">
-                      Pixel-perfect · 6 markup tools · split schema / form / preview pane.
+                      Draw left · clean reconstruct right · 5 fonts + custom trace · logo + QR assets · lock template.
                     </div>
                   </button>
                 </div>
@@ -378,7 +378,7 @@ export default function TemplateSetup() {
                   onClick={handleContinueToMap}
                   className="h-11 w-full bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md"
                 >
-                  Continue to {mapMode === "pro" ? "Pro Mapping" : "Quick Map"} <Check className="h-4 w-4 ml-1" />
+                  Continue to {mapMode === "pro" ? "Pro Studio" : "Quick Map"} <Check className="h-4 w-4 ml-1" />
                 </Button>
                 {ocrWords.length > 0 && (
                   <div className="text-[11px] uppercase tracking-wider text-[var(--tm-text-soft)] font-bold flex items-center gap-1">
@@ -398,7 +398,7 @@ export default function TemplateSetup() {
 
         {step === "Map" && draftTemplate && (
           mapMode === "pro" ? (
-            <ProMappingEditor
+            <ProMappingStudio
               template={draftTemplate}
               onDone={handleMapDone}
               onCancel={() => setStep("Capture")}

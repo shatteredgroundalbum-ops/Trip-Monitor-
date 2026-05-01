@@ -1,30 +1,30 @@
 import React, { forwardRef } from "react";
 import PaperSheet from "./PaperSheet";
+import { CleanReconstructionCanvas } from "./ProMappingStudio";
 import { PRESET_FIELDS_BY_ID } from "../../lib/template-types";
 
 /**
  * Template-driven trip sheet for export.
  *
- * Two modes:
- *  - `source === 'default'`  → Delegates to the legacy PaperSheet (the
- *    built-in TripMonitor / RTI layout). Unchanged output.
- *  - `source === 'scanned'`  → PHOTOGRAPHIC MODE. Renders the driver's
- *    scan image as the background and overlays typed trip values on top
- *    at the coordinates the driver mapped in TemplateMappingWizard.
- *    html2canvas screenshots the whole wrapper — no special rendering
- *    changes needed in FinishExportDialog.
+ * Three modes:
+ *  - `source === 'default'`     → legacy PaperSheet (RTI layout).
+ *  - schema.version === 2       → Pro Studio CLEAN RECONSTRUCTION (no scan).
+ *  - `source === 'scanned'`     → photographic overlay fallback (legacy
+ *    Quick Map + 6-primitive Pro editor both land here).
  *
- * Privacy: like PaperSheet, this component NEVER renders mileage
- * (total_trip_miles / segment_miles) — mileage is internal-only.
+ * Privacy: mileage (total_trip_miles / segment_miles) is NEVER rendered
+ * on ANY of these modes.
  */
 const DynamicPaperSheet = forwardRef(({ session, profile, template }, ref) => {
   const source = template?.source || "default";
   if (source !== "scanned" || !template?.scan?.data_url) {
     return <PaperSheet ref={ref} session={session} profile={profile} />;
   }
-  // Pro-Mapping flow persists line_label + point elements under
-  // template.schema.elements. Synthesize template.fields on the fly so
-  // the photographic overlay renderer below still works unchanged.
+  // Pro Studio schema v2 → clean vector reconstruction (export surface).
+  if (template?.schema?.version === 2) {
+    return <CleanReconstructionCanvas ref={ref} schema={template.schema} session={session} width={900} />;
+  }
+  // Legacy scanned-overlay flow (Quick Map + old Pro editor).
   const effective = template.fields && Object.keys(template.fields).length
     ? template
     : { ...template, fields: elementsToFields(template.schema?.elements || []) };
