@@ -37,11 +37,14 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   const [draft, setDraft] = useState(null);
   const [fieldLabel, setFieldLabel] = useState("");
   const [fontSel, setFontSel] = useState("arial");
-  const [tab, setTab] = useState("clean"); // clean | inspector | assets — preview-first per spec
+  const [dockTab, setDockTab] = useState("inspector"); // inspector | assets
+  const [dockOpen, setDockOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [handedness, setHandedness] = useState("right"); // right-handed: mapping on left, preview on right. left-handed: swapped.
-  const [placementMode, setPlacementMode] = useState("fast"); // 'fast' (1-tap center) | 'precise' (4-corner) — logo/qr only
-  const [hoverPt, setHoverPt] = useState(null); // for ghost-preview of logo/QR assets
+  const [handedness, setHandedness] = useState("right");
+  const [placementMode, setPlacementMode] = useState("fast");
+  const [hoverPt, setHoverPt] = useState(null);
+  const [zoom, setZoom] = useState(1); // 0.5 / 0.75 / 1 / 1.25 / 1.5 — both canvases scale together
+  const [ghostOverlay, setGhostOverlay] = useState(false); // overlays preview faintly atop mapping for alignment confirmation
   const canvasRef = useRef(null);
   const logoInputRef = useRef(null);
   const qrInputRef = useRef(null);
@@ -345,6 +348,26 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
             <ArrowLeftRight className="h-3 w-3 mr-1" />
             {handedness === "right" ? "Right-handed" : "Left-handed"}
           </Button>
+          <div className="inline-flex rounded-md border border-[var(--tm-border)] overflow-hidden" data-testid="studio-zoom">
+            <button type="button" data-testid="studio-zoom-out"
+              onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
+              className="h-7 px-2 text-[11px] font-bold bg-white text-[var(--tm-navy)] hover:bg-[var(--tm-surface)]"
+              aria-label="Zoom out">−</button>
+            <span className="h-7 px-2 text-[10px] font-bold bg-[var(--tm-surface)] text-[var(--tm-navy)] flex items-center min-w-[42px] justify-center"
+              data-testid="studio-zoom-level">{Math.round(zoom * 100)}%</span>
+            <button type="button" data-testid="studio-zoom-in"
+              onClick={() => setZoom((z) => Math.min(1.5, +(z + 0.25).toFixed(2)))}
+              className="h-7 px-2 text-[11px] font-bold bg-white text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] border-l border-[var(--tm-border)]"
+              aria-label="Zoom in">+</button>
+          </div>
+          <Button variant="outline" size="sm"
+            data-testid="studio-ghost-overlay"
+            onClick={() => setGhostOverlay((g) => !g)}
+            title="Overlay preview faintly on top of mapping canvas to verify alignment"
+            className={`h-7 text-[10px] border-[var(--tm-border)] ${
+              ghostOverlay ? "bg-[var(--tm-blue)] text-white" : "bg-white text-[var(--tm-navy)]"}`}>
+            <Eye className="h-3 w-3 mr-1" /> Ghost Overlay
+          </Button>
           {(tool === "logo" || tool === "qr") && (
             <div className="inline-flex rounded-md border border-[var(--tm-border)] overflow-hidden" data-testid="studio-placement-mode">
               <button type="button"
@@ -422,106 +445,96 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
         </div>
       </div>
 
-      {/* Split body — two-window layout per spec:
-           Left = MAPPING (input only, never manipulate assets here)
-           Right = PREVIEW (output only, renders uploaded assets).
-           Handedness swaps which side each pane sits on. */}
-      <div className={`flex flex-col gap-3 p-3 flex-1 ${handedness === "right" ? "xl:flex-row" : "xl:flex-row-reverse"}`}
-        data-testid="studio-split">
-        {/* Mapping canvas */}
-        <div className="flex-1 min-w-0" data-testid="studio-mapping-pane">
-          <div className="text-[10px] uppercase tracking-[0.2em] font-bold text-[var(--tm-blue)] mb-1 flex items-center gap-1.5">
-            <Target className="h-3 w-3" /> Mapping · tap to mark
-          </div>
-          <div
-            ref={canvasRef}
-            className="relative mx-auto select-none border-2 border-[var(--tm-border)] rounded-md overflow-hidden bg-white shadow-sm touch-none"
-            style={{ maxWidth: 720, cursor: "crosshair" }}
-            data-testid="studio-canvas"
-            onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
-            onPointerLeave={() => setHoverPt(null)}
-          >
-            <img src={scan.data_url} alt={template.name} draggable={false} className="block w-full h-auto" />
-            <svg viewBox="0 0 1 1" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
-              {/* Boundary anchors */}
-              {Object.entries(schema.boundaries).map(([corner, pt]) => pt && (
-                <g key={corner}>
-                  <circle cx={pt.x} cy={pt.y} r="0.012" fill="rgba(12,74,183,0.9)" stroke="white" strokeWidth="0.003" />
-                </g>
-              ))}
-              {/* Bounding rectangle once all 4 anchors exist */}
-              {work.complete && (
-                <rect x={work.x} y={work.y} width={work.w} height={work.h}
-                  fill="none" stroke="rgba(12,74,183,0.35)" strokeWidth="0.002" strokeDasharray="0.006 0.004" />
-              )}
-              {/* Committed elements */}
-              {schema.elements.map((el) => <MarkupOverlay key={el.id} el={el} />)}
-              {/* Draft */}
-              {draft && <DraftOverlay draft={draft} />}
-            </svg>
-            {/* Ghost preview — faint asset thumbnail follows the stylus
-                BEFORE commit. Tap commits at the ghost center. */}
-            {hoverPt && (tool === "logo" || tool === "qr") && placementMode === "fast" && schema.assets[tool === "logo" ? "logo" : "qr"]?.data_url && (
-              <div data-testid={`studio-ghost-${tool}`}
-                className="absolute pointer-events-none"
-                style={{
-                  left: `${hoverPt.x * 100}%`, top: `${hoverPt.y * 100}%`,
-                  transform: "translate(-50%, -50%)",
-                  width: "18%", aspectRatio: "1 / 1",
-                  opacity: 0.35,
-                }}>
-                <img src={schema.assets[tool === "logo" ? "logo" : "qr"].data_url}
-                  alt="ghost" className="w-full h-full object-contain" draggable={false} />
-              </div>
-            )}
-            <div className="absolute inset-0 pointer-events-none">
-              {Object.entries(schema.boundaries).map(([corner, pt]) => pt && (
-                <span key={corner} style={{ left: `${pt.x * 100}%`, top: `${pt.y * 100}%` }}
-                  className="absolute -translate-x-1/2 -translate-y-[130%] text-[9px] uppercase tracking-wider font-bold px-1 py-0.5 rounded bg-[var(--tm-blue)] text-white">
-                  {corner.toUpperCase()}
-                </span>
-              ))}
+      {/* DUAL FULL-SIZE CANVASES — same dimensions (8.5×11), same coordinate
+           space, side-by-side. The mapping canvas is interactive (input
+           only); the preview canvas is read-only output. Both scale
+           together via the zoom control above so coordinates stay 1:1. */}
+      <div className="flex-1 overflow-auto p-3 bg-[var(--tm-surface)]">
+        <div
+          data-testid="studio-split"
+          className={`mx-auto flex flex-col gap-4 ${handedness === "right" ? "lg:flex-row" : "lg:flex-row-reverse"}`}
+          style={{
+            transform: `scale(${zoom})`,
+            transformOrigin: "top center",
+            width: "fit-content",
+          }}
+        >
+          {/* Mapping canvas — full 8.5×11 with the scan stretched to fill */}
+          <section data-testid="studio-mapping-pane" className="flex flex-col items-center">
+            <div className="text-[10px] uppercase tracking-[0.2em] font-bold text-[var(--tm-blue)] mb-1.5 flex items-center gap-1.5 self-start">
+              <Target className="h-3 w-3" /> Mapping · tap to mark
             </div>
-          </div>
-        </div>
+            <div
+              ref={canvasRef}
+              data-testid="studio-canvas"
+              className="relative select-none border-2 border-[var(--tm-blue)] rounded-md overflow-hidden bg-white shadow-md touch-none"
+              style={{ width: 540, aspectRatio: "8.5 / 11", cursor: "crosshair" }}
+              onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
+              onPointerLeave={() => setHoverPt(null)}
+            >
+              {/* Scan fills the 8.5:11 frame (object-fit: fill) so a tap at
+                  canvas (x,y) IS the same coordinate that the preview
+                  canvas uses — exact 1:1 correspondence per spec. */}
+              <img src={scan.data_url} alt={template.name} draggable={false}
+                style={{ width: "100%", height: "100%", objectFit: "fill", display: "block" }} />
+              <svg viewBox="0 0 1 1" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
+                {Object.entries(schema.boundaries).map(([corner, pt]) => pt && (
+                  <circle key={corner} cx={pt.x} cy={pt.y} r="0.012" fill="rgba(12,74,183,0.9)" stroke="white" strokeWidth="0.003" />
+                ))}
+                {work.complete && (
+                  <rect x={work.x} y={work.y} width={work.w} height={work.h}
+                    fill="none" stroke="rgba(12,74,183,0.35)" strokeWidth="0.002" strokeDasharray="0.006 0.004" />
+                )}
+                {schema.elements.map((el) => <MarkupOverlay key={el.id} el={el} />)}
+                {draft && <DraftOverlay draft={draft} />}
+              </svg>
+              {/* Hover ghost (logo/QR fast mode) */}
+              {hoverPt && (tool === "logo" || tool === "qr") && placementMode === "fast" && schema.assets[tool === "logo" ? "logo" : "qr"]?.data_url && (
+                <div data-testid={`studio-ghost-${tool}`}
+                  className="absolute pointer-events-none"
+                  style={{
+                    left: `${hoverPt.x * 100}%`, top: `${hoverPt.y * 100}%`,
+                    transform: "translate(-50%, -50%)",
+                    width: "18%", aspectRatio: "1 / 1",
+                    opacity: 0.35,
+                  }}>
+                  <img src={schema.assets[tool === "logo" ? "logo" : "qr"].data_url}
+                    alt="ghost" className="w-full h-full object-contain" draggable={false} />
+                </div>
+              )}
+              {/* Boundary anchor labels */}
+              <div className="absolute inset-0 pointer-events-none">
+                {Object.entries(schema.boundaries).map(([corner, pt]) => pt && (
+                  <span key={corner} style={{ left: `${pt.x * 100}%`, top: `${pt.y * 100}%` }}
+                    className="absolute -translate-x-1/2 -translate-y-[130%] text-[9px] uppercase tracking-wider font-bold px-1 py-0.5 rounded bg-[var(--tm-blue)] text-white">
+                    {corner.toUpperCase()}
+                  </span>
+                ))}
+              </div>
+              {/* Optional ghost overlay — preview faintly on top of mapping */}
+              {ghostOverlay && (
+                <div data-testid="studio-ghost-overlay-render"
+                  className="absolute inset-0 pointer-events-none"
+                  style={{ opacity: 0.32 }}>
+                  <CleanReconstructionCanvas schema={schema} session={null} width={540} />
+                </div>
+              )}
+            </div>
+          </section>
 
-        {/* Preview / inspector / assets pane */}
-        <aside className="w-full xl:w-[420px] shrink-0 bg-white border border-[var(--tm-border)] rounded-md flex flex-col" data-testid="studio-preview-pane">
-          <div className="text-[10px] uppercase tracking-[0.2em] font-bold text-[var(--tm-orange)] px-3 pt-2 flex items-center gap-1.5">
-            <Eye className="h-3 w-3" /> Preview · live output
-          </div>
-          <div className="flex border-b border-[var(--tm-border)] mt-1" data-testid="studio-tabs">
-            {[
-              { id: "clean", label: "Clean Render", icon: Eye },
-              { id: "inspector", label: "Inspector", icon: SlidersHorizontal },
-              { id: "assets", label: "Assets", icon: ImageIcon },
-            ].map((t) => {
-              const active = tab === t.id;
-              const TIcon = t.icon;
-              return (
-                <button key={t.id} type="button"
-                  data-testid={`studio-tab-${t.id}`}
-                  onClick={() => setTab(t.id)}
-                  className={`flex-1 h-10 text-[11px] uppercase tracking-wider font-bold inline-flex items-center justify-center gap-1 ${
-                    active ? "bg-[var(--tm-orange)] text-white" : "bg-white text-[var(--tm-text-soft)]"}`}
-                >
-                  <TIcon className="h-3 w-3" /> {t.label}
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex-1 overflow-y-auto p-3">
-            {tab === "clean" && (
-              <CleanReconstructionPreview schema={schema} />
-            )}
-            {tab === "inspector" && (
-              <InspectorPane schema={schema} onDelete={delElement} />
-            )}
-            {tab === "assets" && (
-              <AssetsPane schema={schema} onLogoPick={() => logoInputRef.current?.click()} onQrPick={() => qrInputRef.current?.click()} />
-            )}
-          </div>
-        </aside>
+          {/* Preview canvas — same dimensions, read-only output */}
+          <section data-testid="studio-preview-pane" className="flex flex-col items-center">
+            <div className="text-[10px] uppercase tracking-[0.2em] font-bold text-[var(--tm-orange)] mb-1.5 flex items-center gap-1.5 self-start">
+              <Eye className="h-3 w-3" /> Preview · live output
+            </div>
+            <div
+              data-testid="studio-preview-canvas"
+              className="relative border-2 border-[var(--tm-orange)] rounded-md overflow-hidden bg-white shadow-md"
+              style={{ width: 540, aspectRatio: "8.5 / 11" }}>
+              <CleanReconstructionCanvas schema={schema} session={null} width={540} />
+            </div>
+          </section>
+        </div>
       </div>
 
       {/* Hidden file inputs */}
@@ -529,6 +542,42 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
         data-testid="studio-logo-file" onChange={onLogoFile} />
       <input ref={qrInputRef} type="file" accept="image/*" className="hidden"
         data-testid="studio-qr-file" onChange={onQrFile} />
+
+      {/* Bottom dock — Inspector + Assets, collapsible */}
+      <div className="border-t border-[var(--tm-border)] bg-white" data-testid="studio-dock">
+        <div className="flex items-center px-3 py-1.5 gap-2 border-b border-[var(--tm-border)]">
+          <button type="button"
+            data-testid={`studio-dock-tab-inspector`}
+            onClick={() => { setDockTab("inspector"); setDockOpen(true); }}
+            className={`h-7 px-2.5 text-[10px] uppercase tracking-wider font-bold rounded-md inline-flex items-center gap-1 ${
+              dockOpen && dockTab === "inspector" ? "bg-[var(--tm-orange)] text-white" : "bg-[var(--tm-surface)] text-[var(--tm-navy)]"}`}>
+            <SlidersHorizontal className="h-3 w-3" /> Inspector ({schema.elements.length})
+          </button>
+          <button type="button"
+            data-testid={`studio-dock-tab-assets`}
+            onClick={() => { setDockTab("assets"); setDockOpen(true); }}
+            className={`h-7 px-2.5 text-[10px] uppercase tracking-wider font-bold rounded-md inline-flex items-center gap-1 ${
+              dockOpen && dockTab === "assets" ? "bg-[var(--tm-orange)] text-white" : "bg-[var(--tm-surface)] text-[var(--tm-navy)]"}`}>
+            <ImageIcon className="h-3 w-3" /> Assets
+            {schema.assets.logo?.data_url && <span className="text-[8px] ml-1">·LOGO</span>}
+            {schema.assets.qr?.data_url && <span className="text-[8px] ml-1">·QR</span>}
+          </button>
+          <div className="flex-1" />
+          <button type="button"
+            data-testid="studio-dock-toggle"
+            onClick={() => setDockOpen((o) => !o)}
+            className="h-7 px-2 text-[10px] uppercase tracking-wider font-bold text-[var(--tm-text-soft)] hover:text-[var(--tm-navy)]">
+            {dockOpen ? "Hide" : "Show"}
+          </button>
+        </div>
+        {dockOpen && (
+          <div className="max-h-[200px] overflow-y-auto p-3" data-testid={`studio-dock-pane-${dockTab}`}>
+            {dockTab === "inspector"
+              ? <InspectorPane schema={schema} onDelete={delElement} />
+              : <AssetsPane schema={schema} onLogoPick={() => logoInputRef.current?.click()} onQrPick={() => qrInputRef.current?.click()} />}
+          </div>
+        )}
+      </div>
 
       {/* Footer */}
       <div className="sticky bottom-0 left-0 right-0 bg-white border-t border-[var(--tm-border)] p-3 flex items-center gap-2"
