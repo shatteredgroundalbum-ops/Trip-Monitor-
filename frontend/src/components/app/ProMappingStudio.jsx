@@ -133,6 +133,15 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
     });
   };
 
+  // Ref wrappers so the document-level keyboard listener always calls
+  // the latest closure — defends against stale state if future refactors
+  // read state directly inside historyUndo/Redo rather than via the
+  // functional-update pattern.
+  const historyUndoRef = useRef(historyUndo);
+  const historyRedoRef = useRef(historyRedo);
+  historyUndoRef.current = historyUndo;
+  historyRedoRef.current = historyRedo;
+
   // Keyboard shortcuts: Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z or
   // Cmd/Ctrl+Y = redo. Bound at the document level; bailouts if a
   // text input or contenteditable has focus.
@@ -141,12 +150,11 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
       const tag = e.target?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || e.target?.isContentEditable) return;
       if (!(e.metaKey || e.ctrlKey)) return;
-      if (e.key === "z" && !e.shiftKey) { e.preventDefault(); historyUndo(); }
-      else if ((e.key === "z" && e.shiftKey) || e.key === "y") { e.preventDefault(); historyRedo(); }
+      if (e.key === "z" && !e.shiftKey) { e.preventDefault(); historyUndoRef.current(); }
+      else if ((e.key === "z" && e.shiftKey) || e.key === "y") { e.preventDefault(); historyRedoRef.current(); }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // selectedEl / selectedId are provided above via selectedEls[0].
