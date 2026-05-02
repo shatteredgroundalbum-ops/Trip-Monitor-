@@ -61,7 +61,10 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   const logoInputRef = useRef(null);
   const qrInputRef = useRef(null);
 
-  const selectedEl = schema.elements.find((e) => e.id === selectedId) || null;
+  const selectedEl = useMemo(
+    () => schema.elements.find((e) => e.id === selectedId) || null,
+    [schema.elements, selectedId]
+  );
 
   const scan = template?.scan;
   const work = useMemo(() => workingArea(schema.boundaries), [schema.boundaries]);
@@ -126,10 +129,12 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
     /* SELECT TOOL — tap to select, drag handles to resize/rotate, drag body to move. */
     if (tool === "select") {
       // Hit-test handle first if an element is selected.
+      // Hit-area scales inversely with zoom so handles meet WCAG 24px
+      // touch-target at any zoom (e.g. at 0.5× the area doubles).
       if (selectedEl && !selectedEl.locked) {
         const bbox = elementBBox(selectedEl);
         const handles = bboxHandles(bbox);
-        const handleR = 0.018;
+        const handleR = 0.018 / zoom;
         for (const [hKey, hPt] of Object.entries(handles)) {
           if (Math.abs(pt.x - hPt.x) < handleR && Math.abs(pt.y - hPt.y) < handleR) {
             setTransform({ kind: "resize", handle: hKey, originalBBox: bbox, originalGeometry: selectedEl.geometry });
@@ -667,7 +672,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
                   </g>
                 ))}
                 {/* Selection outline + 8 handles + rotate handle */}
-                {selectedEl && tool === "select" && <SelectionFrame el={selectedEl} />}
+                {selectedEl && tool === "select" && <SelectionFrame el={selectedEl} zoom={zoom} />}
                 {/* Grid edit overlay — show bbox + tapped lines */}
                 {gridDraft?.step === "edit" && <GridEditOverlay gridDraft={gridDraft} />}
                 {draft && <DraftOverlay draft={draft} />}
@@ -825,31 +830,38 @@ function dist(a, b) { return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2); }
  * on the parent so handle hit-testing happens via onPointerDown
  * coordinate math (consistent with the rest of the canvas).
  */
-function SelectionFrame({ el }) {
+function SelectionFrame({ el, zoom = 1 }) {
   const bb = elementBBox(el);
   const cx = bb.x + bb.w / 2;
   const cy = bb.y + bb.h / 2;
   const handles = bboxHandles(bb);
   const rotPt = { x: cx, y: bb.y - 0.04 };
   const stroke = el.locked ? "rgba(255,95,21,0.9)" : "rgba(12,74,183,0.95)";
+  // Handle visual size scales inversely with zoom so the rendered
+  // square stays a constant ~24px across all zoom levels (matching
+  // the hit-area which scales the same way in onPointerDown).
+  const hSize = 0.018 / zoom;
+  const hHalf = hSize / 2;
+  const rotR = 0.012 / zoom;
+  const stroke_w = 0.0028 / Math.max(zoom, 1); // keep outline crisp at zoom-out
   return (
     <g
       data-testid="studio-selection-frame"
       transform={el.rotation ? `rotate(${el.rotation} ${cx} ${cy})` : undefined}
     >
       <rect x={bb.x} y={bb.y} width={bb.w} height={bb.h}
-        fill="none" stroke={stroke} strokeWidth="0.0024" strokeDasharray="0.007 0.004" />
+        fill="none" stroke={stroke} strokeWidth={0.0024 / Math.max(zoom, 1)} strokeDasharray="0.007 0.004" />
       {!el.locked && Object.entries(handles).map(([key, p]) => (
         <rect key={key} data-testid={`studio-handle-${key}`}
-          x={p.x - 0.009} y={p.y - 0.009} width="0.018" height="0.018"
-          fill="white" stroke={stroke} strokeWidth="0.0028" />
+          x={p.x - hHalf} y={p.y - hHalf} width={hSize} height={hSize}
+          fill="white" stroke={stroke} strokeWidth={stroke_w} />
       ))}
       {!el.locked && (
         <>
-          <line x1={cx} y1={bb.y} x2={cx} y2={rotPt.y + 0.012} stroke={stroke} strokeWidth="0.002" />
+          <line x1={cx} y1={bb.y} x2={cx} y2={rotPt.y + rotR} stroke={stroke} strokeWidth={0.002 / Math.max(zoom, 1)} />
           <circle data-testid="studio-handle-rotate"
-            cx={rotPt.x} cy={rotPt.y} r="0.012"
-            fill="white" stroke={stroke} strokeWidth="0.0028" />
+            cx={rotPt.x} cy={rotPt.y} r={rotR}
+            fill="white" stroke={stroke} strokeWidth={stroke_w} />
         </>
       )}
     </g>
