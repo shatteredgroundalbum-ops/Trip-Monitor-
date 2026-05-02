@@ -40,9 +40,8 @@
  */
 
 export const STUDIO_TOOLS = [
-  { id: "select",   label: "Select",         blurb: "Tap an element to select · drag handles to resize · drag rotate handle · lock or delete." },
+  { id: "select",   label: "Select",         blurb: "Tap an element to select · drag corners (proportional), sides (stretch), or center (move)." },
   { id: "pan",      label: "Pan",            blurb: "Drag to pan when zoomed in · both canvases scroll together." },
-  { id: "boundary", label: "Reset Page",   blurb: "Reset the page boundary to the 1-inch default margin." },
   { id: "line",     label: "Line",          blurb: "Drag for a straight line" },
   { id: "rect",     label: "Rectangle",     blurb: "Drag to draw a box" },
   { id: "circle",   label: "Circle",        blurb: "Drag from center to edge" },
@@ -438,7 +437,9 @@ export function resizeGeometry(kind, geometry, handle, newBBox) {
 }
 
 /**
- * 8 handle positions for a bbox: NW, N, NE, E, SE, S, SW, W (clockwise from top-left).
+ * 9 handle positions for a bbox: 4 corners (NW/NE/SE/SW), 4 edge
+ * midpoints (N/E/S/W), and 1 center (C). Corners are proportional
+ * resize, edges stretch one axis only, center moves the element.
  */
 export function bboxHandles(bbox) {
   const { x, y, w, h } = bbox;
@@ -451,6 +452,7 @@ export function bboxHandles(bbox) {
     s:  { x: x + w / 2, y: y + h     },
     sw: { x: x,         y: y + h     },
     w:  { x: x,         y: y + h / 2 },
+    c:  { x: x + w / 2, y: y + h / 2 },
   };
 }
 
@@ -530,16 +532,50 @@ export function validateSchema(schema) {
 }/**
  * Given an active resize-drag handle and a new pointer position,
  * compute the resulting bbox. Maintains anchor at the opposite handle.
+ *
+ * Handle semantics (9-handle model):
+ *   - corners (nw/ne/se/sw): proportional resize — preserves the
+ *     element's original aspect ratio. The opposite corner is
+ *     anchored.
+ *   - edges (n/e/s/w): single-axis stretch. The opposite edge is
+ *     anchored.
+ *   - center (c): not handled here — center handle drives a move
+ *     transform, not a resize.
  */
 export function resizedBBox(originalBBox, handle, pt) {
   const { x, y, w, h } = originalBBox;
+  const isCorner = ["nw", "ne", "se", "sw"].includes(handle);
+  if (isCorner) {
+    // Anchor = opposite corner; preserve original aspect ratio.
+    let ax, ay;
+    if (handle === "se") { ax = x;         ay = y;         }
+    else if (handle === "sw") { ax = x + w; ay = y;         }
+    else if (handle === "ne") { ax = x;     ay = y + h;     }
+    else { /* nw */            ax = x + w; ay = y + h;     }
+    const dx = pt.x - ax;
+    const dy = pt.y - ay;
+    const aspect = (w === 0 ? 1 : (h === 0 ? 1 : w / h));
+    let nw_ = Math.max(0.005, Math.abs(dx));
+    let nh_ = Math.max(0.005, Math.abs(dy));
+    // Preserve aspect: pick the dimension that grew more relative to
+    // the original aspect, then back-compute the other.
+    if (nw_ / nh_ > aspect) {
+      nh_ = nw_ / aspect;
+    } else {
+      nw_ = nh_ * aspect;
+    }
+    const sgnX = dx >= 0 ? 1 : -1;
+    const sgnY = dy >= 0 ? 1 : -1;
+    const nx = sgnX >= 0 ? ax : ax - nw_;
+    const ny = sgnY >= 0 ? ay : ay - nh_;
+    return { x: nx, y: ny, w: nw_, h: nh_ };
+  }
+  // Edge handles — single-axis stretch.
   let nx = x, ny = y, nw = w, nh = h;
-  // Determine anchor (opposite corner) and new dimensions
   if (handle.includes("w")) { nw = (x + w) - pt.x; nx = pt.x; }
   if (handle.includes("e")) { nw = pt.x - x; }
   if (handle.includes("n")) { nh = (y + h) - pt.y; ny = pt.y; }
   if (handle.includes("s")) { nh = pt.y - y; }
-  // Clamp positive dimensions
   if (nw < 0.005) { nw = 0.005; }
   if (nh < 0.005) { nh = 0.005; }
   return { x: nx, y: ny, w: nw, h: nh };
@@ -587,4 +623,77 @@ export function elementBBox(el) {
     default:
       return { x: 0, y: 0, w: 0, h: 0 };
   }
+}
+
+/**
+ * Estimate font defaults from a list of OCR words. Used by the
+ * pre-Studio Boundary Setup phase to seed default font/size/weight
+ * for new text elements drawn inside the Studio.
+ *
+ * Returns:
+ *   {
+ *     fontFamily: string id from FONT_PRESETS,
+ *     fontSizePt: number  // approx points at letter size
+ *     fontHeightNorm: number  // median word height as 0..1 of page
+ *     weight: 'normal' | 'bold'
+ *     lineSpacingNorm: number  // median vertical gap between word rows
+ *     wordsAnalyzed: number
+ *   }
+ */
+export function analyzeFontDefaults(ocrWords, scanW, scanH) {
+  const empty = {
+    fontFamily: "arial", fontSizePt: 12, fontHeightNorm: 0.018,
+    weight: "normal", lineSpacingNorm: 0.024, wordsAnalyzed: 0,
+  };
+  if (!ocrWords?.length) return empty;
+  const heights = [];
+  const ys = [];
+  let bold = 0, total = 0;
+  for (const w of ocrWords) {
+    // Words from runOcr are already normalized 0..1 with {x,y,w,h}.
+    // Older callers may pass raw scan-pixel bboxes — handle both.
+    let h, top;
+    if (typeof w.h === "number" && typeof w.y === "number" && w.h <= 1) {
+      h = w.h;
+      top = w.y;
+    } else if (w.bbox && scanH) {
+      top = w.bbox.y0 / scanH;
+      h = (w.bbox.y1 - w.bbox.y0) / scanH;
+    } else {
+      continue;
+    }
+    if (h > 0.002 && h < 0.15) heights.push(h);
+    ys.push(top + h / 2);
+    if (w.is_bold || w.font_id === 1) bold++;
+    total++;
+  }
+  if (!heights.length) return empty;
+  heights.sort((a, b) => a - b);
+  ys.sort((a, b) => a - b);
+  const medH = heights[Math.floor(heights.length / 2)];
+  // Group y-centers into rows (words within 0.6*medH belong same row).
+  const rows = [];
+  for (const y of ys) {
+    const last = rows[rows.length - 1];
+    if (last == null || Math.abs(y - last) > medH * 0.6) rows.push(y);
+  }
+  let lineGap = medH * 1.5;
+  if (rows.length > 1) {
+    const gaps = [];
+    for (let i = 1; i < rows.length; i++) gaps.push(rows[i] - rows[i - 1]);
+    gaps.sort((a, b) => a - b);
+    lineGap = gaps[Math.floor(gaps.length / 2)] || lineGap;
+  }
+  const weight = bold / Math.max(1, total) > 0.4 ? "bold" : "normal";
+  // Convert normalized height to approximate points (letter @ 72 dpi
+  // → 11" tall = 792 pt; medH is fraction of page height).
+  const fontSizePt = Math.max(7, Math.round(medH * 792 * 0.85));
+  // Heuristic font family: medH thin/wide → condensed; equal → arial
+  // (we don't have actual font name, so default to arial unless very
+  // narrow word width).
+  const fontFamily = "arial";
+  return {
+    fontFamily, fontSizePt, fontHeightNorm: medH, weight,
+    lineSpacingNorm: lineGap, wordsAnalyzed: total,
+  };
 }

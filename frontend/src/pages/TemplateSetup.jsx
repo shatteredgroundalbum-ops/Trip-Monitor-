@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { BrandLockupCompact } from "../components/app/BrandLogo";
 import TemplateMappingWizard from "../components/app/TemplateMappingWizard";
 import ProMappingStudio from "../components/app/ProMappingStudio";
+import BoundarySetup from "../components/app/BoundarySetup";
 import { normalizeCapture, runOcr, formatBytes } from "../lib/scan-pipeline";
 import {
   listTemplates,
@@ -30,7 +31,7 @@ import {
 } from "../lib/template-store";
 import { emptyTemplate, PRESET_FIELDS } from "../lib/template-types";
 
-const STEPS = ["Pick", "Capture", "Map"];
+const STEPS = ["Pick", "Capture", "Boundary", "Map"];
 
 /**
  * User-facing Template Setup — surfaces the scan + OCR pipeline built in
@@ -54,6 +55,7 @@ export default function TemplateSetup() {
   const [ocrWords, setOcrWords] = useState([]);
   const [draftTemplate, setDraftTemplate] = useState(null);
   const [mapMode, setMapMode] = useState("quick"); // "quick" (13-tap) | "pro" (markup editor)
+  const [analysis, setAnalysis] = useState(null);
   const [templates, setTemplates] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [bytes, setBytes] = useState(0);
@@ -123,9 +125,36 @@ export default function TemplateSetup() {
       // by reflex or when the browser blocked the dialog.
       toast.info(`You already have ${existingScanCount} scanned template${existingScanCount > 1 ? "s" : ""} — adding another.`);
     }
+    // Quick Map skips Boundary (uses tap-to-anchor coords directly on
+    // the scan). Pro Studio routes through the Boundary phase first so
+    // the printable area is locked before any element is placed.
+    if (mapMode === "pro") {
+      setStep("Boundary");
+      return;
+    }
     const tpl = emptyTemplate({ source: "scanned", name: `Scan ${templates.length + 1}` });
     tpl.scan = scan;
     tpl.ocr_words = ocrWords;
+    setDraftTemplate(tpl);
+    setStep("Map");
+  };
+
+  const handleBoundaryConfirm = ({ boundaries, analysis: a }) => {
+    const tpl = emptyTemplate({ source: "scanned", name: `Scan ${templates.length + 1}` });
+    tpl.scan = scan;
+    tpl.ocr_words = ocrWords;
+    // Pre-seed the Studio schema with the locked boundary so the
+    // Studio renders the boundary as fixed (no editable handles).
+    tpl.schema = {
+      version: 2,
+      boundaries,
+      elements: [],
+      assets: { logo: null, qr: null },
+      fonts: { default: "arial" },
+      locked: false,
+      boundaryLocked: true,
+    };
+    setAnalysis(a || null);
     setDraftTemplate(tpl);
     setStep("Map");
   };
@@ -395,12 +424,22 @@ export default function TemplateSetup() {
           </section>
         )}
 
+        {step === "Boundary" && scan && (
+          <BoundarySetup
+            scan={scan}
+            ocrWords={ocrWords}
+            onBack={() => setStep("Capture")}
+            onConfirm={handleBoundaryConfirm}
+          />
+        )}
+
         {step === "Map" && draftTemplate && (
           mapMode === "pro" ? (
             <ProMappingStudio
               template={draftTemplate}
+              analysis={analysis}
               onDone={handleMapDone}
-              onCancel={() => setStep("Capture")}
+              onCancel={() => setStep("Boundary")}
             />
           ) : (
             <TemplateMappingWizard

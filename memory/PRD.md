@@ -421,6 +421,18 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
     selector mismatches). iter 16 (narrow retest after fix) →
     **4/4 PASS**. All 6 corrections validated.
 
+- ✅ **Pro Mapping Studio — pre-Studio Boundary phase + 9-handle objects (Delivery 1.4)** (2026-02-?? fork — iter 19):
+  - User reclassified the workflow: **Boundary Setup must happen BEFORE entering the Studio**, not inside it. Once locked, the boundary cannot be edited from within the Studio.
+  - **NEW step inserted in `TemplateSetup.jsx`**: `Pick → Capture → Boundary → Map`. Pro mode routes through the Boundary phase; Quick mode skips it.
+  - **NEW component `/app/frontend/src/components/app/BoundarySetup.jsx`** (~310 LoC): renders the captured scan with an 8-handle adjustable boundary (4 corner squares + 4 edge midpoint circles), a "Reset to 1\" margin" button, an "Analyze text" button (runs Tesseract via `runOcr` if no `ocrWords` were already detected on the Capture step) that surfaces a `boundary-analysis-card` with detected font / size / weight / line-spacing / words-sampled, and a "Set boundary & continue" button that opens a confirmation modal ("Boundary will lock once you enter the Studio") before entering the Studio.
+  - **Studio boundary is now read-only**: boundary tool removed from `STUDIO_TOOLS`. `BoundaryHandles` renders only the dotted polygon — `showHandles={false}`. Boundary hit-test + boundary transform code removed from select tool. New `studio-boundary-locked-chip` (orange "BOUNDARY LOCKED" pill) renders in the toolbar status row.
+  - **9-handle SelectionFrame**: every placed object (rect, line, circle, triangle, grid, text_marker, bullet, logo, qr, trace, etc.) gets a dotted bbox with **4 corner handles** (orange squares — proportional resize, preserves aspect ratio), **4 edge midpoint handles** (blue circles — single-axis stretch), and **1 center handle** (blue circle with crosshair — move). The legacy rotate handle has been removed.
+  - **`bboxHandles()` returns 9 keys** including `c` (center). **`resizedBBox()` updated**: corner handles preserve original aspect ratio (anchored at opposite corner); edge handles still single-axis. Center handle drives a `move` transform via the existing `translateGeometry` codepath — no new transform kind.
+  - **`analyzeFontDefaults()`** new helper in `pro-mapping-v2.js` — computes median font height, line spacing, weight, and approximate point size from `runOcr` output (handles both 0..1 normalized words and raw scan-pixel bboxes).
+  - **`ProMappingStudio` accepts new `analysis` prop**: when present, the initial `fontSel` defaults to the detected font family.
+  - Privacy preserved: mileage still never renders in Studio preview or export.
+  - Live-verified end-to-end: BoundarySetup component fully visible (8 handles, reset/analyze/set buttons), confirm modal copy contains "lock", Studio enters with locked chip, `studio-tool-boundary` count = 0, in-Studio boundary handles count = 0, all 9 SelectionFrame handles render on the placed rect (count=2 each because both mapping + preview canvases mirror the frame), `studio-handle-rotate` count = 0.
+
 ## Prioritized Backlog
 - P1: Pro Mapping Studio polish (Delivery 2)
    - SPLIT FILE: `ProMappingStudio.jsx` is now ~1,343 LoC. Extract

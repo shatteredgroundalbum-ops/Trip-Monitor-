@@ -11,7 +11,7 @@ import {
   STUDIO_TOOLS, FONT_PRESETS, FONT_PRESETS_BY_ID, STUDIO_FIELD_PRESETS,
   emptyStudioSchema, uid, normRect, workingArea, cleanTrace, isNearStraight,
   hitTest, snapToBoundaries, snapToOcrLine, translateGeometry, resizeGeometry,
-  bboxHandles, resizedBBox, elementBBox, validateSchema, DEFAULT_BOUNDARIES,
+  bboxHandles, resizedBBox, elementBBox, validateSchema,
 } from "../../lib/pro-mapping-v2";
 import { saveTemplate, setActiveTemplateId } from "../../lib/template-store";
 import ProMappingEditor from "./ProMappingEditor";
@@ -90,7 +90,7 @@ function editorReducer(state, action) {
   }
 }
 
-export default function ProMappingStudio({ template, onDone, onCancel }) {
+export default function ProMappingStudio({ template, analysis, onDone, onCancel }) {
   const [legacy, setLegacy] = useState(false);
   const [editor, dispatchEditor] = useReducer(editorReducer, undefined, () => ({
     schema: template?.schema?.version === 2 ? template.schema : emptyStudioSchema(),
@@ -108,7 +108,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   const [tool, setTool] = useState("select");
   const [draft, setDraft] = useState(null);
   const [fieldLabel, setFieldLabel] = useState("");
-  const [fontSel, setFontSel] = useState("arial");
+  const [fontSel, setFontSel] = useState(analysis?.fontFamily || "arial");
   const [dockTab, setDockTab] = useState("inspector");
   const [dockOpen, setDockOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -185,6 +185,10 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   const scan = template?.scan;
   const work = useMemo(() => workingArea(schema.boundaries), [schema.boundaries]);
   const boundaryCount = ["tl", "tr", "bl", "br"].filter((k) => schema.boundaries[k]).length;
+  // Boundary is locked if the template was set up via the pre-Studio
+  // BoundarySetup phase. In the Studio, locked boundaries render as
+  // a static dotted rectangle — no draggable handles, no boundary tool.
+  const boundaryLocked = template?.schema?.boundaryLocked === true;
 
   if (legacy) {
     return (
@@ -234,10 +238,6 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
 
   const delElement = (id) => mutateSchema((s) => ({ ...s, elements: s.elements.filter((e) => e.id !== id) }));
 
-  const setBoundary = (corner, pt) => {
-    mutateSchema((s) => ({ ...s, boundaries: { ...s.boundaries, [corner]: pt } }));
-  };
-
   /* ------------------- pointer handlers ------------------- */
   // Stylus-only filter — block finger touches but allow stylus pen AND
   // desktop mice (pointer:fine) so testers/admins on laptops still work.
@@ -270,14 +270,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
 
     /* SELECT TOOL — tap to select, drag handles to resize/rotate, drag body to move. */
     if (tool === "select") {
-      // Hit-test boundary handles first so corner/edge drag wins over
-      // element selection at the page edge.
-      const bHit = hitBoundaryHandle(pt, schema.boundaries, 0.022 / zoom);
-      if (bHit) {
-        snapshotHistory();
-        setTransform({ kind: "boundary", handle: bHit, originalBoundaries: { ...schema.boundaries } });
-        return;
-      }
+      // Boundary is locked once set in the pre-Studio Boundary phase.
       // Hit-test handle first if an element is selected.
       // Hit-area scales inversely with zoom so handles meet WCAG 24px
       // touch-target at any zoom (e.g. at 0.5× the area doubles).
@@ -288,20 +281,16 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
         for (const [hKey, hPt] of Object.entries(handles)) {
           if (Math.abs(pt.x - hPt.x) < handleR && Math.abs(pt.y - hPt.y) < handleR) {
             // Snapshot schema at the start of the drag (single undo
-            // rewinds the whole resize).
+            // rewinds the whole resize/move).
             snapshotHistory();
-            setTransform({ kind: "resize", handle: hKey, originalBBox: bbox, originalGeometry: selectedEl.geometry });
+            if (hKey === "c") {
+              // Center handle = explicit move.
+              setTransform({ kind: "move", start: pt, originalGeometry: selectedEl.geometry });
+            } else {
+              setTransform({ kind: "resize", handle: hKey, originalBBox: bbox, originalGeometry: selectedEl.geometry });
+            }
             return;
           }
-        }
-        // Rotate handle (above top-center)
-        const rotPt = { x: bbox.x + bbox.w / 2, y: bbox.y - 0.04 };
-        if (Math.abs(pt.x - rotPt.x) < handleR && Math.abs(pt.y - rotPt.y) < handleR * 1.5) {
-          snapshotHistory();
-          setTransform({ kind: "rotate", center: { x: bbox.x + bbox.w / 2, y: bbox.y + bbox.h / 2 },
-            startAngle: Math.atan2(pt.y - (bbox.y + bbox.h / 2), pt.x - (bbox.x + bbox.w / 2)) * 180 / Math.PI,
-            originalRotation: selectedEl.rotation || 0 });
-          return;
         }
       }
       // Hit-test elements top-down (last drawn = on top).
@@ -372,14 +361,8 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
       }
     }
 
-    if (boundaryCount < 4 && tool !== "boundary") return; // safety belt — boundaries are auto-defaulted, but if a driver explicitly nukes them this gate still applies.
+    if (boundaryCount < 4) return; // safety belt — boundaries are auto-defaulted/locked, but if a driver explicitly nukes them this gate still applies.
     switch (tool) {
-      case "boundary": {
-        // Repurposed: single tap resets the boundary to the 1-inch default.
-        mutateSchema((s) => ({ ...s, boundaries: { ...DEFAULT_BOUNDARIES } }));
-        toast.success("Page boundary reset to 1-inch margin");
-        break;
-      }
       case "line":
       case "rect":
       case "circle":
@@ -478,33 +461,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
     }
     const pt = canvasPt(e);
     if (!pt) return;
-    // Active transform drag — move/resize/rotate the selected element live.
-    if (transform && transform.kind === "boundary") {
-      const orig = transform.originalBoundaries;
-      const next = { ...orig };
-      const k = transform.handle;
-      if (["tl", "tr", "br", "bl"].includes(k)) {
-        next[k] = { x: clamp01(pt.x), y: clamp01(pt.y) };
-      } else if (k === "top") {
-        const dy = pt.y - (orig.tl.y + orig.tr.y) / 2;
-        next.tl = { ...orig.tl, y: clamp01(orig.tl.y + dy) };
-        next.tr = { ...orig.tr, y: clamp01(orig.tr.y + dy) };
-      } else if (k === "bot") {
-        const dy = pt.y - (orig.bl.y + orig.br.y) / 2;
-        next.bl = { ...orig.bl, y: clamp01(orig.bl.y + dy) };
-        next.br = { ...orig.br, y: clamp01(orig.br.y + dy) };
-      } else if (k === "left") {
-        const dx = pt.x - (orig.tl.x + orig.bl.x) / 2;
-        next.tl = { ...orig.tl, x: clamp01(orig.tl.x + dx) };
-        next.bl = { ...orig.bl, x: clamp01(orig.bl.x + dx) };
-      } else if (k === "right") {
-        const dx = pt.x - (orig.tr.x + orig.br.x) / 2;
-        next.tr = { ...orig.tr, x: clamp01(orig.tr.x + dx) };
-        next.br = { ...orig.br, x: clamp01(orig.br.x + dx) };
-      }
-      setSchema((s) => ({ ...s, boundaries: next }));
-      return;
-    }
+    // Active transform drag — move/resize the selected element live.
     if (transform && selectedEl) {
       // Update sync-cursor so the OTHER canvas can show a matching marker.
       const src = e.currentTarget?.dataset?.canvasSource || "mapping";
@@ -521,10 +478,6 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
         const newBBox = resizedBBox(transform.originalBBox, transform.handle, pt);
         updateElementGeometry(selectedEl.id,
           resizeGeometry(selectedEl.kind, transform.originalGeometry, transform.handle, newBBox));
-      } else if (transform.kind === "rotate") {
-        const angle = Math.atan2(pt.y - transform.center.y, pt.x - transform.center.x) * 180 / Math.PI;
-        const delta = angle - transform.startAngle;
-        updateElementRotation(selectedEl.id, transform.originalRotation + delta);
       } else if (transform.kind === "move-group") {
         // Translate every originally-selected element by the same delta.
         const dx = pt.x - transform.start.x;
@@ -636,12 +589,6 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
     setSchema((s) => ({
       ...s,
       elements: s.elements.map((el) => el.id === id ? { ...el, geometry: newGeometry } : el),
-    }));
-  };
-  const updateElementRotation = (id, rotation) => {
-    setSchema((s) => ({
-      ...s,
-      elements: s.elements.map((el) => el.id === id ? { ...el, rotation } : el),
     }));
   };
   const toggleLockSelected = () => {
@@ -864,9 +811,10 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
           {STUDIO_TOOLS.map((t) => {
             const Icon = TOOL_ICON[t.id] || Square;
             const active = tool === t.id;
-            // 'select' is always enabled. All other tools require the
-            // 4 boundary anchors first; 'boundary' itself is the entry.
-            const disabled = !["select", "pan", "boundary"].includes(t.id) && boundaryCount < 4;
+            // 'select' and 'pan' always available. All other tools
+            // require 4 boundary anchors (set in the pre-Studio
+            // Boundary phase, so this guard is normally a no-op).
+            const disabled = !["select", "pan"].includes(t.id) && boundaryCount < 4;
             return (
               <button
                 key={t.id} type="button"
@@ -928,9 +876,12 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
         </div>
         <div className="px-3 pb-2 text-[11px] uppercase tracking-wider text-[var(--tm-text-muted)] font-bold flex items-center gap-1.5 flex-wrap">
           <SlidersHorizontal className="h-3 w-3 text-[var(--tm-blue)]" />
-          {tool === "boundary"
-            ? `Tap to reset boundary to 1-inch margin · drag the 8 handles to fit your sheet`
-            : STUDIO_TOOLS.find((t) => t.id === tool)?.blurb}
+          {boundaryLocked && (
+            <span data-testid="studio-boundary-locked-chip" className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-[var(--tm-orange)] text-white text-[9px] tracking-wider">
+              <Lock className="h-2.5 w-2.5" /> Boundary locked
+            </span>
+          )}
+          {STUDIO_TOOLS.find((t) => t.id === tool)?.blurb}
         </div>
       </div>
 
@@ -968,11 +919,11 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
               <img src={scan.data_url} alt={template.name} draggable={false}
                 style={{ width: "100%", height: "100%", objectFit: "fill", display: "block" }} />
               <svg viewBox="0 0 1 1" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
-                {/* Boundary handles — 4 corners + 4 edge midpoints. The
-                     edge midpoints translate the whole edge in/out;
-                     corners translate just that corner (free diagonal). */}
+                {/* Boundary — locked into a dotted polygon outline.
+                     No editable handles; the boundary was set in the
+                     pre-Studio Boundary phase and is read-only here. */}
                 <BoundaryHandles boundaries={schema.boundaries} zoom={zoom}
-                  showHandles={tool === "select" || tool === "boundary"} />
+                  showHandles={false} />
                 {schema.elements.map((el) => (
                   <g key={el.id} transform={el.rotation
                     ? `rotate(${el.rotation} ${elementBBox(el).x + elementBBox(el).w / 2} ${elementBBox(el).y + elementBBox(el).h / 2})`
@@ -1234,35 +1185,11 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
 }
 
 function dist(a, b) { return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2); }
-function clamp01(v) { return Math.max(0, Math.min(1, v)); }
 
 /**
- * Returns the boundary-handle key under a point, or null.
- * Keys: 'tl','tr','br','bl' (corners) + 'top','right','bot','left' (edges).
- */
-function hitBoundaryHandle(pt, boundaries, threshold = 0.022) {
-  const tl = boundaries?.tl, tr = boundaries?.tr, br = boundaries?.br, bl = boundaries?.bl;
-  if (!tl || !tr || !br || !bl) return null;
-  const corners = { tl, tr, br, bl };
-  for (const [k, p] of Object.entries(corners)) {
-    if (dist(pt, p) < threshold) return k;
-  }
-  const edges = {
-    top: { x: (tl.x + tr.x) / 2, y: (tl.y + tr.y) / 2 },
-    right: { x: (tr.x + br.x) / 2, y: (tr.y + br.y) / 2 },
-    bot: { x: (bl.x + br.x) / 2, y: (bl.y + br.y) / 2 },
-    left: { x: (tl.x + bl.x) / 2, y: (tl.y + bl.y) / 2 },
-  };
-  for (const [k, p] of Object.entries(edges)) {
-    if (dist(pt, p) < threshold) return k;
-  }
-  return null;
-}
-
-/**
- * Renders the dotted boundary rectangle + 8 grab handles (4 corners
- * + 4 edge midpoints) when the boundary is editable (select or
- * boundary tool active).
+ * Renders the dotted boundary rectangle + (optionally) 8 grab
+ * handles. In the Studio the boundary is locked from the pre-Studio
+ * Boundary phase, so we render just the dotted polygon.
  */
 function BoundaryHandles({ boundaries, zoom = 1, showHandles = true }) {
   const tl = boundaries?.tl, tr = boundaries?.tr, br = boundaries?.br, bl = boundaries?.bl;
@@ -1441,23 +1368,29 @@ function ValidationReportModal({ report, onCancel, onForceLock, onJumpTo }) {
 }
 
 /**
- * Renders the selection outline + 8 resize handles + rotate handle
- * for the currently selected element. Pure SVG, pointer-events:none
- * on the parent so handle hit-testing happens via onPointerDown
- * coordinate math (consistent with the rest of the canvas).
+ * Renders the selection outline + 9 handles (4 corners + 4 side
+ * midpoints + 1 center) for the currently selected element. Pure SVG,
+ * pointer-events:none on the parent so handle hit-testing happens via
+ * onPointerDown coordinate math (consistent with the rest of the canvas).
+ *
+ * Handle semantics:
+ *   - corners (NW/NE/SE/SW): proportional resize (preserves aspect)
+ *   - edges (N/E/S/W): single-axis stretch
+ *   - center (C): drag to move
  */
 function SelectionFrame({ el, zoom = 1, handlesEnabled = true }) {
   const bb = elementBBox(el);
   const cx = bb.x + bb.w / 2;
   const cy = bb.y + bb.h / 2;
   const handles = bboxHandles(bb);
-  const rotPt = { x: cx, y: bb.y - 0.04 };
   const stroke = el.locked ? "rgba(255,95,21,0.9)" : "rgba(12,74,183,0.95)";
+  const cornerStroke = el.locked ? "rgba(255,95,21,0.95)" : "rgba(255,95,21,0.95)";
   const hSize = 0.018 / zoom;
   const hHalf = hSize / 2;
-  const rotR = 0.012 / zoom;
   const stroke_w = 0.0028 / Math.max(zoom, 1);
   const showHandles = handlesEnabled && !el.locked;
+  const cornerKeys = ["nw", "ne", "se", "sw"];
+  const edgeKeys = ["n", "e", "s", "w"];
   return (
     <g
       data-testid="studio-selection-frame"
@@ -1465,19 +1398,39 @@ function SelectionFrame({ el, zoom = 1, handlesEnabled = true }) {
     >
       <rect x={bb.x} y={bb.y} width={bb.w} height={bb.h}
         fill="none" stroke={stroke} strokeWidth={0.0024 / Math.max(zoom, 1)} strokeDasharray="0.007 0.004" />
-      {showHandles && Object.entries(handles).map(([key, p]) => (
-        <rect key={key} data-testid={`studio-handle-${key}`}
-          x={p.x - hHalf} y={p.y - hHalf} width={hSize} height={hSize}
-          fill="white" stroke={stroke} strokeWidth={stroke_w} />
-      ))}
-      {showHandles && (
-        <>
-          <line x1={cx} y1={bb.y} x2={cx} y2={rotPt.y + rotR} stroke={stroke} strokeWidth={0.002 / Math.max(zoom, 1)} />
-          <circle data-testid="studio-handle-rotate"
-            cx={rotPt.x} cy={rotPt.y} r={rotR}
+      {/* Corner handles — square, orange (proportional resize) */}
+      {showHandles && cornerKeys.map((key) => {
+        const p = handles[key];
+        return (
+          <rect key={key} data-testid={`studio-handle-${key}`}
+            x={p.x - hHalf} y={p.y - hHalf} width={hSize} height={hSize}
+            fill="white" stroke={cornerStroke} strokeWidth={stroke_w} />
+        );
+      })}
+      {/* Edge handles — circles, blue (stretch one axis) */}
+      {showHandles && edgeKeys.map((key) => {
+        const p = handles[key];
+        return (
+          <circle key={key} data-testid={`studio-handle-${key}`}
+            cx={p.x} cy={p.y} r={hHalf}
             fill="white" stroke={stroke} strokeWidth={stroke_w} />
-        </>
-      )}
+        );
+      })}
+      {/* Center handle — small + cross, blue (move) */}
+      {showHandles && (() => {
+        const p = handles.c;
+        const arm = hHalf * 0.9;
+        return (
+          <g data-testid="studio-handle-c">
+            <circle cx={p.x} cy={p.y} r={hHalf}
+              fill="white" stroke={stroke} strokeWidth={stroke_w} />
+            <line x1={p.x - arm} y1={p.y} x2={p.x + arm} y2={p.y}
+              stroke={stroke} strokeWidth={stroke_w} />
+            <line x1={p.x} y1={p.y - arm} x2={p.x} y2={p.y + arm}
+              stroke={stroke} strokeWidth={stroke_w} />
+          </g>
+        );
+      })()}
     </g>
   );
 }
