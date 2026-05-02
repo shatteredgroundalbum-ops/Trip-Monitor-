@@ -131,6 +131,8 @@ export default function SessionWizard({ open, profile, onCreate, onCancel }) {
                 <button
                   key={t}
                   data-testid={`load-type-${t.toLowerCase()}`}
+                  data-testid-alias={`session-load-${t.toLowerCase()}`}
+                  aria-label={`Load type ${t}`}
                   onClick={() => { setLoadType(t); setSubType(""); }}
                   className={`h-20 rounded-md border text-sm font-bold uppercase tracking-wider transition-colors ${
                     loadType === t
@@ -149,6 +151,8 @@ export default function SessionWizard({ open, profile, onCreate, onCancel }) {
                     <button
                       key={t}
                       data-testid={`subtype-${t.toLowerCase()}`}
+                      data-testid-alias={`session-load-${t.toLowerCase()}`}
+                      aria-label={`Load subtype ${t}`}
                       onClick={() => setSubType(t)}
                       className={`h-16 rounded-md border text-sm font-bold uppercase tracking-wider transition-colors ${
                         subType === t

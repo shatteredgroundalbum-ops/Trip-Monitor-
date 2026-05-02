@@ -55,8 +55,9 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   // for visual cross-reference (1:1 coord parity reinforcement).
   const [syncCursor, setSyncCursor] = useState(null); // {pt:{x,y}, source:'mapping'|'preview'} | null
   // Selection + transform state for post-placement editing.
-  const [selectedId, setSelectedId] = useState(null);
-  const [transform, setTransform] = useState(null); // {kind:'move'|'resize'|'rotate', start, originalGeometry, handle?}
+  // Multi-select: array so shift-tap can add/remove from the selection.
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [transform, setTransform] = useState(null);
   // Stylus-only mode — when on, ignore non-pen pointer input on the canvas.
   const [stylusOnly, setStylusOnly] = useState(false);
   // Trace tool: freehand mode bypasses auto-straighten.
@@ -66,16 +67,89 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   // Validation report — shown when Lock detects issues.
   const [validationReport, setValidationReport] = useState(null);
   const [fontBuilderOpen, setFontBuilderOpen] = useState(false);
+  // Deep undo/redo stack — past + future. Each entry is a schema snapshot.
+  // Every mutation (commit element, transform, delete, asset upload, etc.)
+  // pushes the PREVIOUS schema onto history.past and clears future.
+  const [history, setHistory] = useState({ past: [], future: [] });
+  // Suppress history tracking inside a single gesture (e.g. while
+  // dragging a resize, we don't push 60 snapshots per second —
+  // pointerDown snapshots once, pointerUp is a no-op).
+  const suppressHistoryRef = useRef(false);
   const canvasRef = useRef(null);
   const logoInputRef = useRef(null);
   const qrInputRef = useRef(null);
   const workspaceRef = useRef(null);
-  const panRef = useRef(null); // {startX, startY, scrollLeft, scrollTop}
+  const panRef = useRef(null);
 
-  const selectedEl = useMemo(
-    () => schema.elements.find((e) => e.id === selectedId) || null,
-    [schema.elements, selectedId]
+  // Single-element convenience: `selectedEl` is the first (or only) one.
+  // For edit operations that only make sense on one element (handle
+  // drag, rotate, lock toggle), we default to the first selection.
+  const selectedEls = useMemo(
+    () => selectedIds.map((id) => schema.elements.find((e) => e.id === id)).filter(Boolean),
+    [schema.elements, selectedIds]
   );
+  const selectedEl = selectedEls[0] || null;
+  const selectedId = selectedEl?.id || null;
+
+  // Convenience: replaces old setSelectedId callsites so we don't have
+  // to rewrite every branch.
+  const setSelectedId = (id) => setSelectedIds(id ? [id] : []);
+
+  // History-tracking schema mutator. Snapshots the current schema to
+  // `history.past`, drops `future` (redo lineage broken by new edit),
+  // then applies the updater.
+  //
+  // Call sites use this instead of setSchema for user-visible mutations
+  // that should be undoable. Transient in-flight transforms (resize
+  // drag frames) set suppressHistoryRef.current=true and use the raw
+  // setSchema to avoid history pollution; the initial pointer-down
+  // snapshot is enough.
+  const mutateSchema = (updater) => {
+    setSchema((current) => {
+      if (!suppressHistoryRef.current) {
+        setHistory((h) => ({
+          past: [...h.past.slice(-49), current], // cap at 50 deep
+          future: [],
+        }));
+      }
+      return typeof updater === "function" ? updater(current) : updater;
+    });
+  };
+
+  const historyUndo = () => {
+    setHistory((h) => {
+      if (h.past.length === 0) return h;
+      const prev = h.past[h.past.length - 1];
+      setSchema((cur) => { setHistory(hh => ({ past: h.past.slice(0, -1), future: [cur, ...hh.future].slice(0, 50) })); return prev; });
+      return h;
+    });
+  };
+  const historyRedo = () => {
+    setHistory((h) => {
+      if (h.future.length === 0) return h;
+      const next = h.future[0];
+      setSchema((cur) => { setHistory(hh => ({ past: [...hh.past, cur].slice(-50), future: h.future.slice(1) })); return next; });
+      return h;
+    });
+  };
+
+  // Keyboard shortcuts: Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z or
+  // Cmd/Ctrl+Y = redo. Bound at the document level; bailouts if a
+  // text input or contenteditable has focus.
+  React.useEffect(() => {
+    const onKey = (e) => {
+      const tag = e.target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || e.target?.isContentEditable) return;
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key === "z" && !e.shiftKey) { e.preventDefault(); historyUndo(); }
+      else if ((e.key === "z" && e.shiftKey) || e.key === "y") { e.preventDefault(); historyRedo(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // selectedEl / selectedId are provided above via selectedEls[0].
 
   const scan = template?.scan;
   const work = useMemo(() => workingArea(schema.boundaries), [schema.boundaries]);
@@ -116,20 +190,21 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   /* ------------------- element mutation ------------------- */
   const pushElement = (kind, geometry, extra = {}) => {
     const el = { id: uid(), kind, geometry, created_at: Date.now(), ...extra };
-    setSchema((s) => ({ ...s, elements: [...s.elements, el] }));
+    mutateSchema((s) => ({ ...s, elements: [...s.elements, el] }));
     setDraft(null);
     return el;
   };
 
   const undo = () => {
     if (draft) { setDraft(null); return; }
-    setSchema((s) => ({ ...s, elements: s.elements.slice(0, -1) }));
+    historyUndo();
   };
+  const redo = () => historyRedo();
 
-  const delElement = (id) => setSchema((s) => ({ ...s, elements: s.elements.filter((e) => e.id !== id) }));
+  const delElement = (id) => mutateSchema((s) => ({ ...s, elements: s.elements.filter((e) => e.id !== id) }));
 
   const setBoundary = (corner, pt) => {
-    setSchema((s) => ({ ...s, boundaries: { ...s.boundaries, [corner]: pt } }));
+    mutateSchema((s) => ({ ...s, boundaries: { ...s.boundaries, [corner]: pt } }));
   };
 
   /* ------------------- pointer handlers ------------------- */
@@ -173,6 +248,9 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
         const handleR = 0.018 / zoom;
         for (const [hKey, hPt] of Object.entries(handles)) {
           if (Math.abs(pt.x - hPt.x) < handleR && Math.abs(pt.y - hPt.y) < handleR) {
+            // Snapshot schema at the start of the drag (single undo
+            // rewinds the whole resize).
+            setHistory((h) => ({ past: [...h.past.slice(-49), schema], future: [] }));
             setTransform({ kind: "resize", handle: hKey, originalBBox: bbox, originalGeometry: selectedEl.geometry });
             return;
           }
@@ -180,6 +258,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
         // Rotate handle (above top-center)
         const rotPt = { x: bbox.x + bbox.w / 2, y: bbox.y - 0.04 };
         if (Math.abs(pt.x - rotPt.x) < handleR && Math.abs(pt.y - rotPt.y) < handleR * 1.5) {
+          setHistory((h) => ({ past: [...h.past.slice(-49), schema], future: [] }));
           setTransform({ kind: "rotate", center: { x: bbox.x + bbox.w / 2, y: bbox.y + bbox.h / 2 },
             startAngle: Math.atan2(pt.y - (bbox.y + bbox.h / 2), pt.x - (bbox.x + bbox.w / 2)) * 180 / Math.PI,
             originalRotation: selectedEl.rotation || 0 });
@@ -190,15 +269,32 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
       for (let i = schema.elements.length - 1; i >= 0; i--) {
         const el = schema.elements[i];
         if (hitTest(pt, el)) {
-          setSelectedId(el.id);
-          if (!el.locked) {
-            setTransform({ kind: "move", start: pt, originalGeometry: el.geometry });
+          if (e.shiftKey) {
+            // Shift-tap: toggle this element in the selection.
+            setSelectedIds((ids) => ids.includes(el.id)
+              ? ids.filter((x) => x !== el.id)
+              : [...ids, el.id]);
+          } else if (selectedIds.includes(el.id) && selectedIds.length > 1) {
+            // Tapping inside existing multi-selection → begin group move.
+            if (!el.locked) {
+              setHistory((h) => ({ past: [...h.past.slice(-49), schema], future: [] }));
+              setTransform({
+                kind: "move-group", start: pt,
+                originals: selectedEls.map((s) => ({ id: s.id, kind: s.kind, geometry: s.geometry })),
+              });
+            }
+          } else {
+            setSelectedId(el.id);
+            if (!el.locked) {
+              setHistory((h) => ({ past: [...h.past.slice(-49), schema], future: [] }));
+              setTransform({ kind: "move", start: pt, originalGeometry: el.geometry });
+            }
           }
           return;
         }
       }
-      // Tapped empty area → deselect.
-      setSelectedId(null);
+      // Tapped empty area: clear selection (unless shift-held).
+      if (!e.shiftKey) setSelectedId(null);
       return;
     }
 
@@ -365,6 +461,18 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
         const angle = Math.atan2(pt.y - transform.center.y, pt.x - transform.center.x) * 180 / Math.PI;
         const delta = angle - transform.startAngle;
         updateElementRotation(selectedEl.id, transform.originalRotation + delta);
+      } else if (transform.kind === "move-group") {
+        // Translate every originally-selected element by the same delta.
+        const dx = pt.x - transform.start.x;
+        const dy = pt.y - transform.start.y;
+        setSchema((s) => ({
+          ...s,
+          elements: s.elements.map((el) => {
+            const orig = transform.originals.find((o) => o.id === el.id);
+            if (!orig || el.locked) return el;
+            return { ...el, geometry: translateGeometry(orig.kind, orig.geometry, dx, dy) };
+          }),
+        }));
       }
       return;
     }
@@ -454,6 +562,9 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
 
   /* ------------------- selection helpers ------------------- */
   const updateElementGeometry = (id, newGeometry) => {
+    // In-drag update — raw setSchema, do NOT push history. The history
+    // snapshot was taken at pointer-down so a single undo rewinds the
+    // whole drag operation.
     setSchema((s) => ({
       ...s,
       elements: s.elements.map((el) => el.id === id ? { ...el, geometry: newGeometry } : el),
@@ -466,16 +577,19 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
     }));
   };
   const toggleLockSelected = () => {
-    if (!selectedEl) return;
-    setSchema((s) => ({
+    if (selectedIds.length === 0) return;
+    const anyUnlocked = selectedEls.some((el) => !el.locked);
+    const nextLocked = anyUnlocked;
+    mutateSchema((s) => ({
       ...s,
-      elements: s.elements.map((el) => el.id === selectedId ? { ...el, locked: !el.locked } : el),
+      elements: s.elements.map((el) =>
+        selectedIds.includes(el.id) ? { ...el, locked: nextLocked } : el),
     }));
   };
   const deleteSelected = () => {
-    if (!selectedEl) return;
-    delElement(selectedId);
-    setSelectedId(null);
+    if (selectedIds.length === 0) return;
+    mutateSchema((s) => ({ ...s, elements: s.elements.filter((el) => !selectedIds.includes(el.id)) }));
+    setSelectedIds([]);
   };
 
   /* ------------------- grid editor commit ------------------- */
@@ -494,7 +608,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
     if (!f) return;
     const reader = new FileReader();
     reader.onload = () => {
-      setSchema((s) => ({ ...s, assets: { ...s.assets, logo: { data_url: reader.result, kind: "image" } } }));
+      mutateSchema((s) => ({ ...s, assets: { ...s.assets, logo: { data_url: reader.result, kind: "image" } } }));
       toast.success("Logo uploaded");
     };
     reader.readAsDataURL(f);
@@ -505,7 +619,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
     if (!f) return;
     const reader = new FileReader();
     reader.onload = () => {
-      setSchema((s) => ({ ...s, assets: { ...s.assets, qr: { data_url: reader.result } } }));
+      mutateSchema((s) => ({ ...s, assets: { ...s.assets, qr: { data_url: reader.result } } }));
       toast.success("QR uploaded");
     };
     reader.readAsDataURL(f);
@@ -703,9 +817,17 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
           )}
           <Button variant="outline" size="sm" onClick={undo}
             data-testid="studio-undo"
-            disabled={!draft && !schema.elements.length}
+            disabled={!draft && history.past.length === 0 && !schema.elements.length}
+            title="Undo (Ctrl/Cmd+Z)"
             className="h-8 bg-white border-[var(--tm-border)] text-[var(--tm-navy)]">
             <Undo2 className="h-3.5 w-3.5 mr-1" /> Undo
+          </Button>
+          <Button variant="outline" size="sm" onClick={redo}
+            data-testid="studio-redo"
+            disabled={history.future.length === 0}
+            title="Redo (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y)"
+            className="h-8 bg-white border-[var(--tm-border)] text-[var(--tm-navy)]">
+            <RotateCw className="h-3.5 w-3.5 mr-1" /> Redo
           </Button>
         </div>
         <div className="px-3 pb-2 text-[11px] uppercase tracking-wider text-[var(--tm-text-muted)] font-bold flex items-center gap-1.5 flex-wrap">
@@ -767,8 +889,11 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
                     <MarkupOverlay el={el} />
                   </g>
                 ))}
-                {/* Selection outline + 8 handles + rotate handle */}
-                {selectedEl && tool === "select" && <SelectionFrame el={selectedEl} zoom={zoom} />}
+                {/* Selection outline + 8 handles + rotate handle (handles only for primary/single selection) */}
+                {selectedEls.length > 0 && tool === "select" && selectedEls.map((el, idx) => (
+                  <SelectionFrame key={el.id} el={el} zoom={zoom}
+                    handlesEnabled={selectedEls.length === 1 && idx === 0} />
+                ))}
                 {/* Sync cursor — when dragging on the preview canvas, show
                      a faint blue marker here at the matching coordinate. */}
                 {syncCursor && syncCursor.source === "preview" && (
@@ -865,7 +990,10 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
                 <>
                   <svg viewBox="0 0 1 1" preserveAspectRatio="none"
                     className="absolute inset-0 w-full h-full pointer-events-none">
-                    {selectedEl && <SelectionFrame el={selectedEl} zoom={zoom} />}
+                    {selectedEls.length > 0 && selectedEls.map((el, idx) => (
+                      <SelectionFrame key={el.id} el={el} zoom={zoom}
+                        handlesEnabled={selectedEls.length === 1 && idx === 0} />
+                    ))}
                     {syncCursor && syncCursor.source === "mapping" && (
                       <g data-testid="studio-preview-synccursor">
                         <circle cx={syncCursor.pt.x} cy={syncCursor.pt.y} r="0.014"
@@ -984,7 +1112,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
           schema={schema}
           onClose={() => setFontBuilderOpen(false)}
           onSave={(glyphs) => {
-            setSchema((s) => ({ ...s, fonts: { ...s.fonts, customGlyphs: glyphs } }));
+            mutateSchema((s) => ({ ...s, fonts: { ...s.fonts, customGlyphs: glyphs } }));
             toast.success(`Custom font saved · ${Object.keys(glyphs).length} glyph${Object.keys(glyphs).length === 1 ? "" : "s"}`);
           }}
         />
@@ -1053,20 +1181,18 @@ function ValidationReportModal({ report, onCancel, onForceLock, onJumpTo }) {
  * on the parent so handle hit-testing happens via onPointerDown
  * coordinate math (consistent with the rest of the canvas).
  */
-function SelectionFrame({ el, zoom = 1 }) {
+function SelectionFrame({ el, zoom = 1, handlesEnabled = true }) {
   const bb = elementBBox(el);
   const cx = bb.x + bb.w / 2;
   const cy = bb.y + bb.h / 2;
   const handles = bboxHandles(bb);
   const rotPt = { x: cx, y: bb.y - 0.04 };
   const stroke = el.locked ? "rgba(255,95,21,0.9)" : "rgba(12,74,183,0.95)";
-  // Handle visual size scales inversely with zoom so the rendered
-  // square stays a constant ~24px across all zoom levels (matching
-  // the hit-area which scales the same way in onPointerDown).
   const hSize = 0.018 / zoom;
   const hHalf = hSize / 2;
   const rotR = 0.012 / zoom;
-  const stroke_w = 0.0028 / Math.max(zoom, 1); // keep outline crisp at zoom-out
+  const stroke_w = 0.0028 / Math.max(zoom, 1);
+  const showHandles = handlesEnabled && !el.locked;
   return (
     <g
       data-testid="studio-selection-frame"
@@ -1074,12 +1200,12 @@ function SelectionFrame({ el, zoom = 1 }) {
     >
       <rect x={bb.x} y={bb.y} width={bb.w} height={bb.h}
         fill="none" stroke={stroke} strokeWidth={0.0024 / Math.max(zoom, 1)} strokeDasharray="0.007 0.004" />
-      {!el.locked && Object.entries(handles).map(([key, p]) => (
+      {showHandles && Object.entries(handles).map(([key, p]) => (
         <rect key={key} data-testid={`studio-handle-${key}`}
           x={p.x - hHalf} y={p.y - hHalf} width={hSize} height={hSize}
           fill="white" stroke={stroke} strokeWidth={stroke_w} />
       ))}
-      {!el.locked && (
+      {showHandles && (
         <>
           <line x1={cx} y1={bb.y} x2={cx} y2={rotPt.y + rotR} stroke={stroke} strokeWidth={0.002 / Math.max(zoom, 1)} />
           <circle data-testid="studio-handle-rotate"
@@ -1262,14 +1388,19 @@ function InspectorPane({ schema, onDelete }) {
   }
   return (
     <ul className="space-y-2" data-testid="studio-inspector-list">
-      {schema.elements.map((el, i) => (
+      {schema.elements.map((el, i) => {
+        const kindLabel = el.kind.replace("_", " ");
+        const fieldLabel = el.geometry.fieldName || el.geometry.text || "";
+        const ariaLabel = `${kindLabel}${fieldLabel ? ` — ${fieldLabel}` : ""}${el.locked ? " (locked)" : ""}`;
+        return (
         <li key={el.id} data-testid={`studio-inspector-row-${i}`}
+          aria-label={ariaLabel}
           className="border border-[var(--tm-border)] rounded-md p-2">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <div className="text-[9px] uppercase tracking-wider font-bold text-[var(--tm-orange)]">{el.kind.replace("_", " ")}</div>
+              <div className="text-[9px] uppercase tracking-wider font-bold text-[var(--tm-orange)]">{kindLabel}</div>
               <div className="text-xs font-bold text-[var(--tm-navy)] truncate">
-                {el.geometry.fieldName || el.geometry.text || el.kind}
+                {fieldLabel || el.kind}
               </div>
               {el.geometry.fontFamily && (
                 <div className="text-[9px] uppercase tracking-wider text-[var(--tm-text-muted)] font-bold">
@@ -1279,12 +1410,14 @@ function InspectorPane({ schema, onDelete }) {
             </div>
             <button type="button" onClick={() => onDelete(el.id)}
               data-testid={`studio-inspector-del-${i}`}
+              aria-label={`Delete ${kindLabel}${fieldLabel ? ` ${fieldLabel}` : ""}`}
               className="text-[var(--tm-text-soft)] hover:text-[#FF3B30] p-1 shrink-0">
               <Trash2 className="h-3.5 w-3.5" />
             </button>
           </div>
         </li>
-      ))}
+        );
+      })}
     </ul>
   );
 }
