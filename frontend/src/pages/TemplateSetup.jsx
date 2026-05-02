@@ -115,18 +115,17 @@ export default function TemplateSetup() {
 
   const handleContinueToMap = async () => {
     if (!scan) { toast.error("Capture a scan first"); return; }
-    if (templates.filter((t) => t.source === "scanned").length >= 1) {
-      const ok = window.confirm(
-        "Adding another trip-sheet template increases device storage usage. Continue?"
-      );
-      if (!ok) return;
+    const existingScanCount = templates.filter((t) => t.source === "scanned").length;
+    if (existingScanCount >= 1) {
+      // Non-blocking notice — adding more scanned templates uses a bit
+      // more device storage but otherwise works fine. The old window.confirm
+      // popup made the Continue button feel broken when users hit Cancel
+      // by reflex or when the browser blocked the dialog.
+      toast.info(`You already have ${existingScanCount} scanned template${existingScanCount > 1 ? "s" : ""} — adding another.`);
     }
     const tpl = emptyTemplate({ source: "scanned", name: `Scan ${templates.length + 1}` });
     tpl.scan = scan;
     tpl.ocr_words = ocrWords;
-    // NB: do NOT persist yet. Quick Map + Pro Mapping both call
-    // saveTemplate on their own Finish step. Cancelling before Finish
-    // should NOT leave an orphan zero-field template in IndexedDB.
     setDraftTemplate(tpl);
     setStep("Map");
   };
