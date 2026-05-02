@@ -821,19 +821,6 @@ function AssetsPane({ schema, onLogoPick, onQrPick }) {
   );
 }
 
-function CleanReconstructionPreview({ schema }) {
-  if (schema.elements.length === 0) {
-    return <div className="text-xs text-[var(--tm-text-muted)] uppercase tracking-wider font-bold">
-      Nothing to reconstruct yet — start drawing on the left.
-    </div>;
-  }
-  return (
-    <div data-testid="studio-clean-preview" className="relative border border-[var(--tm-border)] rounded-md overflow-hidden bg-white">
-      <CleanReconstructionCanvas schema={schema} />
-    </div>
-  );
-}
-
 /**
  * Pure-vector reconstruction surface. This is ALSO what DynamicPaperSheet
  * renders for schema v2 templates during export — single source of truth.

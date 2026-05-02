@@ -340,39 +340,61 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
   - Testing: iter 13 → **14/14 PASS** via
     testing_agent_v3_fork. Zero bugs found.
 
+- ✅ **Pro Mapping Studio — dual full-size canvas (Delivery 1.2)** (2026-02-?? fork — iter 14):
+  - User reclassified the layout: it must behave like a print-calibrated
+    dual canvas, not a sidebar preview. "A point at (x,y) on mapping
+    = EXACT same (x,y) on preview."
+  - **Both canvases now identical 8.5×11**: each 540 px wide, ~698 px
+    tall, side-by-side. The mapping `<img>` uses
+    `objectFit: 'fill'` so the scan stretches into the 8.5:11 frame
+    and a tap at `(x, y)` on mapping = the same fractional coord on
+    the preview. True 1:1 coordinate parity.
+  - **Zoom control** (`studio-zoom`): − / level / + steps of 0.25
+    clamped to [0.5, 1.5]. Applied as a single `transform: scale()`
+    on `studio-split` so BOTH canvases scale together — never drift.
+  - **Ghost Overlay toggle** (`studio-ghost-overlay`) renders the
+    preview SVG atop the mapping canvas at 0.32 opacity for instant
+    alignment confirmation (CAD-style overlay mode).
+  - **Bottom dock** replaces the sidebar tabs: Inspector + Assets are
+    a collapsible drawer at the bottom (default collapsed). The
+    canvases get the full screen.
+  - Removed: `studio-tabs`, `studio-tab-clean`, `studio-tab-inspector`
+    (old top-of-pane tabs). Replaced with `studio-dock-tab-{inspector,
+    assets}` + `studio-dock-toggle`.
+  - Testing: iter 14 → **26/26 PASS** via testing_agent_v3_fork.
+    Zero bugs. Smoke screenshot confirmed visually that a rect
+    drawn on mapping appears at the matching position on preview.
+
 ## Prioritized Backlog
 - P1: Pro Mapping Studio polish (Delivery 2)
    - Replace `window.prompt()` for grid rows/cols with an inline
-     popover (mobile Safari reliability + automation friendliness).
-   - Extract CleanReconstructionCanvas, MarkupOverlay,
-     DraftOverlay, InspectorPane, AssetsPane, CleanElement,
-     CleanTextLayer into sibling files so
-     ProMappingStudio.jsx drops under ~400 LoC from its current
-     ~1,018.
-   - Precise-mode ghost quad: once 3 corners of a 4-corner logo
-     anchor are tapped, preview the forming bbox so the driver
-     sees the final region before committing the 4th tap.
-   - Post-commit resize slider for logo/QR anchors (currently
-     scale is hardcoded at 0.18 / 0.15 in Fast mode).
-   - Throttle `hoverPt` updates to ~30fps to reduce iPad stylus
-     render churn (~120Hz pointermove).
+     popover (mobile Safari + automation friendliness).
+   - Extract CleanReconstructionCanvas + CleanElement + CleanTextLayer
+     (~225 LoC), MarkupOverlay + DraftOverlay (~125 LoC), InspectorPane
+     + AssetsPane (~80 LoC) into sibling files. Brings
+     ProMappingStudio.jsx from ~1,055 to ~440 LoC.
+   - Memoize CleanReconstructionCanvas via `React.memo` (busy schemas
+     + ghost overlay = double render cost today).
+   - Add fade indicator in the bottom dock when inspector list
+     overflows the 200px max-height.
+   - Pan-sync between zoomed canvases (drag-to-pan with both moving
+     together).
+   - Calibrate-scale gesture: pinch (or slider on tap) to fine-tune
+     the auto scale of an anchored logo/QR without re-dropping it.
+   - Precise-mode ghost quad (preview the forming bbox after 3 of 4
+     corner taps).
+   - Throttle `hoverPt` to ~30fps to reduce iPad stylus render churn.
    - Validation pass on Lock (overlapping elements, out-of-bounds
      coords).
-   - Multi-select + move + scale of already-drawn elements.
-   - Deep undo/redo stack (current is single-level).
-   - Expose `data-testid="paper-sheet-schema-version"` on the
-     clean render so tests can directly observe the branching.
+   - Multi-select + move + scale + deep undo/redo.
    - Add stable testids to SessionWizard step-2 Load-Type buttons
      (session-load-store / session-load-warehouse / session-load-dairy
      / session-load-water) so automation can construct an active
      trip session for dashboard preview testing.
-   - True font-level typography for the Custom Trace (today it
-     stores user strokes as smoothed SVG paths — not an actual
-     font). Consider a letter-segmentation pass + OT font
-     generation. Out of scope for D1 but listed here for completeness.
+   - True font-level typography for the Custom Trace.
 - P1: Real social-login OAuth wiring (Facebook / Instagram / LinkedIn) — currently UI placeholders
 - P1: Replace QR placeholder with real GoDriver install QR (the new QR-anchor element makes this per-template now)
-- P2: Template gallery (browsable + cloneable community templates — one driver maps Werner's sheet once → every Werner driver skips mapping; soft growth loop)
+- P2: Template gallery (browsable + cloneable community templates)
 - P2: Cloud backup for templates (Google Drive / OneDrive — driver opt-in)
 - P2: Multi-page trip envelopes (stage-2 scan → secondary template)
 - P2: History screen to re-open finished sheets
