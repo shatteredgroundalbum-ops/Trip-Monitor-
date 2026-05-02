@@ -1,0 +1,33 @@
+{
+  "summary": "Iter 16 — narrow retest of the iter-15 auto-straighten regression in ProMappingStudio trace tool. Fix in /app/frontend/src/lib/pro-mapping-v2.js (isNearStraight: `points.length<2` guard + explicit 2-point shortcut at line 235-236) was validated end-to-end via Playwright. All 4 targeted assertions now PASS. No other functional regressions observed; not retesting the 18/21 iter-15 PASS items per E1 instructions.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_16.json"],
+  "tests_executed": {
+    "studio_tool_trace_accessible_after_4_anchors": "PASS (button not disabled once 4 boundary anchors placed)",
+    "freehand_toggle_visible_for_trace_tool": "PASS ([data-testid=studio-freehand-toggle] present)",
+    "freehand_toggle_default_label_Auto_straighten": "PASS (label text = 'Auto-straighten')",
+    "straight_stroke_freehand_OFF_commits_as_LINE": "PASS — inspector row-0 kind = 'line' (expected LINE). Bug from iter 15 is FIXED.",
+    "freehand_toggle_label_becomes_Freehand_after_click": "PASS (label text = 'Freehand')",
+    "straight_stroke_freehand_ON_commits_as_TRACE": "PASS — inspector row-1 kind = 'trace' (auto-straighten correctly bypassed)",
+    "inspector_last_element_selector_pattern": "PASS — studio-inspector-row-{N} where N=elements.length-1 works as documented"
+  },
+  "critical_code_review_comments": [
+    "Fix is minimal and correct: isNearStraight now returns false only on points.length<2, and explicitly returns true when points.length===2 (after the len>=0.02 degenerate gate). Matches the spec that an RDP-simplified 2-point list IS a straight line by definition.",
+    "Carry-forward from iter 15 (NOT retested, still valid): ProMappingStudio.jsx is ~1343 lines — well beyond the 700-line guideline. Candidates: SelectionFrame + GridEditOverlay + DraftOverlay + MarkupOverlay → canvas-overlays module; CleanReconstructionCanvas + children → separate file; InspectorPane + AssetsPane → StudioDockPanes.jsx.",
+    "Carry-forward: handle hit-testing uses fixed handleR=0.018 in normalized space; below WCAG 24px at 1x zoom on phones. Consider scaling by 1/zoom.",
+    "Minor: inspector row text renders the kind twice ('lineline','tracetrace' captured by textContent) because the kind label plus the field/description both read as the same word. Cosmetically fine but could be confusing during accessibility reads; consider adding aria-label with a single human phrase."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only)", "frontend": "4/4 targeted assertions PASS (iter-15 bug fixed)"},
+  "test_credentials": "Mongo-injected session_token=tm_iter16_session_1777683447079 (cookie path=/, secure, sameSite=None). Pre-seeded users + user_sessions + driver_profiles. ALL TEST DATA DELETED post-run.",
+  "seed_data_creation": "/tmp/iter16_scan.png (synthetic 5x5 PNG used for template scan step). Mongo docs for tm_iter16_* cleaned.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Path into Studio: cookie session → /templates → click [data-testid=pick-scan] (NOT template-setup-pick-scan) → set_input_files on template-setup-file-input → click mapmode-pro → click template-setup-continue-map → studio mounts. IMPORTANT: use viewport height >=1200px because the default 900 puts the lower boundary-anchor taps (bottom 2 corners) inside/under the fixed Cancel/Save footer so those pointer events don't reach the canvas — use fractional corners like (0.15,0.15),(0.85,0.15),(0.85,0.85),(0.15,0.85) at viewport 1280x1200 which works. Inspector dock tab testid=studio-dock-tab-inspector; rows use testid=studio-inspector-row-{N} where N=elements.length-1. Kind labels render as lowercase text in the row content (e.g. 'line', 'trace'), matched case-insensitively. Freehand toggle testid=studio-freehand-toggle; label 'Auto-straighten' when OFF (default), 'Freehand' when ON.",
+  "rca of the issue": "iter-15 bug: rdpSimplify(points, tolerance=0.002) can collapse a screen-perfect straight stroke to exactly 2 endpoint samples, and isNearStraight had `if (points.length < 3) return false`, rejecting the 2-point list and falling through to the trace-commit branch. Fix applied by main agent in /app/frontend/src/lib/pro-mapping-v2.js (line 229 `points.length < 2` and lines 235-236 `if (points.length === 2) return true;` after the len>=0.02 degenerate gate). Verified by drawing a ~flat horizontal stroke with freehand OFF and observing inspector row kind='line'; then toggling freehand ON and observing kind='trace' for the 2nd stroke. Both conditions now behave per spec."
+}

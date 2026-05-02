@@ -226,16 +226,17 @@ export function cleanTrace(points, { tolerance = 0.003 } = {}) {
  * the stroke is considered straight.
  */
 export function isNearStraight(points, tolerance = 0.012) {
-  if (!points || points.length < 3) return false;
+  if (!points || points.length < 2) return false;
   const a = points[0];
   const b = points[points.length - 1];
   const dx = b.x - a.x, dy = b.y - a.y;
   const len = Math.sqrt(dx * dx + dy * dy);
   if (len < 0.02) return false; // degenerate
+  // A simplified 2-point list IS a straight line by definition.
+  if (points.length === 2) return true;
   let maxD = 0;
   for (let i = 1; i < points.length - 1; i++) {
     const p = points[i];
-    // Perpendicular distance from p to line ab
     const num = Math.abs(dy * p.x - dx * p.y + b.x * a.y - b.y * a.x);
     const d = num / len;
     if (d > maxD) maxD = d;
