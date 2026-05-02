@@ -4,17 +4,20 @@ import { toast } from "sonner";
 import {
   Crosshair, Minus, Square, Circle as CircleIcon, Triangle, Spline, Grid3x3,
   AlignLeft, Dot as DotIcon, Image as ImageIcon, QrCode as QrIcon, PenTool,
-  Undo2, Trash2, Save, Lock, X, Eye, SlidersHorizontal, Layers,
-  ArrowLeftRight, Target, Maximize2,
+  Undo2, Trash2, Save, Lock, Unlock, X, Eye, SlidersHorizontal, Layers,
+  ArrowLeftRight, Target, Maximize2, MousePointer2, RotateCw, Pen,
 } from "lucide-react";
 import {
   STUDIO_TOOLS, FONT_PRESETS, FONT_PRESETS_BY_ID, STUDIO_FIELD_PRESETS,
-  emptyStudioSchema, uid, normRect, workingArea, cleanTrace,
+  emptyStudioSchema, uid, normRect, workingArea, cleanTrace, isNearStraight,
+  hitTest, snapToBoundaries, translateGeometry, resizeGeometry,
+  bboxHandles, resizedBBox, elementBBox,
 } from "../../lib/pro-mapping-v2";
 import { saveTemplate, setActiveTemplateId } from "../../lib/template-store";
 import ProMappingEditor from "./ProMappingEditor";
 
 const TOOL_ICON = {
+  select: MousePointer2,
   boundary: Crosshair, line: Minus, rect: Square, circle: CircleIcon,
   triangle: Triangle, curve: Spline, corners: Crosshair, grid: Grid3x3,
   text: AlignLeft, bullet: DotIcon, logo: ImageIcon, qr: QrIcon, trace: PenTool,
@@ -33,21 +36,32 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   const [schema, setSchema] = useState(() => template?.schema?.version === 2
     ? template.schema
     : emptyStudioSchema());
-  const [tool, setTool] = useState("boundary");
+  const [tool, setTool] = useState("select");
   const [draft, setDraft] = useState(null);
   const [fieldLabel, setFieldLabel] = useState("");
   const [fontSel, setFontSel] = useState("arial");
-  const [dockTab, setDockTab] = useState("inspector"); // inspector | assets
+  const [dockTab, setDockTab] = useState("inspector");
   const [dockOpen, setDockOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [handedness, setHandedness] = useState("right");
   const [placementMode, setPlacementMode] = useState("fast");
   const [hoverPt, setHoverPt] = useState(null);
-  const [zoom, setZoom] = useState(1); // 0.5 / 0.75 / 1 / 1.25 / 1.5 — both canvases scale together
-  const [ghostOverlay, setGhostOverlay] = useState(false); // overlays preview faintly atop mapping for alignment confirmation
+  const [zoom, setZoom] = useState(1);
+  const [ghostOverlay, setGhostOverlay] = useState(false);
+  // Selection + transform state for post-placement editing.
+  const [selectedId, setSelectedId] = useState(null);
+  const [transform, setTransform] = useState(null); // {kind:'move'|'resize'|'rotate', start, originalGeometry, handle?}
+  // Stylus-only mode — when on, ignore non-pen pointer input on the canvas.
+  const [stylusOnly, setStylusOnly] = useState(false);
+  // Trace tool: freehand mode bypasses auto-straighten.
+  const [freehandMode, setFreehandMode] = useState(false);
+  // Grid editor 3-step state: bbox → tap-to-add cols/rows → Done.
+  const [gridDraft, setGridDraft] = useState(null); // {bbox, cols:number[], rows:number[], step:'bbox'|'edit'}
   const canvasRef = useRef(null);
   const logoInputRef = useRef(null);
   const qrInputRef = useRef(null);
+
+  const selectedEl = schema.elements.find((e) => e.id === selectedId) || null;
 
   const scan = template?.scan;
   const work = useMemo(() => workingArea(schema.boundaries), [schema.boundaries]);
@@ -103,29 +117,93 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
 
   /* ------------------- pointer handlers ------------------- */
   const onPointerDown = (e) => {
+    // Stylus-only mode — block non-pen input on the canvas.
+    if (stylusOnly && e.pointerType !== "pen") return;
     e.preventDefault();
     const pt = canvasPt(e);
     if (!pt) return;
+
+    /* SELECT TOOL — tap to select, drag handles to resize/rotate, drag body to move. */
+    if (tool === "select") {
+      // Hit-test handle first if an element is selected.
+      if (selectedEl && !selectedEl.locked) {
+        const bbox = elementBBox(selectedEl);
+        const handles = bboxHandles(bbox);
+        const handleR = 0.018;
+        for (const [hKey, hPt] of Object.entries(handles)) {
+          if (Math.abs(pt.x - hPt.x) < handleR && Math.abs(pt.y - hPt.y) < handleR) {
+            setTransform({ kind: "resize", handle: hKey, originalBBox: bbox, originalGeometry: selectedEl.geometry });
+            return;
+          }
+        }
+        // Rotate handle (above top-center)
+        const rotPt = { x: bbox.x + bbox.w / 2, y: bbox.y - 0.04 };
+        if (Math.abs(pt.x - rotPt.x) < handleR && Math.abs(pt.y - rotPt.y) < handleR * 1.5) {
+          setTransform({ kind: "rotate", center: { x: bbox.x + bbox.w / 2, y: bbox.y + bbox.h / 2 },
+            startAngle: Math.atan2(pt.y - (bbox.y + bbox.h / 2), pt.x - (bbox.x + bbox.w / 2)) * 180 / Math.PI,
+            originalRotation: selectedEl.rotation || 0 });
+          return;
+        }
+      }
+      // Hit-test elements top-down (last drawn = on top).
+      for (let i = schema.elements.length - 1; i >= 0; i--) {
+        const el = schema.elements[i];
+        if (hitTest(pt, el)) {
+          setSelectedId(el.id);
+          if (!el.locked) {
+            setTransform({ kind: "move", start: pt, originalGeometry: el.geometry });
+          }
+          return;
+        }
+      }
+      // Tapped empty area → deselect.
+      setSelectedId(null);
+      return;
+    }
+
+    /* GRID EDITOR — 3-step. Step 1: drag bbox; Step 2: tap inside to add col/row lines. */
+    if (tool === "grid") {
+      if (!gridDraft) {
+        setDraft({ tool: "grid", start: pt, end: pt });
+        return;
+      }
+      if (gridDraft.step === "edit") {
+        // Tap inside bbox → add a column line at that x; outside → ignored.
+        const b = gridDraft.bbox;
+        if (pt.x < b.x || pt.x > b.x + b.w || pt.y < b.y || pt.y > b.y + b.h) return;
+        // Determine col vs row by which edge the tap is closer to.
+        const distLeft = pt.x - b.x;
+        const distRight = (b.x + b.w) - pt.x;
+        const distTop = pt.y - b.y;
+        const distBot = (b.y + b.h) - pt.y;
+        const minH = Math.min(distLeft, distRight);
+        const minV = Math.min(distTop, distBot);
+        // Tap nearer to L/R edges → add column at pt.x. Nearer to T/B → add row.
+        if (minH < minV) {
+          setGridDraft({ ...gridDraft, cols: [...gridDraft.cols, (pt.x - b.x) / b.w].sort((a, c) => a - c) });
+        } else {
+          setGridDraft({ ...gridDraft, rows: [...gridDraft.rows, (pt.y - b.y) / b.h].sort((a, c) => a - c) });
+        }
+        return;
+      }
+    }
+
+    if (boundaryCount < 4 && tool !== "boundary") return; // gate non-boundary tools
     switch (tool) {
       case "boundary": {
         const order = ["tl", "tr", "br", "bl"];
         const next = order.find((k) => !schema.boundaries[k]);
-        if (!next) { toast.info("All 4 anchors placed — switch tool to start drawing"); return; }
+        if (!next) return;
         setBoundary(next, pt);
-        toast.success(`Anchor ${next.toUpperCase()} placed`);
         break;
       }
       case "line":
       case "rect":
       case "circle":
-      case "grid":
         setDraft({ tool, start: pt, end: pt });
         break;
       case "logo":
       case "qr": {
-        // Anchor-based placement — NO dragging. The scan is a mapping
-        // surface, not a design surface. Uploaded assets live only
-        // in the preview.
         const assetKind = tool === "logo" ? "logo" : "qr";
         const assetUrl = schema.assets[assetKind]?.data_url;
         if (!assetUrl) {
@@ -133,14 +211,10 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
           return;
         }
         if (placementMode === "fast") {
-          // Single tap = center anchor. Preview scales the asset
-          // using a sensible default (20% of working-area width).
           pushElement(assetKind === "logo" ? "logo_anchor" : "qr_anchor", {
             mode: "center", center: pt, scale: 0.18,
           });
-          toast.success(`${assetKind.toUpperCase()} anchored (fast)`);
         } else {
-          // Precise mode — accumulate 4 corner taps.
           const prev = draft?.points || [];
           const next = [...prev, pt];
           if (next.length === 4) {
@@ -152,7 +226,6 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
               w: Math.max(...xs) - Math.min(...xs),
               h: Math.max(...ys) - Math.min(...ys),
             });
-            toast.success(`${assetKind.toUpperCase()} anchored (4 corners)`);
           } else {
             setDraft({ tool, points: next });
           }
@@ -210,9 +283,31 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   };
 
   const onPointerMove = (e) => {
+    if (stylusOnly && e.pointerType !== "pen") return;
     const pt = canvasPt(e);
     if (!pt) return;
-    // Track hover for ghost preview (logo/qr asset shadow following the stylus).
+    // Active transform drag — move/resize/rotate the selected element live.
+    if (transform && selectedEl) {
+      if (transform.kind === "move") {
+        // Snap delta to boundaries when within threshold.
+        const snapped = snapToBoundaries(pt, schema.boundaries, 0.025);
+        const target = snapped.snapped ? snapped : pt;
+        const dx = target.x - transform.start.x;
+        const dy = target.y - transform.start.y;
+        updateElementGeometry(selectedEl.id,
+          translateGeometry(selectedEl.kind, transform.originalGeometry, dx, dy));
+      } else if (transform.kind === "resize") {
+        const newBBox = resizedBBox(transform.originalBBox, transform.handle, pt);
+        updateElementGeometry(selectedEl.id,
+          resizeGeometry(selectedEl.kind, transform.originalGeometry, transform.handle, newBBox));
+      } else if (transform.kind === "rotate") {
+        const angle = Math.atan2(pt.y - transform.center.y, pt.x - transform.center.x) * 180 / Math.PI;
+        const delta = angle - transform.startAngle;
+        updateElementRotation(selectedEl.id, transform.originalRotation + delta);
+      }
+      return;
+    }
+    // Track hover for ghost-asset preview (logo/qr fast mode only).
     if ((tool === "logo" || tool === "qr") && placementMode === "fast") {
       setHoverPt(pt);
     } else if (hoverPt) {
@@ -226,12 +321,12 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
     }
   };
 
-  const onPointerUp = () => {
+  const onPointerUp = (e) => {
+    if (stylusOnly && e?.pointerType && e.pointerType !== "pen") return;
+    // Finish transform drag.
+    if (transform) { setTransform(null); return; }
     if (!draft) return;
     const d = draft;
-    // Tap-accumulation tools build their geometry across multiple taps —
-    // pointer-up must be a hard no-op so the draft survives between taps.
-    // logo/qr in 'precise' placement mode fall into this same bucket.
     if (["triangle", "corners", "bullet", "logo", "qr"].includes(d.tool)) return;
     if (d.tool === "line" && d.start && d.end) {
       if (dist(d.start, d.end) > 0.01) pushElement("line", { from: d.start, to: d.end });
@@ -247,23 +342,29 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
     } else if (d.tool === "grid" && d.start && d.end) {
       const r = normRect(d.start.x, d.start.y, d.end.x, d.end.y);
       if (r.w > 0.02 && r.h > 0.02) {
-        const rows = parseInt(prompt("How many rows?", "8") || "0", 10);
-        const cols = parseInt(prompt("How many columns?", "5") || "0", 10);
-        if (rows > 0 && cols > 0) pushElement("grid", { ...r, rows, cols });
-        else setDraft(null);
-      } else setDraft(null);
+        // Enter grid edit mode — driver taps inside to add col/row lines.
+        setGridDraft({ bbox: r, cols: [], rows: [], step: "edit" });
+        setDraft(null);
+      } else { setDraft(null); }
     } else if (d.tool === "curve" && d.points?.length > 2) {
       const cleaned = cleanTrace(d.points, { tolerance: 0.004 });
       pushElement("curve", { points: cleaned.points, d: cleaned.d });
     } else if (d.tool === "trace" && d.points?.length > 2) {
       const cleaned = cleanTrace(d.points, { tolerance: 0.002 });
-      const xs = cleaned.points.map((p) => p.x), ys = cleaned.points.map((p) => p.y);
-      const bbox = {
-        x: Math.min(...xs), y: Math.min(...ys),
-        w: Math.max(...xs) - Math.min(...xs),
-        h: Math.max(...ys) - Math.min(...ys),
-      };
-      pushElement("trace", { paths: [cleaned.d], points: cleaned.points, bbox, strokeWidth: 0.006 });
+      // Auto-straighten: if the cleaned stroke is near a straight line
+      // AND freehand mode is OFF, commit as a true line element instead
+      // of a free-form trace path.
+      if (!freehandMode && isNearStraight(cleaned.points, 0.012)) {
+        pushElement("line", { from: cleaned.points[0], to: cleaned.points[cleaned.points.length - 1] });
+      } else {
+        const xs = cleaned.points.map((p) => p.x), ys = cleaned.points.map((p) => p.y);
+        const bbox = {
+          x: Math.min(...xs), y: Math.min(...ys),
+          w: Math.max(...xs) - Math.min(...xs),
+          h: Math.max(...ys) - Math.min(...ys),
+        };
+        pushElement("trace", { paths: [cleaned.d], points: cleaned.points, bbox, strokeWidth: 0.006 });
+      }
     } else if (d.tool === "text" && d.start && d.end) {
       const fieldName = fieldLabel.trim();
       if (!fieldName) {
@@ -278,13 +379,47 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
       });
       setFieldLabel("");
     } else if (["triangle", "corners", "bullet", "logo", "qr"].includes(d.tool)) {
-      // Unreachable — guarded at the top of onPointerUp. Kept as
-      // a documentation anchor so future drag-tool additions don't
-      // accidentally reintroduce the iter-11 regression.
+      // Unreachable — guarded above. Documentation anchor.
     } else {
       setDraft(null);
     }
   };
+
+  /* ------------------- selection helpers ------------------- */
+  const updateElementGeometry = (id, newGeometry) => {
+    setSchema((s) => ({
+      ...s,
+      elements: s.elements.map((el) => el.id === id ? { ...el, geometry: newGeometry } : el),
+    }));
+  };
+  const updateElementRotation = (id, rotation) => {
+    setSchema((s) => ({
+      ...s,
+      elements: s.elements.map((el) => el.id === id ? { ...el, rotation } : el),
+    }));
+  };
+  const toggleLockSelected = () => {
+    if (!selectedEl) return;
+    setSchema((s) => ({
+      ...s,
+      elements: s.elements.map((el) => el.id === selectedId ? { ...el, locked: !el.locked } : el),
+    }));
+  };
+  const deleteSelected = () => {
+    if (!selectedEl) return;
+    delElement(selectedId);
+    setSelectedId(null);
+  };
+
+  /* ------------------- grid editor commit ------------------- */
+  const commitGridEdit = () => {
+    if (!gridDraft) return;
+    const { bbox, cols, rows } = gridDraft;
+    pushElement("grid", { ...bbox, colLines: cols, rowLines: rows,
+      cols: cols.length + 1, rows: rows.length + 1 });
+    setGridDraft(null);
+  };
+  const cancelGridEdit = () => setGridDraft(null);
 
   /* ------------------- asset uploads ------------------- */
   const onLogoFile = (e) => {
@@ -386,17 +521,56 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
               </button>
             </div>
           )}
+          {tool === "trace" && (
+            <Button variant="outline" size="sm"
+              data-testid="studio-freehand-toggle"
+              onClick={() => setFreehandMode((f) => !f)}
+              title="Freehand mode preserves your raw stroke (skip auto-straighten)"
+              className={`h-7 text-[10px] border-[var(--tm-border)] ${
+                freehandMode ? "bg-[var(--tm-blue)] text-white" : "bg-white text-[var(--tm-navy)]"}`}>
+              <Pen className="h-3 w-3 mr-1" /> {freehandMode ? "Freehand" : "Auto-straighten"}
+            </Button>
+          )}
+          <Button variant="outline" size="sm"
+            data-testid="studio-stylus-only"
+            onClick={() => setStylusOnly((s) => !s)}
+            title="Block finger touches — only stylus nib draws"
+            className={`h-7 text-[10px] border-[var(--tm-border)] ${
+              stylusOnly ? "bg-[var(--tm-blue)] text-white" : "bg-white text-[var(--tm-navy)]"}`}>
+            <Pen className="h-3 w-3 mr-1" /> Stylus only
+          </Button>
+          {gridDraft?.step === "edit" && (
+            <div className="inline-flex items-center gap-1" data-testid="studio-grid-editor">
+              <span className="text-[10px] uppercase tracking-wider font-bold text-[var(--tm-blue)]">
+                Grid: {gridDraft.cols.length} cols · {gridDraft.rows.length} rows
+              </span>
+              <Button size="sm"
+                data-testid="studio-grid-done"
+                onClick={commitGridEdit}
+                className="h-7 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white text-[10px] font-bold">
+                Done
+              </Button>
+              <Button variant="outline" size="sm"
+                data-testid="studio-grid-cancel"
+                onClick={cancelGridEdit}
+                className="h-7 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] text-[10px]">
+                Cancel
+              </Button>
+            </div>
+          )}
         </div>
         <div className="px-3 pb-2 flex items-center gap-1 overflow-x-auto" data-testid="studio-toolbar">
           {STUDIO_TOOLS.map((t) => {
             const Icon = TOOL_ICON[t.id] || Square;
             const active = tool === t.id;
-            const disabled = t.id !== "boundary" && boundaryCount < 4;
+            // 'select' is always enabled. All other tools require the
+            // 4 boundary anchors first; 'boundary' itself is the entry.
+            const disabled = !["select", "boundary"].includes(t.id) && boundaryCount < 4;
             return (
               <button
                 key={t.id} type="button"
                 data-testid={`studio-tool-${t.id}`}
-                onClick={() => { setTool(t.id); setDraft(null); }}
+                onClick={() => { setTool(t.id); setDraft(null); setSelectedId(null); setGridDraft(null); }}
                 disabled={disabled}
                 title={t.blurb + (disabled ? " · place all 4 anchors first" : "")}
                 className={`shrink-0 h-9 px-2.5 rounded-md text-[11px] font-bold uppercase tracking-wider inline-flex items-center gap-1 border ${
@@ -485,7 +659,17 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
                   <rect x={work.x} y={work.y} width={work.w} height={work.h}
                     fill="none" stroke="rgba(12,74,183,0.35)" strokeWidth="0.002" strokeDasharray="0.006 0.004" />
                 )}
-                {schema.elements.map((el) => <MarkupOverlay key={el.id} el={el} />)}
+                {schema.elements.map((el) => (
+                  <g key={el.id} transform={el.rotation
+                    ? `rotate(${el.rotation} ${elementBBox(el).x + elementBBox(el).w / 2} ${elementBBox(el).y + elementBBox(el).h / 2})`
+                    : undefined}>
+                    <MarkupOverlay el={el} />
+                  </g>
+                ))}
+                {/* Selection outline + 8 handles + rotate handle */}
+                {selectedEl && tool === "select" && <SelectionFrame el={selectedEl} />}
+                {/* Grid edit overlay — show bbox + tapped lines */}
+                {gridDraft?.step === "edit" && <GridEditOverlay gridDraft={gridDraft} />}
                 {draft && <DraftOverlay draft={draft} />}
               </svg>
               {/* Hover ghost (logo/QR fast mode) */}
@@ -511,6 +695,33 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
                   </span>
                 ))}
               </div>
+              {/* Selection action bar — Lock / Unlock / Delete */}
+              {selectedEl && tool === "select" && (() => {
+                const bb = elementBBox(selectedEl);
+                return (
+                  <div data-testid="studio-selection-actions"
+                    className="absolute flex gap-1 bg-white border border-[var(--tm-border)] rounded-md p-1 shadow-md"
+                    style={{
+                      left: `${(bb.x + bb.w) * 100}%`,
+                      top: `${bb.y * 100}%`,
+                      transform: "translate(8px, -100%)",
+                      pointerEvents: "auto",
+                    }}>
+                    <button type="button" onClick={toggleLockSelected}
+                      data-testid="studio-selection-lock"
+                      title={selectedEl.locked ? "Unlock" : "Lock"}
+                      className="h-6 w-6 inline-flex items-center justify-center text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded">
+                      {selectedEl.locked ? <Lock className="h-3 w-3 text-[var(--tm-orange)]" /> : <Unlock className="h-3 w-3" />}
+                    </button>
+                    <button type="button" onClick={deleteSelected}
+                      data-testid="studio-selection-delete"
+                      title="Delete"
+                      className="h-6 w-6 inline-flex items-center justify-center text-[#FF3B30] hover:bg-[#FFF0F0] rounded">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                );
+              })()}
               {/* Optional ghost overlay — preview faintly on top of mapping */}
               {ghostOverlay && (
                 <div data-testid="studio-ghost-overlay-render"
@@ -608,6 +819,67 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
 
 function dist(a, b) { return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2); }
 
+/**
+ * Renders the selection outline + 8 resize handles + rotate handle
+ * for the currently selected element. Pure SVG, pointer-events:none
+ * on the parent so handle hit-testing happens via onPointerDown
+ * coordinate math (consistent with the rest of the canvas).
+ */
+function SelectionFrame({ el }) {
+  const bb = elementBBox(el);
+  const cx = bb.x + bb.w / 2;
+  const cy = bb.y + bb.h / 2;
+  const handles = bboxHandles(bb);
+  const rotPt = { x: cx, y: bb.y - 0.04 };
+  const stroke = el.locked ? "rgba(255,95,21,0.9)" : "rgba(12,74,183,0.95)";
+  return (
+    <g
+      data-testid="studio-selection-frame"
+      transform={el.rotation ? `rotate(${el.rotation} ${cx} ${cy})` : undefined}
+    >
+      <rect x={bb.x} y={bb.y} width={bb.w} height={bb.h}
+        fill="none" stroke={stroke} strokeWidth="0.0024" strokeDasharray="0.007 0.004" />
+      {!el.locked && Object.entries(handles).map(([key, p]) => (
+        <rect key={key} data-testid={`studio-handle-${key}`}
+          x={p.x - 0.009} y={p.y - 0.009} width="0.018" height="0.018"
+          fill="white" stroke={stroke} strokeWidth="0.0028" />
+      ))}
+      {!el.locked && (
+        <>
+          <line x1={cx} y1={bb.y} x2={cx} y2={rotPt.y + 0.012} stroke={stroke} strokeWidth="0.002" />
+          <circle data-testid="studio-handle-rotate"
+            cx={rotPt.x} cy={rotPt.y} r="0.012"
+            fill="white" stroke={stroke} strokeWidth="0.0028" />
+        </>
+      )}
+    </g>
+  );
+}
+
+/** Renders the grid editor overlay during step='edit' — bbox + tapped lines. */
+function GridEditOverlay({ gridDraft }) {
+  const { bbox, cols, rows } = gridDraft;
+  const stroke = "rgba(255,95,21,0.85)";
+  return (
+    <g data-testid="studio-grid-edit-overlay">
+      <rect x={bbox.x} y={bbox.y} width={bbox.w} height={bbox.h}
+        fill="rgba(255,95,21,0.06)" stroke={stroke} strokeWidth="0.003" />
+      {cols.map((c, i) => (
+        <line key={`gc${i}`}
+          x1={bbox.x + c * bbox.w} y1={bbox.y}
+          x2={bbox.x + c * bbox.w} y2={bbox.y + bbox.h}
+          stroke={stroke} strokeWidth="0.0022" />
+      ))}
+      {rows.map((r, i) => (
+        <line key={`gr${i}`}
+          y1={bbox.y + r * bbox.h} x1={bbox.x}
+          y2={bbox.y + r * bbox.h} x2={bbox.x + bbox.w}
+          stroke={stroke} strokeWidth="0.0022" />
+      ))}
+    </g>
+  );
+}
+
 /* ========================== Left-canvas overlays ========================== */
 
 function MarkupOverlay({ el }) {
@@ -629,16 +901,25 @@ function MarkupOverlay({ el }) {
       return (
         <>
           <rect x={g.x} y={g.y} width={g.w} height={g.h} fill={fill} stroke={stroke} strokeWidth="0.003" />
-          {Array.from({ length: (g.rows || 1) - 1 }).map((_, i) => (
-            <line key={`r${i}`} x1={g.x} x2={g.x + g.w}
-              y1={g.y + g.h * (i + 1) / g.rows} y2={g.y + g.h * (i + 1) / g.rows}
-              stroke={stroke} strokeWidth="0.0018" />
-          ))}
-          {Array.from({ length: (g.cols || 1) - 1 }).map((_, i) => (
-            <line key={`c${i}`} y1={g.y} y2={g.y + g.h}
-              x1={g.x + g.w * (i + 1) / g.cols} x2={g.x + g.w * (i + 1) / g.cols}
-              stroke={stroke} strokeWidth="0.0018" />
-          ))}
+          {/* Prefer manually-positioned colLines/rowLines (Pro grid editor); fall back to evenly-spaced if legacy. */}
+          {g.colLines
+            ? g.colLines.map((cFrac, i) => (
+              <line key={`c${i}`} y1={g.y} y2={g.y + g.h}
+                x1={g.x + cFrac * g.w} x2={g.x + cFrac * g.w}
+                stroke={stroke} strokeWidth="0.0022" />))
+            : Array.from({ length: (g.cols || 1) - 1 }).map((_, i) => (
+              <line key={`c${i}`} y1={g.y} y2={g.y + g.h}
+                x1={g.x + g.w * (i + 1) / g.cols} x2={g.x + g.w * (i + 1) / g.cols}
+                stroke={stroke} strokeWidth="0.0018" />))}
+          {g.rowLines
+            ? g.rowLines.map((rFrac, i) => (
+              <line key={`r${i}`} x1={g.x} x2={g.x + g.w}
+                y1={g.y + rFrac * g.h} y2={g.y + rFrac * g.h}
+                stroke={stroke} strokeWidth="0.0022" />))
+            : Array.from({ length: (g.rows || 1) - 1 }).map((_, i) => (
+              <line key={`r${i}`} x1={g.x} x2={g.x + g.w}
+                y1={g.y + g.h * (i + 1) / g.rows} y2={g.y + g.h * (i + 1) / g.rows}
+                stroke={stroke} strokeWidth="0.0018" />))}
         </>
       );
     case "curve":
@@ -896,16 +1177,24 @@ function CleanElement({ el, ws, px, wsDim, assets, fontFamilyOf: _ff, session: _
       return (
         <g>
           <rect x={p.x} y={p.y} width={W} height={H} fill="none" stroke="#000" strokeWidth={sw} />
-          {Array.from({ length: (g.rows || 1) - 1 }).map((_, i) => (
-            <line key={`r${i}`} x1={p.x} x2={p.x + W}
-              y1={p.y + H * (i + 1) / g.rows} y2={p.y + H * (i + 1) / g.rows}
-              stroke="#000" strokeWidth={sw * 0.6} />
-          ))}
-          {Array.from({ length: (g.cols || 1) - 1 }).map((_, i) => (
-            <line key={`c${i}`} y1={p.y} y2={p.y + H}
-              x1={p.x + W * (i + 1) / g.cols} x2={p.x + W * (i + 1) / g.cols}
-              stroke="#000" strokeWidth={sw * 0.6} />
-          ))}
+          {g.rowLines
+            ? g.rowLines.map((rFrac, i) => (
+              <line key={`r${i}`} x1={p.x} x2={p.x + W}
+                y1={p.y + H * rFrac} y2={p.y + H * rFrac}
+                stroke="#000" strokeWidth={sw * 0.7} />))
+            : Array.from({ length: (g.rows || 1) - 1 }).map((_, i) => (
+              <line key={`r${i}`} x1={p.x} x2={p.x + W}
+                y1={p.y + H * (i + 1) / g.rows} y2={p.y + H * (i + 1) / g.rows}
+                stroke="#000" strokeWidth={sw * 0.6} />))}
+          {g.colLines
+            ? g.colLines.map((cFrac, i) => (
+              <line key={`c${i}`} y1={p.y} y2={p.y + H}
+                x1={p.x + W * cFrac} x2={p.x + W * cFrac}
+                stroke="#000" strokeWidth={sw * 0.7} />))
+            : Array.from({ length: (g.cols || 1) - 1 }).map((_, i) => (
+              <line key={`c${i}`} y1={p.y} y2={p.y + H}
+                x1={p.x + W * (i + 1) / g.cols} x2={p.x + W * (i + 1) / g.cols}
+                stroke="#000" strokeWidth={sw * 0.6} />))}
         </g>
       );
     }

@@ -40,6 +40,7 @@
  */
 
 export const STUDIO_TOOLS = [
+  { id: "select",   label: "Select",         blurb: "Tap an element to select · drag handles to resize · drag rotate handle · lock or delete." },
   { id: "boundary", label: "Page Anchors",  blurb: "Tap the 4 page corners to frame the sheet" },
   { id: "line",     label: "Line",          blurb: "Drag for a straight line" },
   { id: "rect",     label: "Rectangle",     blurb: "Drag to draw a box" },
@@ -213,6 +214,214 @@ export function cleanTrace(points, { tolerance = 0.003 } = {}) {
     points: simplified,
     d: pointsToSmoothPath(simplified),
   };
+}
+
+/**
+ * Detect whether a stroke is "near straight" — used to auto-snap
+ * traced lines to true line elements instead of curves.
+ *
+ * Computes the maximum perpendicular distance from any point on the
+ * stroke to the chord connecting the first and last points. If the
+ * max deviation is below `tolerance` (in normalized 0..1 units),
+ * the stroke is considered straight.
+ */
+export function isNearStraight(points, tolerance = 0.012) {
+  if (!points || points.length < 3) return false;
+  const a = points[0];
+  const b = points[points.length - 1];
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len < 0.02) return false; // degenerate
+  let maxD = 0;
+  for (let i = 1; i < points.length - 1; i++) {
+    const p = points[i];
+    // Perpendicular distance from p to line ab
+    const num = Math.abs(dy * p.x - dx * p.y + b.x * a.y - b.y * a.x);
+    const d = num / len;
+    if (d > maxD) maxD = d;
+  }
+  return maxD < tolerance;
+}
+
+/* ========================== Hit-testing & transforms ========================== */
+
+/**
+ * Returns true if normalized point pt falls within the (possibly
+ * rotated) element's bounding box. For rotated elements, transforms
+ * pt into element-local space first.
+ */
+export function hitTest(pt, el) {
+  const bbox = elementBBox(el);
+  const rot = el.rotation || 0;
+  let x = pt.x, y = pt.y;
+  if (rot) {
+    const cx = bbox.x + bbox.w / 2;
+    const cy = bbox.y + bbox.h / 2;
+    const cos = Math.cos(-rot * Math.PI / 180);
+    const sin = Math.sin(-rot * Math.PI / 180);
+    const dx = pt.x - cx, dy = pt.y - cy;
+    x = cx + dx * cos - dy * sin;
+    y = cy + dx * sin + dy * cos;
+  }
+  // Pad for thin elements (lines, single points)
+  const pad = (bbox.w < 0.02 || bbox.h < 0.02) ? 0.012 : 0;
+  return x >= bbox.x - pad && x <= bbox.x + bbox.w + pad
+      && y >= bbox.y - pad && y <= bbox.y + bbox.h + pad;
+}
+
+/**
+ * Snap a point to the nearest boundary anchor or working-area edge
+ * if within `threshold` (normalized). Returns the snapped point and
+ * whether snapping occurred.
+ */
+export function snapToBoundaries(pt, boundaries, threshold = 0.02) {
+  if (!boundaries) return { ...pt, snapped: false };
+  const candidates = [];
+  for (const k of ["tl", "tr", "bl", "br"]) {
+    if (boundaries[k]) candidates.push(boundaries[k]);
+  }
+  let best = null, bestD = threshold;
+  for (const c of candidates) {
+    const d = Math.sqrt((pt.x - c.x) ** 2 + (pt.y - c.y) ** 2);
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  if (best) return { x: best.x, y: best.y, snapped: true };
+  return { ...pt, snapped: false };
+}
+
+/**
+ * Apply a translation delta to an element's geometry. Returns a new
+ * geometry object — does NOT mutate the input.
+ */
+export function translateGeometry(kind, geometry, dx, dy) {
+  const g = { ...geometry };
+  const move = (p) => ({ x: p.x + dx, y: p.y + dy });
+  switch (kind) {
+    case "line":
+    case "text_marker":
+      g.from = move(g.from); g.to = move(g.to); break;
+    case "rect":
+    case "corner_box":
+    case "grid":
+    case "logo":
+    case "qr_box":
+    case "text_region":
+      g.x += dx; g.y += dy; break;
+    case "circle":
+      g.cx += dx; g.cy += dy; break;
+    case "triangle":
+      g.points = g.points.map(move); break;
+    case "curve":
+    case "trace":
+      g.points = (g.points || []).map(move);
+      if (g.bbox) g.bbox = { ...g.bbox, x: g.bbox.x + dx, y: g.bbox.y + dy };
+      // recompute SVG `d` from translated points
+      if (g.d || (kind === "curve")) g.d = pointsToSmoothPath(g.points);
+      if (kind === "trace") g.paths = [pointsToSmoothPath(g.points)];
+      break;
+    case "bullet":
+      g.dot = move(g.dot); g.textStart = move(g.textStart); break;
+    case "logo_anchor":
+    case "qr_anchor":
+      if (g.mode === "center") g.center = move(g.center);
+      else {
+        g.x += dx; g.y += dy;
+        g.corners = (g.corners || []).map(move);
+      }
+      break;
+    default: break;
+  }
+  return g;
+}
+
+/**
+ * Resize an element by dragging one of its 8 handles. Returns a new
+ * geometry object. Most non-rect elements collapse to bbox-resize.
+ */
+export function resizeGeometry(kind, geometry, handle, newBBox) {
+  const g = { ...geometry };
+  const oldBBox = elementBBox({ kind, geometry });
+  const sx = oldBBox.w === 0 ? 1 : newBBox.w / oldBBox.w;
+  const sy = oldBBox.h === 0 ? 1 : newBBox.h / oldBBox.h;
+  const remap = (p) => ({
+    x: newBBox.x + (p.x - oldBBox.x) * sx,
+    y: newBBox.y + (p.y - oldBBox.y) * sy,
+  });
+  switch (kind) {
+    case "line":
+    case "text_marker":
+      g.from = remap(g.from); g.to = remap(g.to); break;
+    case "rect":
+    case "corner_box":
+    case "grid":
+    case "logo":
+    case "qr_box":
+    case "text_region":
+      g.x = newBBox.x; g.y = newBBox.y; g.w = newBBox.w; g.h = newBBox.h; break;
+    case "circle":
+      g.cx = newBBox.x + newBBox.w / 2;
+      g.cy = newBBox.y + newBBox.h / 2;
+      g.r = Math.min(newBBox.w, newBBox.h) / 2;
+      break;
+    case "triangle":
+      g.points = g.points.map(remap); break;
+    case "curve":
+    case "trace":
+      g.points = (g.points || []).map(remap);
+      g.bbox = newBBox;
+      if (kind === "curve") g.d = pointsToSmoothPath(g.points);
+      else g.paths = [pointsToSmoothPath(g.points)];
+      break;
+    case "bullet":
+      g.dot = remap(g.dot); g.textStart = remap(g.textStart); break;
+    case "logo_anchor":
+    case "qr_anchor":
+      if (g.mode === "center") {
+        g.center = { x: newBBox.x + newBBox.w / 2, y: newBBox.y + newBBox.h / 2 };
+        g.scale = newBBox.w; // store scale as new width
+      } else {
+        g.x = newBBox.x; g.y = newBBox.y; g.w = newBBox.w; g.h = newBBox.h;
+        g.corners = (g.corners || []).map(remap);
+      }
+      break;
+    default: break;
+  }
+  return g;
+}
+
+/**
+ * 8 handle positions for a bbox: NW, N, NE, E, SE, S, SW, W (clockwise from top-left).
+ */
+export function bboxHandles(bbox) {
+  const { x, y, w, h } = bbox;
+  return {
+    nw: { x: x,         y: y         },
+    n:  { x: x + w / 2, y: y         },
+    ne: { x: x + w,     y: y         },
+    e:  { x: x + w,     y: y + h / 2 },
+    se: { x: x + w,     y: y + h     },
+    s:  { x: x + w / 2, y: y + h     },
+    sw: { x: x,         y: y + h     },
+    w:  { x: x,         y: y + h / 2 },
+  };
+}
+
+/**
+ * Given an active resize-drag handle and a new pointer position,
+ * compute the resulting bbox. Maintains anchor at the opposite handle.
+ */
+export function resizedBBox(originalBBox, handle, pt) {
+  const { x, y, w, h } = originalBBox;
+  let nx = x, ny = y, nw = w, nh = h;
+  // Determine anchor (opposite corner) and new dimensions
+  if (handle.includes("w")) { nw = (x + w) - pt.x; nx = pt.x; }
+  if (handle.includes("e")) { nw = pt.x - x; }
+  if (handle.includes("n")) { nh = (y + h) - pt.y; ny = pt.y; }
+  if (handle.includes("s")) { nh = pt.y - y; }
+  // Clamp positive dimensions
+  if (nw < 0.005) { nw = 0.005; }
+  if (nh < 0.005) { nh = 0.005; }
+  return { x: nx, y: ny, w: nw, h: nh };
 }
 
 /**
