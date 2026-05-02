@@ -48,6 +48,10 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   const [hoverPt, setHoverPt] = useState(null);
   const [zoom, setZoom] = useState(1);
   const [ghostOverlay, setGhostOverlay] = useState(false);
+  // Sync cursor — during a transform drag, this points to the live
+  // pointer position so the OTHER canvas can render a small marker
+  // for visual cross-reference (1:1 coord parity reinforcement).
+  const [syncCursor, setSyncCursor] = useState(null); // {pt:{x,y}, source:'mapping'|'preview'} | null
   // Selection + transform state for post-placement editing.
   const [selectedId, setSelectedId] = useState(null);
   const [transform, setTransform] = useState(null); // {kind:'move'|'resize'|'rotate', start, originalGeometry, handle?}
@@ -296,6 +300,9 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
     if (!pt) return;
     // Active transform drag — move/resize/rotate the selected element live.
     if (transform && selectedEl) {
+      // Update sync-cursor so the OTHER canvas can show a matching marker.
+      const src = e.currentTarget?.dataset?.canvasSource || "mapping";
+      setSyncCursor({ pt, source: src });
       if (transform.kind === "move") {
         // Snap delta to boundaries when within threshold.
         const snapped = snapToBoundaries(pt, schema.boundaries, 0.025);
@@ -332,7 +339,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   const onPointerUp = (e) => {
     if (stylusOnly && e?.pointerType && e.pointerType !== "pen") return;
     // Finish transform drag.
-    if (transform) { setTransform(null); return; }
+    if (transform) { setTransform(null); setSyncCursor(null); return; }
     if (!draft) return;
     const d = draft;
     if (["triangle", "corners", "bullet", "logo", "qr"].includes(d.tool)) return;
@@ -649,6 +656,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
             <div
               ref={canvasRef}
               data-testid="studio-canvas"
+              data-canvas-source="mapping"
               className="relative select-none border-2 border-[var(--tm-blue)] rounded-md overflow-hidden bg-white shadow-md touch-none"
               style={{ width: 540, aspectRatio: "8.5 / 11", cursor: "crosshair" }}
               onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
@@ -676,6 +684,15 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
                 ))}
                 {/* Selection outline + 8 handles + rotate handle */}
                 {selectedEl && tool === "select" && <SelectionFrame el={selectedEl} zoom={zoom} />}
+                {/* Sync cursor — when dragging on the preview canvas, show
+                     a faint blue marker here at the matching coordinate. */}
+                {syncCursor && syncCursor.source === "preview" && (
+                  <g data-testid="studio-mapping-synccursor" pointerEvents="none">
+                    <circle cx={syncCursor.pt.x} cy={syncCursor.pt.y} r="0.014"
+                      fill="rgba(12,74,183,0.18)" stroke="rgba(12,74,183,0.85)" strokeWidth="0.0024" />
+                    <circle cx={syncCursor.pt.x} cy={syncCursor.pt.y} r="0.0035" fill="rgba(12,74,183,0.95)" />
+                  </g>
+                )}
                 {/* Grid edit overlay — show bbox + tapped lines */}
                 {gridDraft?.step === "edit" && <GridEditOverlay gridDraft={gridDraft} />}
                 {draft && <DraftOverlay draft={draft} />}
@@ -748,6 +765,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
             </div>
             <div
               data-testid="studio-preview-canvas"
+              data-canvas-source="preview"
               className="relative border-2 border-[var(--tm-orange)] rounded-md overflow-hidden bg-white shadow-md touch-none"
               style={{ width: 540, aspectRatio: "8.5 / 11", cursor: tool === "select" ? "crosshair" : "default" }}
               onPointerDown={tool === "select" ? onPointerDown : undefined}
@@ -763,6 +781,13 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
                   <svg viewBox="0 0 1 1" preserveAspectRatio="none"
                     className="absolute inset-0 w-full h-full pointer-events-none">
                     {selectedEl && <SelectionFrame el={selectedEl} zoom={zoom} />}
+                    {syncCursor && syncCursor.source === "mapping" && (
+                      <g data-testid="studio-preview-synccursor">
+                        <circle cx={syncCursor.pt.x} cy={syncCursor.pt.y} r="0.014"
+                          fill="rgba(255,95,21,0.18)" stroke="rgba(255,95,21,0.85)" strokeWidth="0.0024" />
+                        <circle cx={syncCursor.pt.x} cy={syncCursor.pt.y} r="0.0035" fill="rgba(255,95,21,0.95)" />
+                      </g>
+                    )}
                   </svg>
                   {selectedEl && (() => {
                     const bb = elementBBox(selectedEl);

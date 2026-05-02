@@ -192,7 +192,7 @@ export default function TemplateSetup() {
         </div>
       </div>
 
-      <main className="max-w-2xl mx-auto p-4 space-y-5">
+      <main className={`mx-auto p-4 space-y-5 ${step === "Map" && mapMode === "pro" ? "max-w-[1600px]" : "max-w-2xl"}`}>
         {step === "Pick" && (
           <section data-testid="template-setup-pick" className="space-y-3">
             <div className="space-y-1">

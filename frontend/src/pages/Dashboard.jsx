@@ -7,6 +7,7 @@ import SessionWizard from "../components/app/SessionWizard";
 import TripSheetForm from "../components/app/TripSheetForm";
 import FinishExportDialog from "../components/app/FinishExportDialog";
 import AchievementsPanel from "../components/app/AchievementsPanel";
+import BadgeUnlockedModal from "../components/app/BadgeUnlockedModal";
 import WeeklyTrend from "../components/app/WeeklyTrend";
 import InstallPrompt from "../components/app/InstallPrompt";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
@@ -224,6 +225,8 @@ export default function Dashboard() {
             <AchievementsPanel data={achievements} />
           </div>
         )}
+        {/* Celebration modal — fires when a new badge crosses earned for the first time. */}
+        {achievements && <BadgeUnlockedModal data={achievements} />}
 
         {/* This week — 7-bar trend */}
         {weekly && (
