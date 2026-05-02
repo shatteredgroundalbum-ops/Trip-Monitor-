@@ -3,6 +3,10 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <!-- Required for Google Identity Services popup/FedCM flow.
+             Without this header Chrome (especially on Android) blocks the
+             accounts.google.com popup with ERR_BLOCKED_BY_RESPONSE. -->
+        <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin-allow-popups" />
         <meta name="theme-color" content="#FFFFFF" />
         <meta name="description" content="Trip Monitor — Driver Edition. Digital trip sheets, built for the cab." />
         <link rel="manifest" href="/manifest.json" />
