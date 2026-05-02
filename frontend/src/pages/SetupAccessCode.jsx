@@ -2,81 +2,106 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { Textarea } from "../components/ui/textarea";
 import { toast } from "sonner";
-import { ArrowLeft, Copy, RefreshCw, ShieldCheck, Lock, Eye, EyeOff, AlertTriangle } from "lucide-react";
 import {
-  generateMasterCode, formatMasterCode, isValidMasterCode,
-  setupAuth, isSetup,
+  ArrowLeft, Copy, ShieldCheck, Lock, Eye, EyeOff, AlertTriangle,
+  User as UserIcon, IdCard, KeyRound, MessageSquareQuote, Check,
+} from "lucide-react";
+import {
+  setupAuth, isSetup, isValidPhrase, countPhraseWords,
+  isValidDriverId, isValidDisplayUsername, formatMasterCode, AUTH_CONSTANTS,
 } from "../lib/local-auth";
 import { useAuth } from "../lib/auth";
 
 /**
- * First-run device setup: generate (or type) a 24-character master
- * access code, write it down somewhere safe, then set a 6-digit PIN.
- * Runs entirely offline. No server, no OAuth, no email.
+ * Onboarding wizard for first-run device setup.
+ *
+ * Step order (per spec):
+ *   1. Identity         — displayUsername + driverId
+ *   2. PIN              — 6 digits (twice)
+ *   3. Recovery phrase  — >=4 words, entered twice, NEVER shown after save
+ *   4. Emergency code   — app-generated 24-char master code, shown ONCE
+ *   5. (defer)          — storage location wizard (next iteration)
  */
 export default function SetupAccessCode() {
   const navigate = useNavigate();
   const { unlockDevice } = useAuth();
-  const [step, setStep] = useState("master"); // master | confirm-wrote-down | pin | pin-confirm
+  const [step, setStep] = useState("identity");
   const [entered, setEntered] = useState(false);
-  const [masterCode, setMasterCode] = useState(() => generateMasterCode());
-  const [userTyped, setUserTyped] = useState("");
-  const [showCode, setShowCode] = useState(true);
+
+  // Step 1
+  const [displayUsername, setDisplayUsername] = useState("");
+  const [driverId, setDriverId] = useState("");
+  // Step 2
   const [pin, setPin] = useState("");
   const [pinConfirm, setPinConfirm] = useState("");
+  // Step 3
+  const [phrase, setPhrase] = useState("");
+  const [phraseConfirm, setPhraseConfirm] = useState("");
+  // Step 4
+  const [masterCode, setMasterCode] = useState(""); // returned from setupAuth
+  const [showMaster, setShowMaster] = useState(true);
+  const [copiedMaster, setCopiedMaster] = useState(false);
+  const [masterAcked, setMasterAcked] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setEntered(true), 60);
-    isSetup().then((done) => {
-      if (done) navigate("/pin-login", { replace: true });
-    });
+    isSetup().then((done) => { if (done) navigate("/pin-login", { replace: true }); });
     return () => clearTimeout(t);
   }, [navigate]);
 
-  const regenerate = () => {
-    setMasterCode(generateMasterCode());
-    setUserTyped("");
-    toast.success("New code generated");
-  };
-  const copyCode = async () => {
-    try {
-      await navigator.clipboard.writeText(masterCode);
-      toast.success("Code copied — paste it somewhere safe");
-    } catch {
-      toast.error("Copy failed — please write it down instead");
-    }
-  };
+  const identityOk = isValidDisplayUsername(displayUsername) && isValidDriverId(driverId);
+  const pinOk = /^\d{6}$/.test(pin) && pin === pinConfirm;
+  const phraseOk = isValidPhrase(phrase) && normalize(phrase) === normalize(phraseConfirm);
 
-  const onMasterContinue = () => {
-    const source = userTyped ? userTyped : masterCode;
-    if (!isValidMasterCode(source)) {
-      toast.error("Code must be exactly 24 letters or numbers");
-      return;
-    }
-    setMasterCode(source.replace(/[^A-Za-z0-9]/g, ""));
-    setStep("confirm-wrote-down");
+  const onIdentityNext = () => {
+    if (!isValidDisplayUsername(displayUsername)) { toast.error("Display name must be 2–40 characters"); return; }
+    if (!isValidDriverId(driverId)) { toast.error("Driver ID must be 3–32 letters/numbers/-/_"); return; }
+    setStep("pin");
   };
-
-  const onPinContinue = () => {
+  const onPinNext = () => {
     if (!/^\d{6}$/.test(pin)) { toast.error("PIN must be 6 digits"); return; }
     setStep("pin-confirm");
   };
-
-  const onFinalise = async () => {
+  const onPinConfirmNext = () => {
     if (pin !== pinConfirm) { toast.error("PINs don't match"); return; }
+    setStep("phrase");
+  };
+  const onPhraseNext = () => {
+    if (!isValidPhrase(phrase)) { toast.error(`Use at least ${AUTH_CONSTANTS.MIN_PHRASE_WORDS} words`); return; }
+    setStep("phrase-confirm");
+  };
+  const onPhraseConfirmNext = async () => {
+    if (normalize(phrase) !== normalize(phraseConfirm)) {
+      toast.error("Phrase doesn't match — try again");
+      return;
+    }
+    // Finalize setup BEFORE the master-code screen, so we can capture
+    // the generated master code from the setupAuth return value.
     setBusy(true);
     try {
-      await setupAuth({ masterCode, pin });
-      await unlockDevice();
-      toast.success("Device setup complete");
-      navigate("/dashboard", { replace: true });
+      const { masterCode: mc } = await setupAuth({
+        displayUsername, driverId, pin, recoveryPhrase: phrase,
+      });
+      setMasterCode(mc);
+      setStep("master");
     } catch (err) {
       toast.error(err?.message || "Setup failed");
     } finally {
       setBusy(false);
     }
+  };
+  const onFinish = async () => {
+    if (!masterAcked) { toast.error("Tick the box to confirm you've saved the code"); return; }
+    await unlockDevice();
+    toast.success("Device setup complete");
+    navigate("/dashboard", { replace: true });
+  };
+  const copyMaster = async () => {
+    try { await navigator.clipboard.writeText(masterCode); setCopiedMaster(true); toast.success("Copied — store it somewhere safe"); }
+    catch { toast.error("Copy failed — please write it down"); }
   };
 
   return (
@@ -89,147 +114,118 @@ export default function SetupAccessCode() {
       }}
       data-testid="setup-access-code-page"
     >
-      <header className="px-6 pt-7 max-w-md w-full mx-auto">
+      <header className="px-6 pt-7 max-w-md w-full mx-auto flex items-center justify-between">
         <button
           type="button"
-          onClick={() => navigate("/")}
+          onClick={() => handleBack({ step, setStep, navigate })}
           className="text-[var(--tm-text-soft)] hover:text-[var(--tm-blue)] inline-flex items-center gap-1 text-xs uppercase tracking-wider font-bold"
           data-testid="setup-back"
         >
           <ArrowLeft className="h-3.5 w-3.5" /> Back
         </button>
+        <StepBar step={step} />
       </header>
 
       <main className="flex-1 flex flex-col p-7 md:p-12 max-w-md w-full mx-auto">
-        {step === "master" && (
+        {step === "identity" && (
+          <Section testid="setup-step-identity" icon={<UserIcon className="h-5 w-5" />} overline="Step 1 of 4" title="Who are you?" blurb="This is how you'll show up on your trip sheets. Pick names you'll remember.">
+            <Field label="Display name" testid="setup-username-input"
+              value={displayUsername} onChange={setDisplayUsername}
+              placeholder="e.g. Marcus R." maxLength={40} />
+            <Field label="Driver ID / code" testid="setup-driverid-input"
+              value={driverId} onChange={setDriverId}
+              placeholder="e.g. MR-4429" maxLength={32}
+              hint="Letters, numbers, - and _ only. You'll need this if you ever forget your PIN." />
+            <Primary testid="setup-identity-continue" disabled={!identityOk} onClick={onIdentityNext}>Continue</Primary>
+          </Section>
+        )}
+
+        {step === "pin" && (
+          <Section testid="setup-step-pin" icon={<KeyRound className="h-5 w-5" />} overline="Step 2 of 4" title="Set your 6-digit PIN." blurb="You'll tap this every time you open the app.">
+            <PinField value={pin} onChange={setPin} autoFocus testid="setup-pin" />
+            <Primary testid="setup-pin-continue" disabled={pin.length !== 6} onClick={onPinNext}>Continue</Primary>
+          </Section>
+        )}
+        {step === "pin-confirm" && (
+          <Section testid="setup-step-pin-confirm" icon={<KeyRound className="h-5 w-5" />} overline="Step 2 of 4" title="Type your PIN again." blurb="Just to be sure.">
+            <PinField value={pinConfirm} onChange={setPinConfirm} autoFocus testid="setup-pin-confirm" />
+            <TwoButtons
+              leftTestid="setup-pin-back" leftLabel="Back" onLeft={() => { setPinConfirm(""); setStep("pin"); }}
+              rightTestid="setup-pin-confirm-next" rightLabel="Continue" rightDisabled={!pinOk}
+              onRight={onPinConfirmNext}
+            />
+          </Section>
+        )}
+
+        {step === "phrase" && (
+          <Section testid="setup-step-phrase" icon={<MessageSquareQuote className="h-5 w-5" />} overline="Step 3 of 4" title="Pick a secret recovery phrase." blurb={`At least ${AUTH_CONSTANTS.MIN_PHRASE_WORDS} words. You'll use it if you forget your PIN. We will NEVER show it back to you after you set it — write it somewhere safe.`}>
+            <PhraseField value={phrase} onChange={setPhrase} testid="setup-phrase-input"
+              placeholder="e.g. blue truck river coffee" />
+            <PhraseMeter value={phrase} />
+            <Primary testid="setup-phrase-continue" disabled={!isValidPhrase(phrase)} onClick={onPhraseNext}>Continue</Primary>
+          </Section>
+        )}
+        {step === "phrase-confirm" && (
+          <Section testid="setup-step-phrase-confirm" icon={<MessageSquareQuote className="h-5 w-5" />} overline="Step 3 of 4" title="Type your phrase again." blurb="Must match exactly (case and extra spaces don't count).">
+            <PhraseField value={phraseConfirm} onChange={setPhraseConfirm} testid="setup-phrase-confirm-input"
+              placeholder="Type the same phrase" />
+            <TwoButtons
+              leftTestid="setup-phrase-back" leftLabel="Back" onLeft={() => { setPhraseConfirm(""); setStep("phrase"); }}
+              rightTestid="setup-phrase-confirm-next" rightLabel="Continue" rightDisabled={!phraseOk || busy}
+              onRight={onPhraseConfirmNext}
+            />
+          </Section>
+        )}
+
+        {step === "master" && masterCode && (
           <section data-testid="setup-step-master" className="space-y-4">
-            <Overline>Step 1 of 2 · Master access code</Overline>
+            <div className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.32em] font-bold">
+              <span className="h-px w-8 bg-[var(--tm-blue)]" aria-hidden />
+              <span className="text-[var(--tm-orange)]">Step 4 of 4</span>
+              <span className="text-[var(--tm-text-muted)]">·</span>
+              <span className="text-[var(--tm-blue)]">Emergency backup</span>
+            </div>
             <h1 className="font-black tracking-tight leading-[0.95]" style={{ fontSize: "clamp(1.75rem, 6vw, 2.5rem)" }}>
               Write this down.
             </h1>
-            <p className="text-[var(--tm-text-soft)] text-sm">
-              Your 24-character master code is the only way to reset your PIN or unlock this app on a new device. We do NOT store it in any cloud. Keep it somewhere only you can find.
-            </p>
-
+            <div className="bg-[var(--tm-orange)] bg-opacity-10 border-2 border-[var(--tm-orange)] rounded-md p-3 text-xs text-[var(--tm-navy)] flex gap-2 items-start" data-testid="setup-master-warning">
+              <AlertTriangle className="h-4 w-4 text-[var(--tm-orange)] shrink-0 mt-0.5" />
+              <div>
+                <strong>Shown only once.</strong> This 24-character code is your last-ditch emergency recovery if you forget BOTH your PIN and your phrase. The app will never show it again.
+              </div>
+            </div>
             <div
               data-testid="setup-master-code"
               className="font-mono text-lg md:text-xl tracking-[0.15em] bg-[var(--tm-surface)] border-2 border-dashed border-[var(--tm-blue)] rounded-md p-4 text-center break-all select-all"
             >
-              {showCode ? formatMasterCode(masterCode) : "•••• •••• •••• •••• •••• ••••"}
+              {showMaster ? formatMasterCode(masterCode) : "•••• •••• •••• •••• •••• ••••"}
             </div>
-
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setShowCode((s) => !s)} className="flex-1 h-10 bg-white" data-testid="setup-toggle-visibility">
-                {showCode ? <EyeOff className="h-3.5 w-3.5 mr-1" /> : <Eye className="h-3.5 w-3.5 mr-1" />}
-                {showCode ? "Hide" : "Show"}
+              <Button variant="outline" onClick={() => setShowMaster((s) => !s)} className="flex-1 h-10 bg-white" data-testid="setup-master-toggle">
+                {showMaster ? <EyeOff className="h-3.5 w-3.5 mr-1" /> : <Eye className="h-3.5 w-3.5 mr-1" />}
+                {showMaster ? "Hide" : "Show"}
               </Button>
-              <Button variant="outline" onClick={regenerate} className="flex-1 h-10 bg-white" data-testid="setup-regenerate">
-                <RefreshCw className="h-3.5 w-3.5 mr-1" /> New code
-              </Button>
-              <Button variant="outline" onClick={copyCode} className="flex-1 h-10 bg-white" data-testid="setup-copy">
-                <Copy className="h-3.5 w-3.5 mr-1" /> Copy
+              <Button variant="outline" onClick={copyMaster} className="flex-1 h-10 bg-white" data-testid="setup-master-copy">
+                {copiedMaster ? <Check className="h-3.5 w-3.5 mr-1 text-[var(--tm-blue)]" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
+                {copiedMaster ? "Copied" : "Copy"}
               </Button>
             </div>
-
-            <details className="mt-2 text-sm">
-              <summary className="cursor-pointer text-[var(--tm-text-soft)] hover:text-[var(--tm-blue)] text-xs uppercase tracking-wider font-bold">
-                I already have a code — enter it instead
-              </summary>
-              <Input
-                data-testid="setup-master-input"
-                value={userTyped}
-                onChange={(e) => setUserTyped(e.target.value)}
-                placeholder="24 letters or numbers"
-                className="mt-2 font-mono tracking-[0.1em]"
-                maxLength={32}
+            <div className="flex items-start gap-2 pt-1">
+              <input
+                id="setup-master-ack-cb"
+                type="checkbox"
+                checked={masterAcked}
+                onChange={(e) => setMasterAcked(e.target.checked)}
+                data-testid="setup-master-ack-checkbox"
+                className="mt-0.5 h-4 w-4 accent-[var(--tm-orange)] cursor-pointer"
               />
-            </details>
-
-            <Button
-              data-testid="setup-master-continue"
-              onClick={onMasterContinue}
-              className="w-full h-12 bg-[var(--tm-navy)] hover:bg-[var(--tm-navy-deep)] text-white font-bold rounded-md mt-3"
-            >
-              I've written it down — continue
-            </Button>
-          </section>
-        )}
-
-        {step === "confirm-wrote-down" && (
-          <section data-testid="setup-step-confirm" className="space-y-4">
-            <div className="h-16 w-16 rounded-full bg-[var(--tm-orange)] text-white mx-auto flex items-center justify-center">
-              <AlertTriangle className="h-8 w-8" />
+              <label htmlFor="setup-master-ack-cb" data-testid="setup-master-ack" className="text-xs text-[var(--tm-text-soft)] cursor-pointer">
+                I've saved this code somewhere only I can find. I understand that if I lose my PIN, my phrase, AND this code, my local data may not be recoverable.
+              </label>
             </div>
-            <h1 className="text-center font-black tracking-tight text-2xl">Are you sure?</h1>
-            <p className="text-center text-[var(--tm-text-soft)] text-sm">
-              Without this code you <strong>cannot</strong> reset your PIN if you forget it. We cannot recover it for you. No cloud, no server.
-            </p>
-            <div className="flex gap-2 pt-2">
-              <Button
-                variant="outline"
-                data-testid="setup-confirm-back"
-                onClick={() => setStep("master")}
-                className="flex-1 h-12 bg-white border-[var(--tm-border)]"
-              >
-                Show me the code again
-              </Button>
-              <Button
-                data-testid="setup-confirm-next"
-                onClick={() => setStep("pin")}
-                className="flex-1 h-12 bg-[var(--tm-navy)] hover:bg-[var(--tm-navy-deep)] text-white font-bold"
-              >
-                Yes, it's safe
-              </Button>
-            </div>
-          </section>
-        )}
-
-        {step === "pin" && (
-          <section data-testid="setup-step-pin" className="space-y-4">
-            <Overline>Step 2 of 2 · Create PIN</Overline>
-            <h1 className="font-black tracking-tight leading-[0.95]" style={{ fontSize: "clamp(1.75rem, 6vw, 2.5rem)" }}>
-              Set a 6-digit PIN.
-            </h1>
-            <p className="text-[var(--tm-text-soft)] text-sm">
-              This is what you'll tap every time you open the app. Pick something only you'd know.
-            </p>
-            <PinField value={pin} onChange={setPin} autoFocus testid="setup-pin" />
-            <Button
-              data-testid="setup-pin-continue"
-              onClick={onPinContinue}
-              disabled={pin.length !== 6}
-              className="w-full h-12 bg-[var(--tm-navy)] hover:bg-[var(--tm-navy-deep)] text-white font-bold rounded-md mt-3"
-            >
-              Continue
-            </Button>
-          </section>
-        )}
-
-        {step === "pin-confirm" && (
-          <section data-testid="setup-step-pin-confirm" className="space-y-4">
-            <Overline>Confirm PIN</Overline>
-            <h1 className="font-black tracking-tight leading-[0.95]" style={{ fontSize: "clamp(1.75rem, 6vw, 2.5rem)" }}>
-              Type it again.
-            </h1>
-            <PinField value={pinConfirm} onChange={setPinConfirm} autoFocus testid="setup-pin-confirm" />
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => { setPinConfirm(""); setStep("pin"); }}
-                className="flex-1 h-12 bg-white"
-                data-testid="setup-pin-back"
-              >
-                Back
-              </Button>
-              <Button
-                data-testid="setup-finalise"
-                onClick={onFinalise}
-                disabled={pinConfirm.length !== 6 || busy}
-                className="flex-1 h-12 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold"
-              >
-                <Lock className="h-4 w-4 mr-1" /> Finish setup
-              </Button>
-            </div>
+            <Primary testid="setup-finalise" disabled={!masterAcked} onClick={onFinish}>
+              <Lock className="h-4 w-4 mr-1" /> Finish setup
+            </Primary>
           </section>
         )}
 
@@ -242,13 +238,119 @@ export default function SetupAccessCode() {
   );
 }
 
-function Overline({ children }) {
+function normalize(s) {
+  return String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function handleBack({ step, setStep, navigate }) {
+  const prev = {
+    identity: null, pin: "identity", "pin-confirm": "pin",
+    phrase: "pin-confirm", "phrase-confirm": "phrase",
+    master: null, // no back from master — setup already committed
+  }[step];
+  if (prev === null) navigate("/");
+  else if (prev) setStep(prev);
+}
+
+function StepBar({ step }) {
+  const order = ["identity", "pin", "phrase", "master"];
+  const idx = order.findIndex((o) => step.startsWith(o));
   return (
-    <div className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.32em] font-bold">
-      <span className="h-px w-8 bg-[var(--tm-blue)]" aria-hidden />
-      <span className="text-[var(--tm-orange)]">Driver Edition</span>
-      <span className="text-[var(--tm-text-muted)]">·</span>
-      <span className="text-[var(--tm-blue)]">{children}</span>
+    <div className="flex gap-1.5" data-testid="setup-step-bar" aria-label={`Step ${idx + 1} of 4`}>
+      {order.map((o, i) => (
+        <div key={o} className={`h-1.5 w-6 rounded-full transition ${i <= idx ? "bg-[var(--tm-blue)]" : "bg-[var(--tm-border)]"}`} />
+      ))}
+    </div>
+  );
+}
+
+function Section({ testid, icon, overline, title, blurb, children }) {
+  return (
+    <section data-testid={testid} className="space-y-4">
+      <div className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.32em] font-bold">
+        <span className="h-px w-8 bg-[var(--tm-blue)]" aria-hidden />
+        <span className="text-[var(--tm-orange)]">Driver Edition</span>
+        <span className="text-[var(--tm-text-muted)]">·</span>
+        <span className="text-[var(--tm-blue)]">{overline}</span>
+      </div>
+      <div className="flex items-start gap-3">
+        <div className="h-10 w-10 rounded-md bg-[var(--tm-navy)] text-white flex items-center justify-center shrink-0 mt-1">{icon}</div>
+        <div className="flex-1">
+          <h1 className="font-black tracking-tight leading-[1.05]" style={{ fontSize: "clamp(1.5rem, 5.5vw, 2.25rem)" }}>
+            {title}
+          </h1>
+          {blurb && <p className="text-[var(--tm-text-soft)] text-sm mt-2">{blurb}</p>}
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Field({ label, testid, value, onChange, placeholder, maxLength, hint }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs uppercase tracking-wider font-bold text-[var(--tm-text-muted)]">{label}</label>
+      <Input data-testid={testid} value={value} onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder} maxLength={maxLength} />
+      {hint && <p className="text-[10px] text-[var(--tm-text-muted)] leading-snug">{hint}</p>}
+    </div>
+  );
+}
+
+function PhraseField({ value, onChange, placeholder, testid }) {
+  return (
+    <Textarea
+      data-testid={testid}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      rows={3}
+      spellCheck={false}
+      autoCapitalize="none"
+      autoCorrect="off"
+      className="font-mono text-base leading-relaxed bg-white"
+    />
+  );
+}
+
+function PhraseMeter({ value }) {
+  const n = countPhraseWords(value);
+  const ok = n >= AUTH_CONSTANTS.MIN_PHRASE_WORDS;
+  return (
+    <div data-testid="setup-phrase-meter" className="text-xs flex items-center gap-2">
+      <div className={`h-1.5 flex-1 rounded-full ${ok ? "bg-[var(--tm-blue)]" : "bg-[var(--tm-border)]"}`} />
+      <span className={`font-bold tracking-wider uppercase text-[10px] ${ok ? "text-[var(--tm-blue)]" : "text-[var(--tm-text-muted)]"}`}>
+        {n} / {AUTH_CONSTANTS.MIN_PHRASE_WORDS}+ words
+      </span>
+    </div>
+  );
+}
+
+function Primary({ testid, disabled, onClick, children }) {
+  return (
+    <Button
+      data-testid={testid}
+      onClick={onClick}
+      disabled={disabled}
+      className="w-full h-12 bg-[var(--tm-navy)] hover:bg-[var(--tm-navy-deep)] text-white font-bold rounded-md mt-3"
+    >
+      {children}
+    </Button>
+  );
+}
+
+function TwoButtons({ leftTestid, leftLabel, onLeft, rightTestid, rightLabel, onRight, rightDisabled }) {
+  return (
+    <div className="flex gap-2 mt-3">
+      <Button variant="outline" onClick={onLeft} data-testid={leftTestid}
+        className="flex-1 h-12 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] font-bold">
+        {leftLabel}
+      </Button>
+      <Button onClick={onRight} disabled={rightDisabled} data-testid={rightTestid}
+        className="flex-1 h-12 bg-[var(--tm-navy)] hover:bg-[var(--tm-navy-deep)] text-white font-bold">
+        {rightLabel}
+      </Button>
     </div>
   );
 }
@@ -285,7 +387,7 @@ export function PinField({ value, onChange, autoFocus, testid }) {
         value={value}
         onChange={handle}
         data-testid={`${testid}-input`}
-        className="sr-only-input text-center text-2xl font-mono tracking-[0.35em] bg-white border-2 border-[var(--tm-border)] rounded-md h-12 w-64 focus:border-[var(--tm-blue)] outline-none"
+        className="text-center text-2xl font-mono tracking-[0.35em] bg-white border-2 border-[var(--tm-border)] rounded-md h-12 w-64 focus:border-[var(--tm-blue)] outline-none"
         placeholder="••••••"
       />
     </div>

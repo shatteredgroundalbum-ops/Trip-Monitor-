@@ -227,19 +227,31 @@ async def auth_local_device(request: Request, response: Response):
     body = await request.json()
     device_id = body.get("device_id")
     role = body.get("role") or None
+    display_username = (body.get("display_username") or "").strip() or None
+    driver_id = (body.get("driver_id") or "").strip() or None
     if not device_id or not isinstance(device_id, str) or len(device_id) < 8:
         raise HTTPException(status_code=400, detail="device_id required")
 
     existing = await db.users.find_one({"device_id": device_id}, {"_id": 0})
     if existing:
         user_id = existing["user_id"]
+        updates = {}
         if role and existing.get("role") != role:
-            await db.users.update_one({"user_id": user_id}, {"$set": {"role": role}})
+            updates["role"] = role
+        if display_username and existing.get("name") != display_username:
+            updates["name"] = display_username
+        if driver_id and existing.get("driver_id") != driver_id:
+            updates["driver_id"] = driver_id
+        if updates:
+            await db.users.update_one({"user_id": user_id}, {"$set": updates})
     else:
         user_id = f"user_{uuid.uuid4().hex[:12]}"
         await db.users.insert_one({
             "user_id": user_id, "device_id": device_id,
-            "email": "", "name": "Driver", "picture": "",
+            "email": "",
+            "name": display_username or "Driver",
+            "picture": "",
+            "driver_id": driver_id or "",
             "role": role or "",
             "created_at": datetime.now(timezone.utc).isoformat(),
         })

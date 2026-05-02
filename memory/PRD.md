@@ -463,8 +463,22 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
   - **Bugs fixed after test agent run**: logout used to await the backend before redirecting — now fires the logout POST fire-and-forget and redirects immediately; PIN recovery state (masterCode, newPin, recoverStep) now resets on both `Forgot PIN?` entry and `Back to PIN` exit so the user always restarts at the master-code input.
   - Live-verified: 11/12 spec test cases passed on first try; both remaining bugs fixed and ready for retest.
 
+- ✅ **Local-device auth v2 — identity + driverId + phrase + emergency code (Iter 19e)** (2026-02-??):
+  - User delivered a bigger spec: app-generated 24-char master code (shown ONCE during setup), user-chosen displayUsername + driverId + 6-digit PIN + recovery phrase (≥4 words, case-insensitive, whitespace-normalized, never shown again). PIN reset must require driverId + phrase (primary) OR driverId + master code (emergency). Separate longer lockout for recovery attempts. No cloud / server reset paths.
+  - `local-auth.js` rewritten: stores display_username + driver_id in `tm-keychain`, three PBKDF2 verifiers in `tm-auth` (pin+master, phrase+driverId.lowercase(), master+driverId.lowercase()). Separate attempt counters: 5 PIN → 30s, 5 recovery → 5min.
+  - `SetupAccessCode.jsx` rewritten: 4-step wizard with step bar → Identity / PIN / Recovery Phrase / Emergency Master Code. Master code is RETURNED from setupAuth() and shown once with copy/hide toggles; Finish button gated on mandatory ack checkbox.
+  - `PinLogin.jsx` rewritten: recovery has tabs for phrase vs emergency code, both require Driver ID. Separate `[data-testid=recover-lockout]` UI. Personalized greeting "Welcome back, {displayUsername}."
+  - Backend `/api/auth/local` now accepts optional `display_username` + `driver_id` and updates the user record — Dashboard greeting end-to-end displays the driver's chosen name.
+  - Live-verified: Marcus R. / MR-4429 / 135792 / "blue truck river coffee" path works end-to-end; case-insensitive phrase confirm; "Hey, Marcus 👋" on Dashboard.
+
 ## Prioritized Backlog
-- P1: Pro Mapping Studio polish (Delivery 2)
+
+### P0 — next iteration
+- **Storage model wizard (deferred)**: Add setup step 5 "How do you want your trip data saved?" with 4 options: in-app only / device Documents folder / SD-USB / user-picked folder (File System Access API). Storage-cap warnings + "Archive to Documents" flow when the cap is approached.
+- **Exports**: Image copy, structured backup JSON, CSV/report (PDF already exists).
+
+### P1
+- Pro Mapping Studio polish (Delivery 2)
    - SPLIT FILE: `ProMappingStudio.jsx` is now ~1,343 LoC. Extract
      `SelectionFrame` + `GridEditOverlay` + `MarkupOverlay` +
      `DraftOverlay` (~250 LoC) → `StudioCanvasOverlays.jsx`.

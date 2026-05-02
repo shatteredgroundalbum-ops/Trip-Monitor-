@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { isSetup, getDeviceId } from "./local-auth";
+import { isSetup, getDeviceId, getIdentity } from "./local-auth";
 import { isUnlocked, setAuthedUser as setSessUnlocked, clearUnlock, getSelectedRole } from "./auth-storage";
 import { api } from "./api";
 
@@ -23,7 +23,13 @@ export function AuthProvider({ children }) {
     try {
       const deviceId = await getDeviceId();
       const role = getSelectedRole() || undefined;
-      await api.post("/auth/local", { device_id: deviceId, role });
+      const identity = await getIdentity();
+      await api.post("/auth/local", {
+        device_id: deviceId,
+        role,
+        display_username: identity.display_username || undefined,
+        driver_id: identity.driver_id || undefined,
+      });
       const me = await api.get("/auth/me");
       setUser(me.data);
       return me.data;
