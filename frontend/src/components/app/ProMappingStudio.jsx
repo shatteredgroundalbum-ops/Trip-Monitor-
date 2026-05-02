@@ -93,8 +93,11 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   }
 
   /* ------------------- pointer → normalized coord ------------------- */
+  // Resolves coords against the listener's currentTarget so the same
+  // handlers can be attached to either the mapping canvas OR the
+  // preview canvas — both use the 0..1 normalized coordinate space.
   const canvasPt = (e) => {
-    const r = canvasRef.current?.getBoundingClientRect();
+    const r = (e.currentTarget || canvasRef.current)?.getBoundingClientRect();
     if (!r) return null;
     return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
   };
@@ -741,13 +744,53 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
           {/* Preview canvas — same dimensions, read-only output */}
           <section data-testid="studio-preview-pane" className="flex flex-col items-center">
             <div className="text-[10px] uppercase tracking-[0.2em] font-bold text-[var(--tm-orange)] mb-1.5 flex items-center gap-1.5 self-start">
-              <Eye className="h-3 w-3" /> Preview · live output
+              <Eye className="h-3 w-3" /> Preview · live output {tool === "select" && <span className="text-[var(--tm-blue)]">· editable</span>}
             </div>
             <div
               data-testid="studio-preview-canvas"
-              className="relative border-2 border-[var(--tm-orange)] rounded-md overflow-hidden bg-white shadow-md"
-              style={{ width: 540, aspectRatio: "8.5 / 11" }}>
+              className="relative border-2 border-[var(--tm-orange)] rounded-md overflow-hidden bg-white shadow-md touch-none"
+              style={{ width: 540, aspectRatio: "8.5 / 11", cursor: tool === "select" ? "crosshair" : "default" }}
+              onPointerDown={tool === "select" ? onPointerDown : undefined}
+              onPointerMove={tool === "select" ? onPointerMove : undefined}
+              onPointerUp={tool === "select" ? onPointerUp : undefined}
+            >
               <CleanReconstructionCanvas schema={schema} session={null} width={540} />
+              {/* Editable overlay — visible & interactive only when Select tool is active.
+                   Uses the same 0..1 normalized coords as the mapping canvas, so the
+                   shared SelectionFrame + transform math works identically here. */}
+              {tool === "select" && (
+                <>
+                  <svg viewBox="0 0 1 1" preserveAspectRatio="none"
+                    className="absolute inset-0 w-full h-full pointer-events-none">
+                    {selectedEl && <SelectionFrame el={selectedEl} zoom={zoom} />}
+                  </svg>
+                  {selectedEl && (() => {
+                    const bb = elementBBox(selectedEl);
+                    return (
+                      <div data-testid="studio-preview-selection-actions"
+                        className="absolute flex gap-1 bg-white border border-[var(--tm-border)] rounded-md p-1 shadow-md"
+                        style={{
+                          left: `${(bb.x + bb.w) * 100}%`,
+                          top: `${bb.y * 100}%`,
+                          transform: "translate(8px, -100%)",
+                        }}>
+                        <button type="button" onClick={toggleLockSelected}
+                          data-testid="studio-preview-selection-lock"
+                          title={selectedEl.locked ? "Unlock" : "Lock"}
+                          className="h-6 w-6 inline-flex items-center justify-center text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded">
+                          {selectedEl.locked ? <Lock className="h-3 w-3 text-[var(--tm-orange)]" /> : <Unlock className="h-3 w-3" />}
+                        </button>
+                        <button type="button" onClick={deleteSelected}
+                          data-testid="studio-preview-selection-delete"
+                          title="Delete"
+                          className="h-6 w-6 inline-flex items-center justify-center text-[#FF3B30] hover:bg-[#FFF0F0] rounded">
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    );
+                  })()}
+                </>
+              )}
             </div>
           </section>
         </div>
