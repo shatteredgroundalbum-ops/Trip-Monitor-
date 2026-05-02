@@ -548,8 +548,12 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
     } else if (d.tool === "grid" && d.start && d.end) {
       const r = normRect(d.start.x, d.start.y, d.end.x, d.end.y);
       if (r.w > 0.02 && r.h > 0.02) {
-        // Enter grid edit mode — driver taps inside to add col/row lines.
-        setGridDraft({ bbox: r, cols: [], rows: [], step: "edit" });
+        // Open the count popover. Driver picks rows/cols then header
+        // names; the grid is then auto-built with even-spaced lines.
+        // The Manual button on the popover keeps the legacy tap-to-add
+        // editor available as a fallback.
+        setGridDraft({ bbox: r, cols: [], rows: [], headers: [], step: "count",
+          colCount: 4, rowCount: 6 });
         setDraft(null);
       } else { setDraft(null); }
     } else if (d.tool === "curve" && d.points?.length > 2) {
@@ -626,12 +630,40 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   /* ------------------- grid editor commit ------------------- */
   const commitGridEdit = () => {
     if (!gridDraft) return;
-    const { bbox, cols, rows } = gridDraft;
+    const { bbox, cols, rows, headers } = gridDraft;
     pushElement("grid", { ...bbox, colLines: cols, rowLines: rows,
-      cols: cols.length + 1, rows: rows.length + 1 });
+      cols: cols.length + 1, rows: rows.length + 1,
+      headers: headers || [],
+      fontFamily: fontSel,
+    });
     setGridDraft(null);
   };
   const cancelGridEdit = () => setGridDraft(null);
+
+  // Auto-build a grid from row/col counts + header labels collected via
+  // the count + headers popover. Lines are evenly spaced; headers are
+  // saved on the grid element and rendered in the first row.
+  const commitGridAuto = () => {
+    if (!gridDraft) return;
+    const { bbox, colCount, rowCount, headers } = gridDraft;
+    const cols = Array.from({ length: Math.max(0, (colCount || 1) - 1) },
+      (_, i) => (i + 1) / colCount);
+    const rows = Array.from({ length: Math.max(0, (rowCount || 1) - 1) },
+      (_, i) => (i + 1) / rowCount);
+    pushElement("grid", {
+      ...bbox, colLines: cols, rowLines: rows,
+      cols: colCount, rows: rowCount,
+      headers: (headers || []).slice(0, colCount),
+      fontFamily: fontSel,
+    });
+    setGridDraft(null);
+  };
+
+  // Toggle the popover into the legacy tap-to-add manual editor.
+  const switchToManualGrid = () => {
+    if (!gridDraft) return;
+    setGridDraft({ ...gridDraft, step: "edit", cols: [], rows: [] });
+  };
 
   /* ------------------- asset uploads ------------------- */
   const onLogoFile = (e) => {
@@ -1137,6 +1169,27 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
           onForceLock={forceLock}
           onJumpTo={(ids) => { setSelectedId(ids[0] || null); setTool("select"); setValidationReport(null); }} />
       )}
+      {/* Grid count + headers popover — drawn after the bbox is set. */}
+      {gridDraft && (gridDraft.step === "count" || gridDraft.step === "headers") && (
+        <GridSetupPopover
+          gridDraft={gridDraft}
+          onChangeCounts={(cc, rc) => setGridDraft((g) => ({ ...g, colCount: cc, rowCount: rc }))}
+          onChangeHeader={(i, val) => setGridDraft((g) => {
+            const next = (g.headers || []).slice();
+            next[i] = val;
+            return { ...g, headers: next };
+          })}
+          onNext={() => setGridDraft((g) => ({ ...g, step: "headers",
+            headers: (g.headers && g.headers.length === g.colCount)
+              ? g.headers
+              : Array.from({ length: g.colCount }, (_, i) => g.headers?.[i] || ""),
+          }))}
+          onBack={() => setGridDraft((g) => ({ ...g, step: "count" }))}
+          onDone={commitGridAuto}
+          onManual={switchToManualGrid}
+          onCancel={cancelGridEdit}
+        />
+      )}
       {/* Custom-font builder — opens when driver picks Custom font + Build. */}
       {fontBuilderOpen && (
         <CustomFontBuilder
@@ -1153,6 +1206,92 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
 }
 
 function dist(a, b) { return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2); }
+
+function GridSetupPopover({ gridDraft, onChangeCounts, onChangeHeader, onNext, onBack, onDone, onManual, onCancel }) {
+  const isCount = gridDraft.step === "count";
+  const cc = gridDraft.colCount || 1;
+  const rc = gridDraft.rowCount || 1;
+  return (
+    <div data-testid="studio-grid-setup-popover"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+      onClick={onCancel}>
+      <div onClick={(e) => e.stopPropagation()}
+        className="bg-white border-2 border-[var(--tm-orange)] rounded-md shadow-2xl max-w-md w-full p-5">
+        <div className="text-[10px] uppercase tracking-[0.3em] font-bold text-[var(--tm-orange)] mb-1">
+          {isCount ? "Build grid · step 1 of 2" : "Build grid · step 2 of 2"}
+        </div>
+        <div className="text-lg font-black text-[var(--tm-navy)] mb-4">
+          {isCount ? "How big is the grid?" : `Name each of the ${cc} column${cc === 1 ? "" : "s"}`}
+        </div>
+
+        {isCount && (
+          <div className="space-y-3" data-testid="studio-grid-count">
+            <label className="block">
+              <span className="text-[10px] uppercase tracking-wider font-bold text-[var(--tm-text-muted)]">Columns</span>
+              <input type="number" min="1" max="20" value={cc}
+                data-testid="studio-grid-cols-input"
+                onChange={(e) => onChangeCounts(Math.max(1, Math.min(20, parseInt(e.target.value, 10) || 1)), rc)}
+                className="mt-1 w-full h-10 px-3 text-base border border-[var(--tm-border)] rounded-md text-[var(--tm-navy)] font-bold" />
+            </label>
+            <label className="block">
+              <span className="text-[10px] uppercase tracking-wider font-bold text-[var(--tm-text-muted)]">Rows</span>
+              <input type="number" min="1" max="40" value={rc}
+                data-testid="studio-grid-rows-input"
+                onChange={(e) => onChangeCounts(cc, Math.max(1, Math.min(40, parseInt(e.target.value, 10) || 1)))}
+                className="mt-1 w-full h-10 px-3 text-base border border-[var(--tm-border)] rounded-md text-[var(--tm-navy)] font-bold" />
+            </label>
+            <p className="text-[11px] text-[var(--tm-text-soft)]">
+              Lines will be evenly spaced. The first row holds the column headers you'll enter next.
+            </p>
+          </div>
+        )}
+
+        {!isCount && (
+          <div className="space-y-2 max-h-[40vh] overflow-y-auto" data-testid="studio-grid-headers">
+            {Array.from({ length: cc }).map((_, i) => (
+              <label key={i} className="flex items-center gap-2">
+                <span className="text-[10px] uppercase tracking-wider font-bold text-[var(--tm-text-muted)] w-8 shrink-0 text-right">#{i + 1}</span>
+                <input type="text"
+                  data-testid={`studio-grid-header-${i}`}
+                  value={gridDraft.headers?.[i] || ""}
+                  onChange={(e) => onChangeHeader(i, e.target.value)}
+                  placeholder={["Date", "Description", "Amount", "Qty", "Notes", "Time", "Location", "Driver"][i] || `Column ${i + 1}`}
+                  className="flex-1 h-9 px-2 text-sm border border-[var(--tm-border)] rounded-md text-[var(--tm-navy)]" />
+              </label>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2 mt-5">
+          <button type="button" onClick={onCancel}
+            data-testid="studio-grid-popover-cancel"
+            className="h-10 px-3 rounded-md bg-white border border-[var(--tm-border)] text-[var(--tm-navy)] font-bold text-sm">
+            Cancel
+          </button>
+          <button type="button" onClick={onManual}
+            data-testid="studio-grid-popover-manual"
+            className="h-10 px-3 rounded-md bg-white border border-[var(--tm-blue)] text-[var(--tm-blue)] font-bold text-sm"
+            title="Tap inside the bbox to add lines one at a time">
+            Manual
+          </button>
+          <div className="flex-1" />
+          {!isCount && (
+            <button type="button" onClick={onBack}
+              data-testid="studio-grid-popover-back"
+              className="h-10 px-3 rounded-md bg-white border border-[var(--tm-border)] text-[var(--tm-navy)] font-bold text-sm">
+              Back
+            </button>
+          )}
+          <button type="button" onClick={isCount ? onNext : onDone}
+            data-testid={isCount ? "studio-grid-popover-next" : "studio-grid-popover-done"}
+            className="h-10 px-4 rounded-md bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold text-sm">
+            {isCount ? "Next →" : "Build grid"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ValidationReportModal({ report, onCancel, onForceLock, onJumpTo }) {
   const errors = report.issues.filter((i) => i.level === "error");
@@ -1312,6 +1451,16 @@ function MarkupOverlay({ el }) {
               <line key={`r${i}`} x1={g.x} x2={g.x + g.w}
                 y1={g.y + g.h * (i + 1) / g.rows} y2={g.y + g.h * (i + 1) / g.rows}
                 stroke={stroke} strokeWidth="0.0018" />))}
+          {/* Column headers in the first row (markup canvas — small uppercase tags). */}
+          {(g.headers || []).map((h, i) => h && (
+            <text key={`h${i}`}
+              x={g.x + ((i + 0.5) / (g.cols || 1)) * g.w}
+              y={g.y + (((g.rowLines && g.rowLines[0]) || (1 / (g.rows || 1))) * g.h) / 2 + 0.005}
+              textAnchor="middle" dominantBaseline="middle"
+              fontSize="0.014" fontWeight="700" fill="rgba(12,74,183,0.9)">
+              {h.toUpperCase()}
+            </text>
+          ))}
         </>
       );
     case "curve":
@@ -1573,6 +1722,11 @@ function CleanElement({ el, ws, px, wsDim, assets, fontFamilyOf: _ff, session: _
     case "grid": {
       const p = px(ws({ x: g.x, y: g.y }));
       const W = wsDim(g.w, "w"); const H = wsDim(g.h, "h");
+      // First-row height for header text positioning. Use the first
+      // rowLine fraction if available, else even spacing.
+      const headerRowEnd = g.rowLines && g.rowLines.length > 0 ? g.rowLines[0] : (1 / (g.rows || 1));
+      const headerY = p.y + H * headerRowEnd / 2;
+      const headerFontSize = Math.max(9, Math.min(13, H * headerRowEnd * 0.55));
       return (
         <g>
           <rect x={p.x} y={p.y} width={W} height={H} fill="none" stroke="#000" strokeWidth={sw} />
@@ -1594,6 +1748,17 @@ function CleanElement({ el, ws, px, wsDim, assets, fontFamilyOf: _ff, session: _
               <line key={`c${i}`} y1={p.y} y2={p.y + H}
                 x1={p.x + W * (i + 1) / g.cols} x2={p.x + W * (i + 1) / g.cols}
                 stroke="#000" strokeWidth={sw * 0.6} />))}
+          {/* Header text in the first row, centered per column. */}
+          {(g.headers || []).map((h, i) => h && (
+            <text key={`h${i}`}
+              x={p.x + W * ((i + 0.5) / (g.cols || 1))}
+              y={headerY}
+              textAnchor="middle" dominantBaseline="middle"
+              fontSize={headerFontSize} fontWeight="700" fill="#0E1F47"
+              fontFamily={FONT_PRESETS_BY_ID[g.fontFamily]?.family || "Arial, sans-serif"}>
+              {h}
+            </text>
+          ))}
         </g>
       );
     }
