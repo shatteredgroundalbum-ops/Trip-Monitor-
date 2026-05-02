@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Truck, Wrench, KeyRound, ArrowRight } from "lucide-react";
 import { DRIVER_ROLES } from "../data/constants";
-import { setSelectedRole, hasSignedUpBefore } from "../lib/auth-storage";
+import { setSelectedRole } from "../lib/auth-storage";
+import { isSetup } from "../lib/local-auth";
 
 const ROLE_ICONS = {
   company_driver: Truck,
@@ -24,9 +25,10 @@ export default function RoleSelection() {
     return () => clearTimeout(t);
   }, []);
 
-  const pick = (roleId) => {
+  const pick = async (roleId) => {
     setSelectedRole(roleId);
-    navigate(hasSignedUpBefore() ? "/login" : "/signup");
+    const done = await isSetup();
+    navigate(done ? "/pin-login" : "/setup-access-code");
   };
 
   return (

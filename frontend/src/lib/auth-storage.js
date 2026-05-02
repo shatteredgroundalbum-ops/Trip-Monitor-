@@ -2,6 +2,24 @@
 const HAS_SIGNED_UP_KEY = "tm_has_signed_up_before";
 const LAST_EMAIL_KEY = "tm_last_email";
 const SELECTED_ROLE_KEY = "tm_selected_role";
+// sessionStorage flag — cleared on browser close. Holds the current
+// device-unlock state (after local PIN / fingerprint verification).
+const UNLOCK_KEY = "tm_unlocked";
+
+export const isUnlocked = () => {
+  try { return sessionStorage.getItem(UNLOCK_KEY) === "1"; } catch { return false; }
+};
+
+export const setAuthedUser = (info) => {
+  try {
+    if (info?.unlocked) sessionStorage.setItem(UNLOCK_KEY, "1");
+    else sessionStorage.removeItem(UNLOCK_KEY);
+  } catch { /* ignore */ }
+};
+
+export const clearUnlock = () => {
+  try { sessionStorage.removeItem(UNLOCK_KEY); } catch { /* ignore */ }
+};
 
 export const hasSignedUpBefore = () => {
   try { return !!localStorage.getItem(HAS_SIGNED_UP_KEY); } catch { return false; }

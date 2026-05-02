@@ -1,0 +1,44 @@
+{
+  "summary": "Frontend-only testing of the new local-device offline auth (iteration 19d). 11 of 12 spec test cases pass. Two real bugs found: (1) Logout does not redirect / clear unlock flag (CRITICAL - blocks spec test 12); (2) PIN-recovery state preserved across re-entry into the recovery flow (MINOR - second-time UX bug). All 10 other test cases (fresh-install routing, master-code generation, regenerate, hide/show, custom-code accordion, confirm-back, PIN mismatch toast, finalise->dashboard, post-setup /setup-access-code redirect, wrong-PIN attempt counter & lockout after 5 attempts, fingerprint hidden during lockout, PIN unlock auto-submit on 6th digit, dashboard role chip, recovery with wrong & correct master code, old PIN rejection after reset, legacy /login /signup /auth/callback redirects to /, no social-* / login-submit / signup-submit testids, /api regression with 0 4xx/5xx, templates back btn, history back btn, fingerprint chip absent when WebAuthn unsupported) all pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Dashboard logout-btn / AuthProvider.logout()",
+        "issue": "After clicking [data-testid=logout-btn] the browser stays on /dashboard for >2.5s and sessionStorage flag tm_unlocked is still '1'. logout() in /app/frontend/src/lib/auth.jsx calls clearUnlock() then awaits api.post('/auth/logout'); if that POST is slow / hangs, window.location.href='/' never fires within a reasonable window. Spec requires immediate return to '/' (Role Selection) and cleared unlock flag.",
+        "selector": "[data-testid=logout-btn]",
+        "priority": "HIGH"
+      },
+      {
+        "component": "PinLogin recover state",
+        "issue": "Clicking [data-testid=pin-forgot] -> entering wrong master -> advancing to recover-pin step -> [data-testid=pin-recover-back] returns to PIN entry, but recoverStep state is preserved as 'pin'. Re-clicking pin-forgot lands the user directly on the new-PIN inputs WITHOUT ever showing [data-testid=recover-master-input]. User cannot enter a different master code. The 'back' handler (and/or the forgot toggle) must reset recoverStep to 'master' and clear masterCode/newPin/newPinConfirm.",
+        "selector": "[data-testid=pin-recover-back]",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix logout() in /app/frontend/src/lib/auth.jsx — either redirect synchronously (do the navigate / location.href BEFORE awaiting api.post, or use Promise.race with a short timeout, or .catch and finally redirect). Also ensure tm_unlocked flag is reliably removed before the redirect.",
+    "Fix PinLogin.jsx recover state reset: in onClick of [data-testid=pin-recover-back] (and on entering recover mode via pin-forgot), reset setRecoverStep('master'); setMasterCode(''); setNewPin(''); setNewPinConfirm(''); so the user re-enters at the master-code step every time."
+  ],
+  "critical_code_review_comments": [
+    "auth.jsx logout: awaits a network call before navigating — should redirect first, fire-and-forget the logout post.",
+    "PinLogin.jsx: recoverStep / masterCode / newPin state survive between recovery sessions because they live on the parent component and are never cleared on back. Either reset on `pin-recover-back` click, or unmount the recover section (force remount) by toggling a key.",
+    "Splash screen (SplashScreen.jsx) is shown for ~7.4s on every fresh sessionStorage; this blocks all interactions for new visitors and was the root cause of test-case-1 failing on a fresh context until tm_splash_seen was preset. Consider letting users skip / shortening, or auto-skip when sessionStorage indicates the splash was seen earlier in the same browser profile.",
+    "Wrong-PIN attempt 5 shows error 'LOCKED — USE YOUR MASTER CODE TO RESET' instead of 'WRONG PIN · 0 ATTEMPTS LEFT'. Spec test 6 expected the WRONG PIN copy to remain until lockout banner takes over; current behaviour is acceptable but inconsistent with copy on attempts 1–4."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "92% (11/12 spec cases)"},
+  "test_credentials": "Local-device only — tests provisioned their own master code (24-char alphanumeric, captured via [data-testid=setup-master-code].innerText) and PINs 123456 / 246810 / 987654.",
+  "seed_data_creation": "None — wiped tm-keychain + tm-auth IndexedDB DBs and storage between tests. Pre-set sessionStorage tm_splash_seen='1' to skip the 7.4s SplashScreen overlay that otherwise blocks role-selection clicks on a fresh visit (recommend Playwright tests in CI do the same).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Two confirmed bugs need a re-test after fix: (1) logout redirect + unlock flag clearing; (2) PIN-recovery re-entry resets to master step. Wipe DBs (tm-keychain, tm-auth) + cookies + storage AND set sessionStorage.tm_splash_seen='1' before navigating, otherwise the 7.4s splash blocks role buttons. Setup finalise takes ~1-3s for /api/auth/local + redirect; wait_for_url('**/dashboard') with 8-10s timeout. PinField uses a hidden native input — fill via [data-testid=setup-pin-input] / [data-testid=pin-login-input]. PIN login auto-submits on 6th digit; do not click a continue button. Lockout triggers AFTER the 5th wrong attempt. WebAuthn is not available in the Playwright Chromium used here so [data-testid=fingerprint-toggle] and [data-testid=pin-fingerprint] correctly do not render; do not attempt virtual-authenticator scripts (CDP support flaky).",
+  "rca of the issue": "Bug 1 (logout): logout() in /app/frontend/src/lib/auth.jsx calls clearUnlock() (synchronous) then awaits api.post('/auth/logout') BEFORE navigating via window.location.href='/'. The await blocks the redirect — if the backend response is slow/hung the user stays on /dashboard. Mitigation: navigate first or fire-and-forget the logout POST. Reproduction: PIN-unlock to /dashboard, click [data-testid=logout-btn], observe URL stays /dashboard and sessionStorage.tm_unlocked stays '1' for >2.5s. Bug 2 (recovery state): /app/frontend/src/pages/PinLogin.jsx keeps recoverStep / masterCode / newPin state across the recover<->pin mode toggle. The pin-recover-back button only does setMode('pin') and never resets recoverStep. Reproduction: pin-forgot -> wrong master code -> Continue (advances recoverStep to 'pin') -> pin-recover-back -> pin-forgot again -> lands on the new-PIN inputs with no master-code field visible. Mitigation: in pin-recover-back onClick, also call setRecoverStep('master'); setMasterCode(''); setNewPin(''); setNewPinConfirm('')."
+}

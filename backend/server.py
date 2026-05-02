@@ -210,6 +210,56 @@ async def auth_me(user: User = Depends(get_current_user)):
 
 
 # REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+@api_router.post("/auth/local")
+async def auth_local_device(request: Request, response: Response):
+    """Local-device authentication bridge.
+
+    The frontend performs PIN / fingerprint verification entirely
+    on-device (see `frontend/src/lib/local-auth.js`). Once the device
+    is unlocked, it calls this endpoint with its locally-generated
+    `device_id` so the existing API routes (which expect a session
+    cookie) keep working. The backend does NOT verify the PIN; the
+    spec explicitly mandates "no cloud authentication, no server
+    login". The backend merely provisions a user record keyed by
+    device_id and hands back a session cookie the frontend can use
+    for subsequent reads/writes of data belonging to THAT device.
+    """
+    body = await request.json()
+    device_id = body.get("device_id")
+    role = body.get("role") or None
+    if not device_id or not isinstance(device_id, str) or len(device_id) < 8:
+        raise HTTPException(status_code=400, detail="device_id required")
+
+    existing = await db.users.find_one({"device_id": device_id}, {"_id": 0})
+    if existing:
+        user_id = existing["user_id"]
+        if role and existing.get("role") != role:
+            await db.users.update_one({"user_id": user_id}, {"$set": {"role": role}})
+    else:
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        await db.users.insert_one({
+            "user_id": user_id, "device_id": device_id,
+            "email": "", "name": "Driver", "picture": "",
+            "role": role or "",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+    session_token = f"local_{uuid.uuid4().hex}"
+    expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+    await db.user_sessions.insert_one({
+        "user_id": user_id, "session_token": session_token,
+        "expires_at": expires_at.isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    response.set_cookie(
+        key="session_token", value=session_token,
+        httponly=True, secure=True, samesite="none",
+        path="/", max_age=30 * 24 * 60 * 60,
+    )
+    return {"user_id": user_id, "device_id": device_id, "session_token": session_token}
+
+
+# REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 @api_router.post("/auth/google")
 async def auth_google_id_token(request: Request, response: Response):
     """Direct Google Sign-In endpoint.

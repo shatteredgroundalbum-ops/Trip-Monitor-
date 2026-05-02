@@ -12,12 +12,15 @@ import WeeklyTrend from "../components/app/WeeklyTrend";
 import InstallPrompt from "../components/app/InstallPrompt";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
-import { LogOut, UserCog, CheckCircle2, Save, Eye, History, Truck, Gauge, Route, ListChecks, ArrowRight, Plus, FileText } from "lucide-react";
+import { LogOut, UserCog, CheckCircle2, Save, Eye, History, Truck, Gauge, Route, ListChecks, ArrowRight, Plus, FileText, Fingerprint } from "lucide-react";
 import PaperSheet from "../components/app/PaperSheet";
 import DynamicPaperSheet from "../components/app/DynamicPaperSheet";
 import { ensureDefaultTemplate, getActiveTemplate } from "../lib/template-store";
 import { BrandLockupCompact } from "../components/app/BrandLogo";
 import { ROLE_LABEL } from "../data/constants";
+import {
+  enrollFingerprint, disableFingerprint, isFingerprintEnrolled, isFingerprintSupported,
+} from "../lib/local-auth";
 import { toast } from "sonner";
 
 export default function Dashboard() {
@@ -39,7 +42,8 @@ export default function Dashboard() {
   const previewRef = useRef(null);
 
   useEffect(() => {
-    if (!loading && !user) navigate("/", { replace: true });
+    // Auth guarded by App.ProtectedRoute. Just wait for user to load;
+    // don't kick to "/" — ProtectedRoute already handled unauthenticated.
   }, [loading, user, navigate]);
 
   // Ensure there's always an active template and load it for export rendering.
@@ -155,6 +159,7 @@ export default function Dashboard() {
               className="h-9 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
               <UserCog className="h-4 w-4" />
             </Button>
+            <FingerprintToggle />
             <Button data-testid="logout-btn" variant="outline" size="sm"
               onClick={logout}
               className="h-9 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
@@ -443,4 +448,57 @@ function formatDate(iso) {
   try {
     return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
   } catch { return iso; }
+}
+
+/**
+ * Small header chip that enrolls / removes a WebAuthn platform
+ * credential (the device's fingerprint reader). Hidden on devices
+ * that don't expose a platform authenticator. Per spec: fingerprint
+ * only, and the biometric itself never enters the app — the OS holds
+ * it in its secure enclave.
+ */
+function FingerprintToggle() {
+  const [supported, setSupported] = useState(false);
+  const [enrolled, setEnrolled] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    (async () => {
+      setSupported(await isFingerprintSupported());
+      setEnrolled(await isFingerprintEnrolled());
+    })();
+  }, []);
+  if (!supported) return null;
+  const onClick = async () => {
+    setBusy(true);
+    try {
+      if (enrolled) {
+        await disableFingerprint();
+        setEnrolled(false);
+        toast.success("Fingerprint unlock disabled");
+      } else {
+        await enrollFingerprint();
+        setEnrolled(true);
+        toast.success("Fingerprint unlock enabled");
+      }
+    } catch (err) {
+      toast.error(err?.message || "Fingerprint setup cancelled");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Button
+      data-testid="fingerprint-toggle"
+      variant="outline"
+      size="sm"
+      disabled={busy}
+      onClick={onClick}
+      title={enrolled ? "Fingerprint unlock on — tap to disable" : "Enable fingerprint unlock (fingerprint only — not Face ID)"}
+      className={`h-9 border-[var(--tm-border)] hover:bg-[var(--tm-surface)] rounded-md ${
+        enrolled ? "bg-[var(--tm-blue)] text-white hover:bg-[var(--tm-blue)] hover:text-white border-[var(--tm-blue)]" : "bg-white text-[var(--tm-navy)]"
+      }`}
+    >
+      <Fingerprint className="h-4 w-4" />
+    </Button>
+  );
 }
