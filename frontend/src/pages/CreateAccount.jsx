@@ -4,13 +4,17 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { useGoogleLogin } from "@react-oauth/google";
 import SocialAuthRow from "../components/app/SocialAuthRow";
 import { getSelectedRole } from "../lib/auth-storage";
 import { ROLE_LABEL } from "../data/constants";
+import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
 
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 export default function CreateAccount() {
   const navigate = useNavigate();
+  const { checkAuth } = useAuth();
   const [entered, setEntered] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -24,15 +28,27 @@ export default function CreateAccount() {
     return () => clearTimeout(t);
   }, []);
 
-  const handleGoogleSignup = () => {
-    // Immediate redirect — no artificial delay, no intermediate UI.
-    // The page is leaving anyway; an in-app spinner only adds a visible
-    // "Login to Google" interstitial that isn't required by the OAuth
-    // flow. Emergent OAuth → Google account picker happens directly.
-    // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-    const redirectUrl = window.location.origin + "/dashboard";
-    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
-  };
+  // Direct Google Sign-In via GIS popup. Tap -> Google account picker
+  // immediately. No Emergent hosted page, no intermediate UI.
+  // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+  const launchGoogle = useGoogleLogin({
+    flow: "implicit",
+    onSuccess: async (tokenResponse) => {
+      try {
+        await api.post("/auth/google", { access_token: tokenResponse.access_token });
+        if (role) {
+          try { await api.post("/auth/role", { role }); } catch { /* non-fatal */ }
+        }
+        await checkAuth();
+        navigate("/dashboard", { replace: true });
+      } catch (err) {
+        toast.error(err?.response?.data?.detail || "Google sign-up failed");
+      }
+    },
+    onError: () => toast.error("Google sign-up cancelled"),
+  });
+
+  const handleGoogleSignup = () => launchGoogle();
 
   const handleSocial = (provider) => {
     if (provider === "google") return handleGoogleSignup();

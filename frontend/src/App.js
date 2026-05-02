@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { GoogleOAuthProvider } from "@react-oauth/google";
 import { AuthProvider, useAuth } from "./lib/auth";
 import Welcome from "./pages/Welcome";
 import Login from "./pages/Login";
@@ -69,14 +70,16 @@ function App() {
 
   return (
     <div className="App">
-      <BrowserRouter>
-        <AuthProvider>
-          <OfflineBanner />
-          <AppRouter />
-          {showSplash && !isAuthCallback && <SplashScreen onComplete={handleSplashComplete} />}
-          <Toaster theme="light" />
-        </AuthProvider>
-      </BrowserRouter>
+      <GoogleOAuthProvider clientId={process.env.REACT_APP_GOOGLE_CLIENT_ID}>
+        <BrowserRouter>
+          <AuthProvider>
+            <OfflineBanner />
+            <AppRouter />
+            {showSplash && !isAuthCallback && <SplashScreen onComplete={handleSplashComplete} />}
+            <Toaster theme="light" />
+          </AuthProvider>
+        </BrowserRouter>
+      </GoogleOAuthProvider>
     </div>
   );
 }

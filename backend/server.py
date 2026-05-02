@@ -12,6 +12,8 @@ import uuid
 from datetime import datetime, timezone, timedelta
 import httpx
 import resend
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport import requests as google_requests
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -29,6 +31,7 @@ app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
 EMERGENT_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 
 
 # ============ MODELS ============
@@ -204,6 +207,94 @@ async def process_session(request: Request, response: Response):
 @api_router.get("/auth/me")
 async def auth_me(user: User = Depends(get_current_user)):
     return user.model_dump()
+
+
+# REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+@api_router.post("/auth/google")
+async def auth_google_id_token(request: Request, response: Response):
+    """Direct Google Sign-In endpoint.
+
+    Accepts EITHER:
+      - {"credential": "<JWT id_token>"}  from Google Identity Services
+        Sign-In With Google component (verified via Google JWKS), OR
+      - {"access_token": "<oauth2 access token>"} from the GIS popup
+        oauth2 implicit flow (verified by calling Google's userinfo
+        endpoint).
+
+    Provisions or updates the matching user, then issues a session_token
+    cookie. Bypasses the Emergent OAuth proxy entirely so the
+    user-visible flow is: button tap -> Google account picker popup
+    -> dashboard. No redirects, no hosted intermediate UI.
+    """
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=500, detail="GOOGLE_CLIENT_ID not configured")
+    body = await request.json()
+    credential = body.get("credential") or body.get("id_token")
+    access_token = body.get("access_token")
+    if not credential and not access_token:
+        raise HTTPException(status_code=400, detail="credential or access_token required")
+
+    email = name = picture = None
+    if credential:
+        try:
+            info = google_id_token.verify_oauth2_token(
+                credential, google_requests.Request(), GOOGLE_CLIENT_ID
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=401, detail=f"Invalid Google ID token: {exc}")
+        if not info.get("email_verified", False):
+            raise HTTPException(status_code=401, detail="Google account email not verified")
+        email = info.get("email")
+        name = info.get("name") or (email.split("@")[0] if email else "Driver")
+        picture = info.get("picture", "")
+    else:
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            r = await http_client.get(
+                "https://www.googleapis.com/oauth2/v3/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            if r.status_code != 200:
+                raise HTTPException(status_code=401, detail="Invalid Google access token")
+            info = r.json()
+        if not info.get("email_verified", False):
+            raise HTTPException(status_code=401, detail="Google account email not verified")
+        email = info.get("email")
+        name = info.get("name") or (email.split("@")[0] if email else "Driver")
+        picture = info.get("picture", "")
+
+    if not email:
+        raise HTTPException(status_code=401, detail="Google account email missing")
+
+    existing = await db.users.find_one({"email": email}, {"_id": 0})
+    if existing:
+        user_id = existing["user_id"]
+        await db.users.update_one(
+            {"user_id": user_id}, {"$set": {"name": name, "picture": picture}}
+        )
+    else:
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        await db.users.insert_one({
+            "user_id": user_id, "email": email, "name": name, "picture": picture,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+    session_token = f"gsi_{uuid.uuid4().hex}"
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    await db.user_sessions.insert_one({
+        "user_id": user_id, "session_token": session_token,
+        "expires_at": expires_at.isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    response.set_cookie(
+        key="session_token", value=session_token,
+        httponly=True, secure=True, samesite="none",
+        path="/", max_age=7 * 24 * 60 * 60,
+    )
+    return {
+        "user_id": user_id, "email": email, "name": name, "picture": picture,
+        "session_token": session_token,
+    }
 
 
 @api_router.post("/auth/logout")

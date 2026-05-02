@@ -443,6 +443,14 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
   - **`RoleSelection.jsx`** (pre-login screen): removed the brand header entirely — drivers haven't authenticated yet, so the brand surface is reserved for post-login.
   - Splash logo image and InstallPrompt body copy preserved (functional copy, not a header brand surface).
 
+- ✅ **Direct Google Sign-In — Emergent OAuth proxy removed** (2026-02-?? fork — iter 19c):
+  - User rejected ALL intermediate screens between "Continue with Google" and Google's account picker. Replaced Emergent's hosted OAuth (`https://auth.emergentagent.com/?redirect=...`) with **direct Google Identity Services** popup flow.
+  - Frontend: added `@react-oauth/google@0.13.5`. App wrapped in `<GoogleOAuthProvider clientId={REACT_APP_GOOGLE_CLIENT_ID}>`. Login.jsx + CreateAccount.jsx now use `useGoogleLogin({ flow: 'implicit' })` so tapping the existing "Continue with Google" button immediately opens Google's account picker popup — no app or Emergent intermediate UI.
+  - Backend: new `POST /api/auth/google` endpoint accepts either `{access_token}` (verified via Google userinfo endpoint) OR `{credential}` (Google ID-token JWT, verified via JWKS using `google-auth>=2.49.1`). Provisions/updates the user, then sets a `gsi_<uuid>` `session_token` cookie. Bypasses `/auth/session` entirely.
+  - Env: `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` in `backend/.env`; `REACT_APP_GOOGLE_CLIENT_ID` in `frontend/.env`.
+  - Live-verified popup goes directly to `accounts.google.com` (NOT `auth.emergentagent.com`). Backend rejects bad tokens with 401 ("Invalid Google access token" / "Invalid Google ID token: ..."). `redirect-overlay` is gone.
+  - **Action required by user**: add `https://driver-sheets-1.preview.emergentagent.com` to **Authorized JavaScript Origins** in their Google Cloud Console OAuth client (project `casino-trash-solitaire`). Without this Google returns `invalid_client / no registered origin` (the implementation is correct; only the allowlist is pending).
+
 ## Prioritized Backlog
 - P1: Pro Mapping Studio polish (Delivery 2)
    - SPLIT FILE: `ProMappingStudio.jsx` is now ~1,343 LoC. Extract
