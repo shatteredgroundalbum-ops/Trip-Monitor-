@@ -365,40 +365,95 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
     Zero bugs. Smoke screenshot confirmed visually that a rect
     drawn on mapping appears at the matching position on preview.
 
+- ✅ **Pro Mapping Studio — precision editing (Delivery 1.3)** (2026-02-?? fork — iter 15+16):
+  - User reclassified Pro Mapping as a "precision tracing and
+    reconstruction tool, not a pop-up-heavy design app." Six
+    corrections shipped end-to-end.
+  - **NEW Select tool** (now first in the toolbar, default
+    selection): tap an element → a dashed selection frame appears
+    with **8 resize handles** (NW/N/NE/E/SE/S/SW/W) + **rotate
+    handle** above the top edge + a floating **action bar** with
+    Lock/Unlock + Delete buttons.
+      - Drag the body to **move**; drag any handle to **resize**
+        (axis-aware via `resizedBBox`); drag the rotate handle to
+        **rotate** (stored on `el.rotation`, applied via SVG
+        `transform="rotate(...)"`).
+      - **Boundary snap** — moves snap onto any of the 4 page
+        anchors when within 0.025 normalized.
+      - **Lock per element** — locked elements ignore drag, hide
+        their handles, and the padlock turns orange.
+  - **Auto-straighten in trace tool** — `isNearStraight()` checks
+    if the cleaned stroke is collinear within 0.012 perpendicular
+    deviation. If yes (and Freehand is OFF), the stroke commits
+    as a true `line` element instead of a free-form trace path.
+    Found-and-fixed bug in iter 16: a 2-point cleaned list IS a
+    straight line by definition — `isNearStraight` now treats
+    `points.length === 2` as straight after the degenerate-length
+    gate.
+  - **Freehand toggle** (`studio-freehand-toggle`) only visible
+    when tool=trace. Default OFF (auto-straighten). Toggling ON
+    preserves the raw smoothed curve.
+  - **Full grid editor** — drag a bbox → toolbar reveals
+    `studio-grid-editor` ("Grid: 0 cols · 0 rows" + Done +
+    Cancel) → tap inside the bbox to add a column line (near
+    L/R edge) or a row line (near T/B edge) at the tapped
+    fraction. Done commits a `grid` element with `colLines[]`
+    and `rowLines[]` arrays of normalized positions.
+    `MarkupOverlay` and `CleanElement` both prefer the
+    manually-positioned lines over the legacy evenly-spaced
+    rows/cols values.
+  - **Stylus-only mode** (`studio-stylus-only`) — when on,
+    pointer events with `pointerType !== "pen"` are dropped at
+    the canvas event boundary (no draw, no select, no draft).
+    Finger touches can still pan-zoom-via the rest of the page.
+  - **Popup suppression** during drawing — removed `window.prompt`
+    (replaced by inline grid editor) and removed all
+    intermediate success toasts (boundary placement, anchor
+    commits, etc.). Only guardrail toasts remain (e.g. "Upload a
+    LOGO/QR first").
+  - Schema additions: `el.rotation?: number`, `el.locked?: boolean`,
+    `geometry.colLines?: number[]`, `geometry.rowLines?: number[]`,
+    `logo_anchor` and `qr_anchor` get a stored `scale` after resize.
+  - Helpers added to `pro-mapping-v2.js`: `isNearStraight`,
+    `hitTest`, `snapToBoundaries`, `translateGeometry`,
+    `resizeGeometry`, `bboxHandles`, `resizedBBox`.
+  - Testing: iter 15 → 18/21 PASS (1 real bug + 2 test-side
+    selector mismatches). iter 16 (narrow retest after fix) →
+    **4/4 PASS**. All 6 corrections validated.
+
 ## Prioritized Backlog
 - P1: Pro Mapping Studio polish (Delivery 2)
-   - Replace `window.prompt()` for grid rows/cols with an inline
-     popover (mobile Safari + automation friendliness).
-   - Extract CleanReconstructionCanvas + CleanElement + CleanTextLayer
-     (~225 LoC), MarkupOverlay + DraftOverlay (~125 LoC), InspectorPane
-     + AssetsPane (~80 LoC) into sibling files. Brings
-     ProMappingStudio.jsx from ~1,055 to ~440 LoC.
-   - Memoize CleanReconstructionCanvas via `React.memo` (busy schemas
-     + ghost overlay = double render cost today).
-   - Add fade indicator in the bottom dock when inspector list
-     overflows the 200px max-height.
-   - Pan-sync between zoomed canvases (drag-to-pan with both moving
-     together).
-   - Calibrate-scale gesture: pinch (or slider on tap) to fine-tune
-     the auto scale of an anchored logo/QR without re-dropping it.
-   - Precise-mode ghost quad (preview the forming bbox after 3 of 4
-     corner taps).
-   - Throttle `hoverPt` to ~30fps to reduce iPad stylus render churn.
-   - Validation pass on Lock (overlapping elements, out-of-bounds
-     coords).
-   - Multi-select + move + scale + deep undo/redo.
-   - Add stable testids to SessionWizard step-2 Load-Type buttons
-     (session-load-store / session-load-warehouse / session-load-dairy
-     / session-load-water) so automation can construct an active
-     trip session for dashboard preview testing.
-   - True font-level typography for the Custom Trace.
-- P1: Real social-login OAuth wiring (Facebook / Instagram / LinkedIn) — currently UI placeholders
-- P1: Replace QR placeholder with real GoDriver install QR (the new QR-anchor element makes this per-template now)
-- P2: Template gallery (browsable + cloneable community templates)
-- P2: Cloud backup for templates (Google Drive / OneDrive — driver opt-in)
-- P2: Multi-page trip envelopes (stage-2 scan → secondary template)
+   - SPLIT FILE: `ProMappingStudio.jsx` is now ~1,343 LoC. Extract
+     `SelectionFrame` + `GridEditOverlay` + `MarkupOverlay` +
+     `DraftOverlay` (~250 LoC) → `StudioCanvasOverlays.jsx`.
+     `CleanReconstructionCanvas` + `CleanElement` + `CleanTextLayer`
+     + `valueForField` (~225 LoC) → `CleanReconstructionCanvas.jsx`.
+     `InspectorPane` + `AssetsPane` (~80 LoC) →
+     `StudioDockPanes.jsx`. Brings the master file under ~700 LoC.
+   - Scale resize-handle hit-area by `1/zoom` so handles meet
+     WCAG 24px touch-target at 0.5× zoom on phones.
+   - Memoize `selectedEl` (currently re-finds on every render).
+   - Carry-forward stylus-only edge case: also exempt
+     `pointer: fine` mouse devices so desktop testing isn't blocked.
+   - `aria-label` on inspector rows to disambiguate the duplicated
+     element kind text for screen readers.
+   - Pan-sync between zoomed canvases (drag-to-pan with both
+     moving together).
+   - Snap-to-printed-line hint inside the grid editor (use OCR
+     word baselines if available).
+   - Multi-select (shift-tap to add to selection).
+   - Deep undo/redo stack (currently single-level via `studio-undo`).
+   - Validation pass on Lock (overlapping elements, out-of-bounds).
+   - Add stable testids to SessionWizard step-2 Load-Type buttons.
+   - True font-level typography for Custom Trace (letter
+     segmentation + OT font generation).
+- P1: Real social-login OAuth wiring (Facebook / Instagram / LinkedIn)
+- P1: Replace QR placeholder with real GoDriver install QR
+- P2: Template gallery (community-cloneable templates)
+- P2: Cloud backup for templates (Google Drive / OneDrive opt-in)
+- P2: Multi-page trip envelopes
 - P2: History screen to re-open finished sheets
 - P2: Automatic email attachment via backend (SendGrid/Resend)
 - P2: Company / Admin onboarding flow (multi-tenant)
-- P2: "Trip recap" shareable PNG card (miles + badges) for social sharing
-- P2: Refactor `/app/backend/server.py` into sub-routers (~890 lines)
+- P2: "Trip recap" shareable PNG card for social sharing
+- P2: Refactor `/app/backend/server.py` into sub-routers (~890 LoC)
