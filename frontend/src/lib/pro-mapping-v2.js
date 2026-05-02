@@ -42,7 +42,7 @@
 export const STUDIO_TOOLS = [
   { id: "select",   label: "Select",         blurb: "Tap an element to select · drag handles to resize · drag rotate handle · lock or delete." },
   { id: "pan",      label: "Pan",            blurb: "Drag to pan when zoomed in · both canvases scroll together." },
-  { id: "boundary", label: "Page Anchors",  blurb: "Tap the 4 page corners to frame the sheet" },
+  { id: "boundary", label: "Reset Page",   blurb: "Reset the page boundary to the 1-inch default margin." },
   { id: "line",     label: "Line",          blurb: "Drag for a straight line" },
   { id: "rect",     label: "Rectangle",     blurb: "Drag to draw a box" },
   { id: "circle",   label: "Circle",        blurb: "Drag from center to edge" },
@@ -74,11 +74,25 @@ export const STUDIO_FIELD_PRESETS = [
   "Pickup", "Drop Off", "City", "State", "Time", "Notes",
 ];
 
+/**
+ * Default boundary anchors at 1" margin on a standard 8.5×11 letter
+ * page. Driver can drag the 4 corner handles or the 4 edge midpoints
+ * to fit their actual sheet's printable area.
+ *   horizontal margin = 1 / 8.5 ≈ 0.1176
+ *   vertical margin   = 1 / 11  ≈ 0.0909
+ */
+export const DEFAULT_BOUNDARIES = {
+  tl: { x: 1 / 8.5, y: 1 / 11 },
+  tr: { x: 1 - 1 / 8.5, y: 1 / 11 },
+  br: { x: 1 - 1 / 8.5, y: 1 - 1 / 11 },
+  bl: { x: 1 / 8.5, y: 1 - 1 / 11 },
+};
+
 /** Build a fresh empty studio schema. */
 export function emptyStudioSchema() {
   return {
     version: 2,
-    boundaries: { tl: null, tr: null, bl: null, br: null },
+    boundaries: { ...DEFAULT_BOUNDARIES },
     elements: [],
     assets: { logo: null, qr: null },
     fonts: { default: "arial" },
