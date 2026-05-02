@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
-import { BrandLockupCompact } from "../components/app/BrandLogo";
 import TemplateMappingWizard from "../components/app/TemplateMappingWizard";
 import ProMappingStudio from "../components/app/ProMappingStudio";
 import BoundarySetup from "../components/app/BoundarySetup";
@@ -190,10 +189,12 @@ export default function TemplateSetup() {
           className="text-[var(--tm-text-soft)] hover:text-[var(--tm-blue)] inline-flex items-center gap-1 text-xs uppercase tracking-wider font-bold"
           data-testid="template-setup-back"
         >
-          <ArrowLeft className="h-3.5 w-3.5" /> Dashboard
+          <ArrowLeft className="h-3.5 w-3.5" /> Back to Dashboard
         </button>
-        <div className="flex-1">
-          <BrandLockupCompact />
+        <div className="flex-1 text-center">
+          <span className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-text-muted)] font-bold">
+            Trip Sheet Templates
+          </span>
         </div>
         <span className="text-[10px] uppercase tracking-wider text-[var(--tm-text-muted)] font-bold">
           {formatBytes(bytes)}

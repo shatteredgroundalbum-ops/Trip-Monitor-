@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { Truck, Wrench, KeyRound, ArrowRight } from "lucide-react";
 import { DRIVER_ROLES } from "../data/constants";
 import { setSelectedRole, hasSignedUpBefore } from "../lib/auth-storage";
-import { BrandLockupCompact } from "../components/app/BrandLogo";
 
 const ROLE_ICONS = {
   company_driver: Truck,
@@ -49,11 +48,7 @@ export default function RoleSelection() {
         }}
       />
 
-      <header className="relative z-10 px-6 pt-7 max-w-md w-full mx-auto">
-        <BrandLockupCompact />
-      </header>
-
-      <main className="relative z-10 flex-1 flex flex-col p-7 md:p-12 max-w-md w-full mx-auto">
+      <main className="relative z-10 flex-1 flex flex-col p-7 md:p-12 max-w-md w-full mx-auto pt-12">
         <div className="space-y-2 mb-8 mt-3">
           <div data-testid="role-overline" className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.32em] font-bold">
             <span className="h-px w-8 bg-[var(--tm-blue)]" aria-hidden />

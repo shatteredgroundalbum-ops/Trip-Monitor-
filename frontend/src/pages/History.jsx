@@ -9,7 +9,6 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "../components/ui/alert-dialog";
 import { ArrowLeft, Eye, Edit3, FileText, Image as ImageIcon, Mail, Truck, Printer } from "lucide-react";
-import { BrandLockupCompact } from "../components/app/BrandLogo";
 import PaperSheet from "../components/app/PaperSheet";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
@@ -143,12 +142,12 @@ export default function History() {
     <div className="min-h-screen bg-white text-[var(--tm-navy)]">
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-[var(--tm-border)]">
         <div className="max-w-4xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
-          <BrandLockupCompact />
           <Button data-testid="back-to-dashboard-btn" variant="outline" size="sm"
             onClick={() => navigate("/dashboard")}
             className="h-9 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
-            <ArrowLeft className="h-4 w-4 mr-1" /> Dashboard
+            <ArrowLeft className="h-4 w-4 mr-1" /> Back to Dashboard
           </Button>
+          <span className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-text-muted)] font-bold">History</span>
         </div>
       </header>
 

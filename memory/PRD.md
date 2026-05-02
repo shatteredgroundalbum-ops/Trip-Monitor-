@@ -433,6 +433,16 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
   - Privacy preserved: mileage still never renders in Studio preview or export.
   - Live-verified end-to-end: BoundarySetup component fully visible (8 handles, reset/analyze/set buttons), confirm modal copy contains "lock", Studio enters with locked chip, `studio-tool-boundary` count = 0, in-Studio boundary handles count = 0, all 9 SelectionFrame handles render on the placed rect (count=2 each because both mapping + preview canvases mirror the frame), `studio-handle-rotate` count = 0.
 
+- ✅ **Branding cleanup — single brand surface** (2026-02-?? fork — iter 19b):
+  - User-driven correction: the blue "TM" monogram tile was redundant and the full app name was leaking into multiple page headers. New rules locked in:
+    - The full app name "Trip Monitor / Driver Edition" appears ONLY on the Dashboard (top-left).
+    - All other pages have a "Back to Dashboard" (or "Back to [previous page]" for sub-flows) button instead of a brand header.
+  - **`BrandLogo.jsx`** rewritten — TM monogram tile removed, lockup is now text-only ("Trip Monitor" + "Driver Edition" overline). Documented as Dashboard-only via JSDoc.
+  - **`History.jsx`** header: removed `BrandLockupCompact`, back button now reads "Back to Dashboard". Right-side "History" overline added for context.
+  - **`TemplateSetup.jsx`** header: removed `BrandLockupCompact` from the middle slot, back button now reads "Back to Dashboard". Center slot shows a small "Trip Sheet Templates" overline (NOT the brand).
+  - **`RoleSelection.jsx`** (pre-login screen): removed the brand header entirely — drivers haven't authenticated yet, so the brand surface is reserved for post-login.
+  - Splash logo image and InstallPrompt body copy preserved (functional copy, not a header brand surface).
+
 ## Prioritized Backlog
 - P1: Pro Mapping Studio polish (Delivery 2)
    - SPLIT FILE: `ProMappingStudio.jsx` is now ~1,343 LoC. Extract
