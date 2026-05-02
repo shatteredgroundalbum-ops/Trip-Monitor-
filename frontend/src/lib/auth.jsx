@@ -65,8 +65,12 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     clearUnlock();
-    try { await api.post("/auth/logout"); } catch { /* ignore */ }
     setUser(null);
+    setSetup(null);
+    // Fire-and-forget the backend logout — the redirect must not
+    // wait for the network. Local-device auth is the source of
+    // truth; the backend session cookie is best-effort cleanup.
+    try { api.post("/auth/logout").catch(() => {}); } catch { /* ignore */ }
     window.location.href = "/";
   };
 

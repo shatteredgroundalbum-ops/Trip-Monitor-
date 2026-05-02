@@ -172,7 +172,7 @@ export default function PinLogin() {
             <button
               type="button"
               data-testid="pin-forgot"
-              onClick={() => setMode("recover")}
+              onClick={() => { setMode("recover"); setRecoverStep("master"); setMasterCode(""); setNewPin(""); setNewPinConfirm(""); }}
               className="block mx-auto text-xs uppercase tracking-wider font-bold text-[var(--tm-blue)] hover:underline"
             >
               Forgot PIN? Use master code
@@ -184,7 +184,7 @@ export default function PinLogin() {
           <section data-testid="pin-recover-section" className="w-full space-y-4">
             <button
               type="button"
-              onClick={() => setMode("pin")}
+              onClick={() => { setMode("pin"); setRecoverStep("master"); setMasterCode(""); setNewPin(""); setNewPinConfirm(""); }}
               data-testid="pin-recover-back"
               className="text-xs uppercase tracking-wider font-bold text-[var(--tm-text-soft)] hover:text-[var(--tm-blue)] inline-flex items-center gap-1"
             >
