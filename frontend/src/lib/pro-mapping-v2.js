@@ -41,6 +41,7 @@
 
 export const STUDIO_TOOLS = [
   { id: "select",   label: "Select",         blurb: "Tap an element to select · drag handles to resize · drag rotate handle · lock or delete." },
+  { id: "pan",      label: "Pan",            blurb: "Drag to pan when zoomed in · both canvases scroll together." },
   { id: "boundary", label: "Page Anchors",  blurb: "Tap the 4 page corners to frame the sheet" },
   { id: "line",     label: "Line",          blurb: "Drag for a straight line" },
   { id: "rect",     label: "Rectangle",     blurb: "Drag to draw a box" },
@@ -62,6 +63,7 @@ export const FONT_PRESETS = [
   { id: "roboto",    label: "Roboto",            family: "Roboto, Arial, sans-serif" },
   { id: "courier",   label: "Courier Mono",      family: "'Courier New', Courier, monospace" },
   { id: "condensed", label: "Condensed",         family: "'Roboto Condensed', 'Arial Narrow', sans-serif" },
+  { id: "custom",    label: "Custom (Traced)",   family: "Arial, sans-serif" },
 ];
 
 export const FONT_PRESETS_BY_ID = Object.fromEntries(FONT_PRESETS.map((f) => [f.id, f]));
@@ -291,6 +293,37 @@ export function snapToBoundaries(pt, boundaries, threshold = 0.02) {
 }
 
 /**
+ * Find the nearest OCR word edge to a given coordinate along one axis.
+ * Used by the grid editor to snap newly-added column/row lines onto
+ * detected printed lines (word baselines / left edges) so the
+ * reconstructed grid sits exactly where the original grid is.
+ *
+ *   axis: 'x' → snap to left/right edges of OCR words at the given y
+ *   axis: 'y' → snap to top/bottom edges of OCR words at the given x
+ *
+ * Returns { value, snapped }. `value` is the snapped (or original)
+ * coordinate along the requested axis.
+ */
+export function snapToOcrLine(pt, axis, ocrWords, scanW, scanH, threshold = 0.014) {
+  if (!ocrWords?.length || !scanW || !scanH) return { value: pt[axis], snapped: false };
+  // ocrWords store bbox in scan-pixel space; normalize to 0..1 against scan dims.
+  let best = null, bestD = threshold;
+  for (const w of ocrWords) {
+    const b = w.bbox;
+    if (!b) continue;
+    const left = b.x0 / scanW, right = b.x1 / scanW;
+    const top = b.y0 / scanH, bottom = b.y1 / scanH;
+    const candidates = axis === "x" ? [left, right] : [top, bottom];
+    for (const c of candidates) {
+      const d = Math.abs(c - pt[axis]);
+      if (d < bestD) { bestD = d; best = c; }
+    }
+  }
+  if (best != null) return { value: best, snapped: true };
+  return { value: pt[axis], snapped: false };
+}
+
+/**
  * Apply a translation delta to an element's geometry. Returns a new
  * geometry object — does NOT mutate the input.
  */
@@ -408,6 +441,79 @@ export function bboxHandles(bbox) {
 }
 
 /**
+ * Validate a schema before locking. Detects:
+ *  - elements out-of-bounds (entirely outside the working area)
+ *  - elements clipped by the working area (partially outside)
+ *  - heavily overlapping pairs (>60% IoU on axis-aligned bboxes)
+ *  - text_marker / bullet without a fieldName
+ *
+ * Returns an array of `{level:'error'|'warn', message, elementIds:[]}`.
+ */
+export function validateSchema(schema) {
+  const issues = [];
+  const work = workingArea(schema?.boundaries);
+  const els = schema?.elements || [];
+
+  const insideWork = (bb) => {
+    if (!work.complete) return true;
+    return bb.x >= work.x - 0.005 && bb.y >= work.y - 0.005
+        && bb.x + bb.w <= work.x + work.w + 0.005
+        && bb.y + bb.h <= work.y + work.h + 0.005;
+  };
+  const intersectsWork = (bb) => {
+    if (!work.complete) return true;
+    return !(bb.x + bb.w < work.x || bb.x > work.x + work.w
+          || bb.y + bb.h < work.y || bb.y > work.y + work.h);
+  };
+
+  // Out-of-bounds and clipped checks
+  for (const el of els) {
+    const bb = elementBBox(el);
+    if (!intersectsWork(bb)) {
+      issues.push({ level: "error",
+        message: `${el.kind.replace("_", " ")} is fully outside the page anchors`,
+        elementIds: [el.id] });
+    } else if (!insideWork(bb)) {
+      issues.push({ level: "warn",
+        message: `${el.kind.replace("_", " ")} extends past the page anchors and will be clipped on export`,
+        elementIds: [el.id] });
+    }
+  }
+
+  // Missing field name on text_marker / bullet
+  for (const el of els) {
+    if ((el.kind === "text_marker" || el.kind === "bullet")
+      && !(el.geometry?.fieldName || el.geometry?.text)) {
+      issues.push({ level: "error",
+        message: `${el.kind.replace("_", " ")} is missing a field name`,
+        elementIds: [el.id] });
+    }
+  }
+
+  // Heavy overlap (>60% IoU) — only flag pairs of boxes/rects/grids
+  // since lines and curves naturally cross things.
+  const heavyKinds = new Set(["rect", "corner_box", "grid", "logo", "logo_anchor", "qr_box", "qr_anchor"]);
+  const heavy = els.filter((e) => heavyKinds.has(e.kind));
+  for (let i = 0; i < heavy.length; i++) {
+    for (let j = i + 1; j < heavy.length; j++) {
+      const a = elementBBox(heavy[i]);
+      const b = elementBBox(heavy[j]);
+      const ix = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
+      const iy = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+      const interArea = ix * iy;
+      if (interArea === 0) continue;
+      const unionArea = a.w * a.h + b.w * b.h - interArea;
+      const iou = interArea / unionArea;
+      if (iou > 0.6) {
+        issues.push({ level: "warn",
+          message: `${heavy[i].kind.replace("_", " ")} and ${heavy[j].kind.replace("_", " ")} overlap heavily (${Math.round(iou * 100)}%)`,
+          elementIds: [heavy[i].id, heavy[j].id] });
+      }
+    }
+  }
+
+  return issues;
+}/**
  * Given an active resize-drag handle and a new pointer position,
  * compute the resulting bbox. Maintains anchor at the opposite handle.
  */

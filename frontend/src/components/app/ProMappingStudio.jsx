@@ -5,19 +5,21 @@ import {
   Crosshair, Minus, Square, Circle as CircleIcon, Triangle, Spline, Grid3x3,
   AlignLeft, Dot as DotIcon, Image as ImageIcon, QrCode as QrIcon, PenTool,
   Undo2, Trash2, Save, Lock, Unlock, X, Eye, SlidersHorizontal, Layers,
-  ArrowLeftRight, Target, Maximize2, MousePointer2, RotateCw, Pen,
+  ArrowLeftRight, Target, Maximize2, MousePointer2, RotateCw, Pen, Hand,
 } from "lucide-react";
 import {
   STUDIO_TOOLS, FONT_PRESETS, FONT_PRESETS_BY_ID, STUDIO_FIELD_PRESETS,
   emptyStudioSchema, uid, normRect, workingArea, cleanTrace, isNearStraight,
-  hitTest, snapToBoundaries, translateGeometry, resizeGeometry,
-  bboxHandles, resizedBBox, elementBBox,
+  hitTest, snapToBoundaries, snapToOcrLine, translateGeometry, resizeGeometry,
+  bboxHandles, resizedBBox, elementBBox, validateSchema,
 } from "../../lib/pro-mapping-v2";
 import { saveTemplate, setActiveTemplateId } from "../../lib/template-store";
 import ProMappingEditor from "./ProMappingEditor";
+import CustomFontBuilder, { CustomFontText } from "./CustomFontBuilder";
 
 const TOOL_ICON = {
   select: MousePointer2,
+  pan: Hand,
   boundary: Crosshair, line: Minus, rect: Square, circle: CircleIcon,
   triangle: Triangle, curve: Spline, corners: Crosshair, grid: Grid3x3,
   text: AlignLeft, bullet: DotIcon, logo: ImageIcon, qr: QrIcon, trace: PenTool,
@@ -60,10 +62,15 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   // Trace tool: freehand mode bypasses auto-straighten.
   const [freehandMode, setFreehandMode] = useState(false);
   // Grid editor 3-step state: bbox → tap-to-add cols/rows → Done.
-  const [gridDraft, setGridDraft] = useState(null); // {bbox, cols:number[], rows:number[], step:'bbox'|'edit'}
+  const [gridDraft, setGridDraft] = useState(null);
+  // Validation report — shown when Lock detects issues.
+  const [validationReport, setValidationReport] = useState(null);
+  const [fontBuilderOpen, setFontBuilderOpen] = useState(false);
   const canvasRef = useRef(null);
   const logoInputRef = useRef(null);
   const qrInputRef = useRef(null);
+  const workspaceRef = useRef(null);
+  const panRef = useRef(null); // {startX, startY, scrollLeft, scrollTop}
 
   const selectedEl = useMemo(
     () => schema.elements.find((e) => e.id === selectedId) || null,
@@ -126,12 +133,34 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   };
 
   /* ------------------- pointer handlers ------------------- */
+  // Stylus-only filter — block finger touches but allow stylus pen AND
+  // desktop mice (pointer:fine) so testers/admins on laptops still work.
+  const blockNonStylus = (e) => {
+    if (!stylusOnly) return false;
+    if (e.pointerType === "pen") return false;
+    // Allow precise pointer devices (mouse / trackpad) on desktop.
+    if (e.pointerType === "mouse" && window.matchMedia?.("(pointer: fine)")?.matches) return false;
+    return true;
+  };
   const onPointerDown = (e) => {
-    // Stylus-only mode — block non-pen input on the canvas.
-    if (stylusOnly && e.pointerType !== "pen") return;
+    if (blockNonStylus(e)) return;
     e.preventDefault();
     const pt = canvasPt(e);
     if (!pt) return;
+
+    /* PAN TOOL — drag to scroll the workspace container; both canvases
+       move together because they share the same scrollable parent. */
+    if (tool === "pan") {
+      const ws = workspaceRef.current;
+      if (!ws) return;
+      panRef.current = {
+        startClientX: e.clientX, startClientY: e.clientY,
+        scrollLeft: ws.scrollLeft, scrollTop: ws.scrollTop,
+      };
+      ws.style.cursor = "grabbing";
+      e.currentTarget?.setPointerCapture?.(e.pointerId);
+      return;
+    }
 
     /* SELECT TOOL — tap to select, drag handles to resize/rotate, drag body to move. */
     if (tool === "select") {
@@ -180,21 +209,29 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
         return;
       }
       if (gridDraft.step === "edit") {
-        // Tap inside bbox → add a column line at that x; outside → ignored.
+        // Tap inside bbox → add a column or row line at that position.
         const b = gridDraft.bbox;
         if (pt.x < b.x || pt.x > b.x + b.w || pt.y < b.y || pt.y > b.y + b.h) return;
-        // Determine col vs row by which edge the tap is closer to.
         const distLeft = pt.x - b.x;
         const distRight = (b.x + b.w) - pt.x;
         const distTop = pt.y - b.y;
         const distBot = (b.y + b.h) - pt.y;
         const minH = Math.min(distLeft, distRight);
         const minV = Math.min(distTop, distBot);
-        // Tap nearer to L/R edges → add column at pt.x. Nearer to T/B → add row.
+        // Snap-to-printed-line: if scan dims + OCR words are available,
+        // pull the tap onto the nearest detected word edge.
+        const sw = template?.scan?.width || 1;
+        const sh = template?.scan?.height || 1;
         if (minH < minV) {
-          setGridDraft({ ...gridDraft, cols: [...gridDraft.cols, (pt.x - b.x) / b.w].sort((a, c) => a - c) });
+          const snap = snapToOcrLine(pt, "x", template?.ocr_words, sw, sh, 0.014);
+          const x = snap.value;
+          if (snap.snapped) toast.success("Snapped to printed line");
+          setGridDraft({ ...gridDraft, cols: [...gridDraft.cols, (x - b.x) / b.w].sort((a, c) => a - c) });
         } else {
-          setGridDraft({ ...gridDraft, rows: [...gridDraft.rows, (pt.y - b.y) / b.h].sort((a, c) => a - c) });
+          const snap = snapToOcrLine(pt, "y", template?.ocr_words, sw, sh, 0.014);
+          const y = snap.value;
+          if (snap.snapped) toast.success("Snapped to printed line");
+          setGridDraft({ ...gridDraft, rows: [...gridDraft.rows, (y - b.y) / b.h].sort((a, c) => a - c) });
         }
         return;
       }
@@ -295,7 +332,16 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   };
 
   const onPointerMove = (e) => {
-    if (stylusOnly && e.pointerType !== "pen") return;
+    if (blockNonStylus(e)) return;
+    // Pan drag — translate the workspace scroll position.
+    if (tool === "pan" && panRef.current) {
+      const ws = workspaceRef.current;
+      if (!ws) return;
+      const p = panRef.current;
+      ws.scrollLeft = p.scrollLeft - (e.clientX - p.startClientX);
+      ws.scrollTop = p.scrollTop - (e.clientY - p.startClientY);
+      return;
+    }
     const pt = canvasPt(e);
     if (!pt) return;
     // Active transform drag — move/resize/rotate the selected element live.
@@ -337,7 +383,13 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   };
 
   const onPointerUp = (e) => {
-    if (stylusOnly && e?.pointerType && e.pointerType !== "pen") return;
+    if (e && blockNonStylus(e)) return;
+    // End pan drag.
+    if (tool === "pan" && panRef.current) {
+      panRef.current = null;
+      if (workspaceRef.current) workspaceRef.current.style.cursor = "";
+      return;
+    }
     // Finish transform drag.
     if (transform) { setTransform(null); setSyncCursor(null); return; }
     if (!draft) return;
@@ -462,6 +514,14 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   /* ------------------- save & lock ------------------- */
   const commitSave = async (lock) => {
     if (!schema.elements.length) { toast.error("Draw at least one element"); return; }
+    if (lock) {
+      const issues = validateSchema(schema);
+      if (issues.length) {
+        // Open the validation report instead of locking immediately.
+        setValidationReport({ issues, action: "lock" });
+        return;
+      }
+    }
     setSaving(true);
     try {
       const updated = {
@@ -475,6 +535,22 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
       onDone?.(updated);
     } catch (err) {
       toast.error(`Save failed: ${err?.message || err}`);
+    } finally { setSaving(false); }
+  };
+
+  // Force-lock past warnings (errors still block).
+  const forceLock = async () => {
+    const errors = (validationReport?.issues || []).filter((i) => i.level === "error");
+    if (errors.length) { toast.error("Resolve errors before locking"); return; }
+    setValidationReport(null);
+    setSaving(true);
+    try {
+      const updated = { ...template, schema: { ...schema, locked: true }, updated_at: new Date().toISOString() };
+      await saveTemplate(updated);
+      await setActiveTemplateId(updated.id);
+      toast.success("Template locked");
+      onDone?.(updated);
+    } catch (err) { toast.error(`Save failed: ${err?.message || err}`);
     } finally { setSaving(false); }
   };
 
@@ -580,7 +656,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
             const active = tool === t.id;
             // 'select' is always enabled. All other tools require the
             // 4 boundary anchors first; 'boundary' itself is the entry.
-            const disabled = !["select", "boundary"].includes(t.id) && boundaryCount < 4;
+            const disabled = !["select", "pan", "boundary"].includes(t.id) && boundaryCount < 4;
             return (
               <button
                 key={t.id} type="button"
@@ -616,6 +692,15 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
           >
             {FONT_PRESETS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
           </select>
+          {fontSel === "custom" && (
+            <Button variant="outline" size="sm"
+              data-testid="studio-font-build"
+              onClick={() => setFontBuilderOpen(true)}
+              title="Trace each character once · stored on this template"
+              className="h-8 text-[10px] bg-white border-[var(--tm-blue)] text-[var(--tm-navy)]">
+              <Pen className="h-3 w-3 mr-1" /> Build · {Object.keys(schema.fonts?.customGlyphs || {}).length} glyph{Object.keys(schema.fonts?.customGlyphs || {}).length === 1 ? "" : "s"}
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={undo}
             data-testid="studio-undo"
             disabled={!draft && !schema.elements.length}
@@ -638,7 +723,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
            space, side-by-side. The mapping canvas is interactive (input
            only); the preview canvas is read-only output. Both scale
            together via the zoom control above so coordinates stay 1:1. */}
-      <div className="flex-1 overflow-auto p-3 bg-[var(--tm-surface)]">
+      <div className="flex-1 overflow-auto p-3 bg-[var(--tm-surface)]" ref={workspaceRef}>
         <div
           data-testid="studio-split"
           className={`mx-auto flex flex-col gap-4 ${handedness === "right" ? "lg:flex-row" : "lg:flex-row-reverse"}`}
@@ -658,7 +743,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
               data-testid="studio-canvas"
               data-canvas-source="mapping"
               className="relative select-none border-2 border-[var(--tm-blue)] rounded-md overflow-hidden bg-white shadow-md touch-none"
-              style={{ width: 540, aspectRatio: "8.5 / 11", cursor: "crosshair" }}
+              style={{ width: 540, aspectRatio: "8.5 / 11", cursor: tool === "pan" ? "grab" : "crosshair" }}
               onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
               onPointerLeave={() => setHoverPt(null)}
             >
@@ -767,10 +852,10 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
               data-testid="studio-preview-canvas"
               data-canvas-source="preview"
               className="relative border-2 border-[var(--tm-orange)] rounded-md overflow-hidden bg-white shadow-md touch-none"
-              style={{ width: 540, aspectRatio: "8.5 / 11", cursor: tool === "select" ? "crosshair" : "default" }}
-              onPointerDown={tool === "select" ? onPointerDown : undefined}
-              onPointerMove={tool === "select" ? onPointerMove : undefined}
-              onPointerUp={tool === "select" ? onPointerUp : undefined}
+              style={{ width: 540, aspectRatio: "8.5 / 11", cursor: tool === "select" ? "crosshair" : tool === "pan" ? "grab" : "default" }}
+              onPointerDown={(tool === "select" || tool === "pan") ? onPointerDown : undefined}
+              onPointerMove={(tool === "select" || tool === "pan") ? onPointerMove : undefined}
+              onPointerUp={(tool === "select" || tool === "pan") ? onPointerUp : undefined}
             >
               <CleanReconstructionCanvas schema={schema} session={null} width={540} />
               {/* Editable overlay — visible & interactive only when Select tool is active.
@@ -886,11 +971,81 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
           <Lock className="h-4 w-4 mr-1" /> Lock Template
         </Button>
       </div>
+      {/* Validation report modal — opens when Lock finds issues. */}
+      {validationReport && (
+        <ValidationReportModal report={validationReport}
+          onCancel={() => setValidationReport(null)}
+          onForceLock={forceLock}
+          onJumpTo={(ids) => { setSelectedId(ids[0] || null); setTool("select"); setValidationReport(null); }} />
+      )}
+      {/* Custom-font builder — opens when driver picks Custom font + Build. */}
+      {fontBuilderOpen && (
+        <CustomFontBuilder
+          schema={schema}
+          onClose={() => setFontBuilderOpen(false)}
+          onSave={(glyphs) => {
+            setSchema((s) => ({ ...s, fonts: { ...s.fonts, customGlyphs: glyphs } }));
+            toast.success(`Custom font saved · ${Object.keys(glyphs).length} glyph${Object.keys(glyphs).length === 1 ? "" : "s"}`);
+          }}
+        />
+      )}
     </div>
   );
 }
 
 function dist(a, b) { return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2); }
+
+function ValidationReportModal({ report, onCancel, onForceLock, onJumpTo }) {
+  const errors = report.issues.filter((i) => i.level === "error");
+  const warns = report.issues.filter((i) => i.level === "warn");
+  return (
+    <div data-testid="studio-validation-modal"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+      onClick={onCancel}>
+      <div onClick={(e) => e.stopPropagation()}
+        className="bg-white border-2 border-[var(--tm-orange)] rounded-md shadow-2xl max-w-md w-full p-5">
+        <div className="text-[10px] uppercase tracking-[0.3em] font-bold text-[var(--tm-orange)] mb-1">
+          Lock blocked · review issues
+        </div>
+        <div className="text-lg font-black text-[var(--tm-navy)] mb-3">
+          {errors.length} error{errors.length === 1 ? "" : "s"} · {warns.length} warning{warns.length === 1 ? "" : "s"}
+        </div>
+        <ul className="space-y-1.5 max-h-[40vh] overflow-y-auto" data-testid="studio-validation-list">
+          {report.issues.map((iss, i) => (
+            <li key={i} data-testid={`studio-validation-item-${i}`}
+              className={`text-xs p-2 rounded-md border ${
+                iss.level === "error"
+                  ? "bg-[#FFF0F0] border-[#FF3B30] text-[#B00020]"
+                  : "bg-[#FFF7E6] border-[#FFB020] text-[#7A4A00]"}`}>
+              <div className="flex items-start gap-2">
+                <span className="font-bold uppercase tracking-wider text-[10px] shrink-0">
+                  {iss.level === "error" ? "Error" : "Warn"}
+                </span>
+                <span className="flex-1">{iss.message}</span>
+                <button type="button" onClick={() => onJumpTo(iss.elementIds)}
+                  className="text-[10px] uppercase tracking-wider font-bold text-[var(--tm-blue)] hover:underline shrink-0">
+                  Jump
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <div className="flex gap-2 mt-4">
+          <button type="button" onClick={onCancel}
+            data-testid="studio-validation-cancel"
+            className="flex-1 h-10 rounded-md bg-white border border-[var(--tm-border)] text-[var(--tm-navy)] font-bold text-sm">
+            Keep editing
+          </button>
+          <button type="button" onClick={onForceLock} disabled={errors.length > 0}
+            data-testid="studio-validation-force-lock"
+            className="flex-1 h-10 rounded-md bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed">
+            {errors.length > 0 ? "Fix errors first" : "Lock anyway"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * Renders the selection outline + 8 resize handles + rotate handle
@@ -1222,7 +1377,7 @@ export const CleanReconstructionCanvas = forwardRef(function CleanReconstruction
       </svg>
       {/* HTML text layer (SVG text rendering is less consistent across html2canvas) */}
       <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
-        {els.map((el) => <CleanTextLayer key={el.id} el={el} ws={ws} px={px} session={session} fontFamilyOf={fontFamilyOf} />)}
+        {els.map((el) => <CleanTextLayer key={el.id} el={el} ws={ws} px={px} session={session} fontFamilyOf={fontFamilyOf} customGlyphs={schema?.fonts?.customGlyphs} />)}
       </div>
     </div>
   );
@@ -1351,8 +1506,9 @@ function CleanElement({ el, ws, px, wsDim, assets, fontFamilyOf: _ff, session: _
 }
 
 /** Text is rendered as HTML (not SVG) — renders more consistently via html2canvas. */
-function CleanTextLayer({ el, ws, px, session, fontFamilyOf }) {
+function CleanTextLayer({ el, ws, px, session, fontFamilyOf, customGlyphs }) {
   const g = el.geometry;
+  const useCustom = g.fontFamily === "custom" && customGlyphs && Object.keys(customGlyphs).length > 0;
   const style = (extra = {}) => ({
     position: "absolute",
     color: "#0E1F47",
@@ -1361,31 +1517,36 @@ function CleanTextLayer({ el, ws, px, session, fontFamilyOf }) {
     whiteSpace: "nowrap",
     ...extra,
   });
+  const renderText = (value, fontSize) => useCustom
+    ? <CustomFontText value={value} fontSize={fontSize} color="#0E1F47" glyphs={customGlyphs} />
+    : value;
   if (el.kind === "text_marker") {
     const start = px(ws(g.from));
     const value = valueForField(g.fieldName, session) || g.fieldName || "";
+    const fs = (g.fontSize || 12) * 1.05;
     return (
       <div data-testid={`clean-field-${g.fieldName || el.id}`}
-        style={style({ left: start.x, top: start.y - (g.fontSize || 12),
-          fontSize: (g.fontSize || 12) * 1.05 })}>
-        {value}
+        style={style({ left: start.x, top: start.y - (g.fontSize || 12), fontSize: fs })}>
+        {renderText(value, fs)}
       </div>
     );
   }
   if (el.kind === "bullet") {
     const t = px(ws(g.textStart));
+    const fs = (g.fontSize || 13) * 1.02;
     return (
       <div style={style({ left: t.x + 6, top: t.y - (g.fontSize || 13),
-        fontSize: (g.fontSize || 13) * 1.02, whiteSpace: "normal", maxWidth: 520 })}>
-        {g.text}
+        fontSize: fs, whiteSpace: "normal", maxWidth: 520 })}>
+        {renderText(g.text, fs)}
       </div>
     );
   }
   if (el.kind === "text_region" && g.content) {
     const p = px(ws({ x: g.x, y: g.y }));
+    const fs = g.fontSize || 12;
     return (
-      <div style={style({ left: p.x, top: p.y, fontSize: g.fontSize || 12, whiteSpace: "pre-wrap", maxWidth: 520 })}>
-        {g.content}
+      <div style={style({ left: p.x, top: p.y, fontSize: fs, whiteSpace: "pre-wrap", maxWidth: 520 })}>
+        {renderText(g.content, fs)}
       </div>
     );
   }
