@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from "react";
-import { Trophy, Lock, Route, CalendarDays, ListChecks, ChevronDown, ChevronUp } from "lucide-react";
+import React, { useMemo } from "react";
+import { Trophy, Route, CalendarDays, ListChecks } from "lucide-react";
 
 const CAT_META = {
   miles: { icon: Route, label: "Mileage" },
@@ -8,18 +8,13 @@ const CAT_META = {
 };
 
 /**
- * Earned + locked badges. Earned badges are highlighted with an orange medal,
- * locked ones show a small progress bar. Designed to fit on the dashboard
- * without overwhelming it.
+ * Earned badges only. Locked / unearned badges stay hidden until the
+ * driver actually earns them — no progress teasers, no preview cards.
+ * The header still shows X / Y so the driver sees there's more to earn,
+ * but the badges themselves stay a surprise reveal.
  */
 export default function AchievementsPanel({ data }) {
-  const [expanded, setExpanded] = useState(false);
-  const badges = data?.badges || [];
-
-  // Show 3 earned + 3 next-up by default; "Show all" reveals everything.
-  const earned = useMemo(() => badges.filter((b) => b.earned), [badges]);
-  const next = useMemo(() => badges.filter((b) => !b.earned).slice(0, 3), [badges]);
-  const visible = expanded ? badges : [...earned.slice(-3), ...next];
+  const earned = useMemo(() => (data?.badges || []).filter((b) => b.earned), [data?.badges]);
 
   return (
     <section
@@ -42,24 +37,15 @@ export default function AchievementsPanel({ data }) {
             </div>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => setExpanded((e) => !e)}
-          data-testid="achievements-toggle"
-          className="text-xs text-[var(--tm-blue)] font-bold inline-flex items-center gap-1 hover:underline"
-        >
-          {expanded ? "Collapse" : "Show all"}
-          {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-        </button>
       </header>
 
       <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-2.5" data-testid="achievements-grid">
-        {visible.map((b) => (
+        {earned.map((b) => (
           <BadgeCard key={b.id} badge={b} />
         ))}
-        {visible.length === 0 && (
+        {earned.length === 0 && (
           <div className="col-span-full text-sm text-[var(--tm-text-soft)] text-center py-3">
-            Your badges will appear here as you log miles & trips.
+            Your badges will appear here as you log miles &amp; trips.
           </div>
         )}
       </div>
@@ -69,49 +55,28 @@ export default function AchievementsPanel({ data }) {
 
 function BadgeCard({ badge }) {
   const meta = CAT_META[badge.category] || CAT_META.miles;
-  const Icon = badge.earned ? Trophy : Lock;
   const CatIcon = meta.icon;
-  const pct = badge.threshold > 0 ? Math.min(100, Math.round((badge.progress / badge.threshold) * 100)) : 0;
 
   return (
     <div
       data-testid={`badge-${badge.id}`}
-      data-earned={badge.earned ? "true" : "false"}
-      className={`rounded-md p-3 border-2 transition-all ${
-        badge.earned
-          ? "bg-[var(--tm-orange)]/8 border-[var(--tm-orange)]"
-          : "bg-[var(--tm-surface)] border-[var(--tm-border)]"
-      }`}
+      data-earned="true"
+      className="rounded-md p-3 border-2 bg-[var(--tm-orange)]/8 border-[var(--tm-orange)] transition-all"
     >
       <div className="flex items-start gap-2">
-        <div className={`h-8 w-8 rounded-md flex items-center justify-center shrink-0 ${
-          badge.earned ? "bg-[var(--tm-orange)] text-white" : "bg-white text-[var(--tm-text-muted)] border border-[var(--tm-border)]"
-        }`}>
-          <Icon className="h-4 w-4" />
+        <div className="h-8 w-8 rounded-md flex items-center justify-center shrink-0 bg-[var(--tm-orange)] text-white">
+          <Trophy className="h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-[9px] uppercase tracking-wider text-[var(--tm-text-muted)] font-bold flex items-center gap-1">
             <CatIcon className="h-2.5 w-2.5" />
             {meta.label}
           </div>
-          <div className={`text-sm font-bold leading-tight ${badge.earned ? "text-[var(--tm-navy)]" : "text-[var(--tm-text-soft)]"}`}>
+          <div className="text-sm font-bold leading-tight text-[var(--tm-navy)]">
             {badge.label}
           </div>
         </div>
       </div>
-      {!badge.earned && (
-        <div className="mt-2.5">
-          <div className="h-1 w-full bg-white rounded-full overflow-hidden">
-            <div
-              className="h-full bg-[var(--tm-blue)] transition-[width] duration-500 ease-out"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <div className="text-[9px] uppercase tracking-wider text-[var(--tm-text-muted)] mt-1 font-bold">
-            {pct}% · {badge.progress.toLocaleString()} / {badge.threshold.toLocaleString()}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
