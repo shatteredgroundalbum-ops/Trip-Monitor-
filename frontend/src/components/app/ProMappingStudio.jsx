@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState, forwardRef } from "react";
+import React, { useMemo, useRef, useState, forwardRef, useReducer } from "react";
 import { Button } from "../ui/button";
 import { toast } from "sonner";
 import {
@@ -33,11 +33,78 @@ const TOOL_ICON = {
  * A toggle at the top lets drivers fall back to the legacy 6-primitive
  * tag editor (ProMappingEditor) if they prefer.
  */
+/**
+ * Editor state reducer. Owns BOTH the live schema AND the undo/redo
+ * history in a single atomic store so transitions are pure and
+ * race-free.
+ *
+ * Actions:
+ *   SET_SCHEMA  — transient write; updater(state.schema) → schema. No
+ *                 history push. Used during in-flight transform drags
+ *                 where the pointerdown already snapshotted history.
+ *   MUTATE      — undoable write; pushes the CURRENT schema to past,
+ *                 drops future, applies updater. The single
+ *                 entry-point for user-visible edits.
+ *   SNAPSHOT    — pushes the current schema to past without changing
+ *                 it. Called at pointer-down before a transform so
+ *                 one Undo rewinds the whole drag.
+ *   UNDO / REDO — pure history navigation. Past/future capped at 50.
+ */
+function editorReducer(state, action) {
+  switch (action.type) {
+    case "SET_SCHEMA": {
+      const next = typeof action.updater === "function" ? action.updater(state.schema) : action.updater;
+      return { ...state, schema: next };
+    }
+    case "MUTATE": {
+      const next = typeof action.updater === "function" ? action.updater(state.schema) : action.updater;
+      return {
+        schema: next,
+        past: [...state.past.slice(-49), state.schema],
+        future: [],
+      };
+    }
+    case "SNAPSHOT": {
+      return { ...state, past: [...state.past.slice(-49), state.schema], future: [] };
+    }
+    case "UNDO": {
+      if (state.past.length === 0) return state;
+      const prev = state.past[state.past.length - 1];
+      return {
+        schema: prev,
+        past: state.past.slice(0, -1),
+        future: [state.schema, ...state.future].slice(0, 50),
+      };
+    }
+    case "REDO": {
+      if (state.future.length === 0) return state;
+      const next = state.future[0];
+      return {
+        schema: next,
+        past: [...state.past, state.schema].slice(-50),
+        future: state.future.slice(1),
+      };
+    }
+    default:
+      return state;
+  }
+}
+
 export default function ProMappingStudio({ template, onDone, onCancel }) {
   const [legacy, setLegacy] = useState(false);
-  const [schema, setSchema] = useState(() => template?.schema?.version === 2
-    ? template.schema
-    : emptyStudioSchema());
+  const [editor, dispatchEditor] = useReducer(editorReducer, undefined, () => ({
+    schema: template?.schema?.version === 2 ? template.schema : emptyStudioSchema(),
+    past: [],
+    future: [],
+  }));
+  const schema = editor.schema;
+  const history = { past: editor.past, future: editor.future };
+  // Public API mirrors the prior useState shape so call sites stay unchanged.
+  const setSchema = (updater) => dispatchEditor({ type: "SET_SCHEMA", updater });
+  const mutateSchema = (updater) => dispatchEditor({ type: "MUTATE", updater });
+  const snapshotHistory = () => dispatchEditor({ type: "SNAPSHOT" });
+  const historyUndo = () => dispatchEditor({ type: "UNDO" });
+  const historyRedo = () => dispatchEditor({ type: "REDO" });
   const [tool, setTool] = useState("select");
   const [draft, setDraft] = useState(null);
   const [fieldLabel, setFieldLabel] = useState("");
@@ -67,14 +134,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   // Validation report — shown when Lock detects issues.
   const [validationReport, setValidationReport] = useState(null);
   const [fontBuilderOpen, setFontBuilderOpen] = useState(false);
-  // Deep undo/redo stack — past + future. Each entry is a schema snapshot.
-  // Every mutation (commit element, transform, delete, asset upload, etc.)
-  // pushes the PREVIOUS schema onto history.past and clears future.
-  const [history, setHistory] = useState({ past: [], future: [] });
-  // Suppress history tracking inside a single gesture (e.g. while
-  // dragging a resize, we don't push 60 snapshots per second —
-  // pointerDown snapshots once, pointerUp is a no-op).
-  const suppressHistoryRef = useRef(false);
+  // history (past + future) lives inside the editorReducer above.
   const canvasRef = useRef(null);
   const logoInputRef = useRef(null);
   const qrInputRef = useRef(null);
@@ -91,47 +151,10 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
   const selectedEl = selectedEls[0] || null;
   const selectedId = selectedEl?.id || null;
 
-  // Convenience: replaces old setSelectedId callsites so we don't have
-  // to rewrite every branch.
   const setSelectedId = (id) => setSelectedIds(id ? [id] : []);
 
-  // History-tracking schema mutator. Snapshots the current schema to
-  // `history.past`, drops `future` (redo lineage broken by new edit),
-  // then applies the updater.
-  //
-  // Call sites use this instead of setSchema for user-visible mutations
-  // that should be undoable. Transient in-flight transforms (resize
-  // drag frames) set suppressHistoryRef.current=true and use the raw
-  // setSchema to avoid history pollution; the initial pointer-down
-  // snapshot is enough.
-  const mutateSchema = (updater) => {
-    setSchema((current) => {
-      if (!suppressHistoryRef.current) {
-        setHistory((h) => ({
-          past: [...h.past.slice(-49), current], // cap at 50 deep
-          future: [],
-        }));
-      }
-      return typeof updater === "function" ? updater(current) : updater;
-    });
-  };
-
-  const historyUndo = () => {
-    setHistory((h) => {
-      if (h.past.length === 0) return h;
-      const prev = h.past[h.past.length - 1];
-      setSchema((cur) => { setHistory(hh => ({ past: h.past.slice(0, -1), future: [cur, ...hh.future].slice(0, 50) })); return prev; });
-      return h;
-    });
-  };
-  const historyRedo = () => {
-    setHistory((h) => {
-      if (h.future.length === 0) return h;
-      const next = h.future[0];
-      setSchema((cur) => { setHistory(hh => ({ past: [...hh.past, cur].slice(-50), future: h.future.slice(1) })); return next; });
-      return h;
-    });
-  };
+  // mutateSchema, historyUndo, historyRedo defined at the top of this
+  // component as thin dispatch wrappers around editorReducer.
 
   // Ref wrappers so the document-level keyboard listener always calls
   // the latest closure — defends against stale state if future refactors
@@ -258,7 +281,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
           if (Math.abs(pt.x - hPt.x) < handleR && Math.abs(pt.y - hPt.y) < handleR) {
             // Snapshot schema at the start of the drag (single undo
             // rewinds the whole resize).
-            setHistory((h) => ({ past: [...h.past.slice(-49), schema], future: [] }));
+            snapshotHistory();
             setTransform({ kind: "resize", handle: hKey, originalBBox: bbox, originalGeometry: selectedEl.geometry });
             return;
           }
@@ -266,7 +289,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
         // Rotate handle (above top-center)
         const rotPt = { x: bbox.x + bbox.w / 2, y: bbox.y - 0.04 };
         if (Math.abs(pt.x - rotPt.x) < handleR && Math.abs(pt.y - rotPt.y) < handleR * 1.5) {
-          setHistory((h) => ({ past: [...h.past.slice(-49), schema], future: [] }));
+          snapshotHistory();
           setTransform({ kind: "rotate", center: { x: bbox.x + bbox.w / 2, y: bbox.y + bbox.h / 2 },
             startAngle: Math.atan2(pt.y - (bbox.y + bbox.h / 2), pt.x - (bbox.x + bbox.w / 2)) * 180 / Math.PI,
             originalRotation: selectedEl.rotation || 0 });
@@ -285,7 +308,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
           } else if (selectedIds.includes(el.id) && selectedIds.length > 1) {
             // Tapping inside existing multi-selection → begin group move.
             if (!el.locked) {
-              setHistory((h) => ({ past: [...h.past.slice(-49), schema], future: [] }));
+              snapshotHistory();
               setTransform({
                 kind: "move-group", start: pt,
                 originals: selectedEls.map((s) => ({ id: s.id, kind: s.kind, geometry: s.geometry })),
@@ -294,7 +317,7 @@ export default function ProMappingStudio({ template, onDone, onCancel }) {
           } else {
             setSelectedId(el.id);
             if (!el.locked) {
-              setHistory((h) => ({ past: [...h.past.slice(-49), schema], future: [] }));
+              snapshotHistory();
               setTransform({ kind: "move", start: pt, originalGeometry: el.geometry });
             }
           }
