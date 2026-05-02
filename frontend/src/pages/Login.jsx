@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import SocialAuthRow from "../components/app/SocialAuthRow";
 import { getLastEmail, getSelectedRole } from "../lib/auth-storage";
@@ -12,7 +12,6 @@ import { ROLE_LABEL } from "../data/constants";
 export default function Login() {
   const navigate = useNavigate();
   const [entered, setEntered] = useState(false);
-  const [redirecting, setRedirecting] = useState(false);
   const [email, setEmail] = useState(getLastEmail());
   const [password, setPassword] = useState("");
   const role = getSelectedRole();
@@ -24,12 +23,13 @@ export default function Login() {
   }, []);
 
   const handleGoogleLogin = () => {
-    setRedirecting(true);
+    // Immediate redirect — no artificial delay, no intermediate UI.
+    // The page is leaving anyway; an in-app spinner only adds a visible
+    // "Login to Google" interstitial that isn't required by the OAuth
+    // flow. Emergent OAuth → Google account picker happens directly.
     // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
     const redirectUrl = window.location.origin + "/dashboard";
-    setTimeout(() => {
-      window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
-    }, 100);
+    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
   };
 
   const handleSocial = (provider) => {
@@ -127,7 +127,6 @@ export default function Login() {
           <Button
             data-testid="login-submit"
             type="submit"
-            disabled={redirecting}
             className="w-full h-13 mt-1 bg-[var(--tm-navy)] hover:bg-[var(--tm-navy-deep)] text-white font-bold rounded-md text-base shadow-[0_8px_24px_-12px_rgba(14,31,71,0.55)]"
           >
             Login
@@ -149,27 +148,6 @@ export default function Login() {
           </Link>
         </div>
       </div>
-
-      {redirecting && (
-        <div
-          data-testid="redirect-overlay"
-          className="fixed inset-0 z-[90] flex flex-col items-center justify-center"
-          style={{
-            backgroundColor: "rgba(255,255,255,0.92)",
-            backdropFilter: "blur(6px)",
-            animation: "tm-fade-in 200ms ease-out forwards",
-          }}
-        >
-          <div className="relative">
-            <div className="h-16 w-16 rounded-full border-4 border-[var(--tm-surface-2)]" />
-            <div className="absolute inset-0 h-16 w-16 rounded-full border-4 border-[var(--tm-blue)] border-t-transparent animate-spin" />
-          </div>
-          <div className="mt-6 inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-[var(--tm-blue)] font-bold">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Connecting to Google
-          </div>
-        </div>
-      )}
     </div>
   );
 }
