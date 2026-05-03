@@ -491,6 +491,14 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
   - Privacy preserved: `total_trip_miles` + `segment_miles` stay out of JPEG/PDF (PaperSheet). They DO appear in CSV/JSON because that's the driver's own backup, not an exported document.
   - Testing: Iter 20 → **15/15 PASS** via testing_agent_v3_fork. 11/11 spec assertions verified. Zero defects in Iter 20 scope.
 
+- ✅ **Website features disabled until release (Iter 20.1)** (2026-02-??):
+  - User instruction: hide every UI surface that touches the public Website License ID, Premium unlock codes, or external Trip Monitor website — but DO NOT delete the underlying logic. Flip-on-launch.
+  - **NEW `lib/feature-flags.js`** — single `WEBSITE_FEATURES_ENABLED = false` flag. All gated logic (`generateLicenseId`, `verifyPremiumUnlockCode`, `getPremiumState`, master code keychain storage, hash verifiers) keeps running so re-enabling is a one-line flip.
+  - **`Dashboard.jsx`**: header `[data-testid=open-license-dialog]` (IdCard icon) is hidden when flag is off; `<LicensePremiumDialog />` is not mounted at all.
+  - **`SetupAccessCode.jsx`** (Step 4): the Website License ID card + copy button + "log into the website" copy is hidden behind the flag. The page heading switches from "Two codes, two jobs." to "Save this code." and the overline reads "Emergency code" instead of "Your codes". The master-code warning copy switches from "Never enter this into the website or send it to support" to "Never share it with anyone — not even support".
+  - License IDs are still generated + persisted in `tm-keychain` so re-enabling the flag reveals existing drivers' IDs without forcing a fresh setup.
+  - Live-verified: `open-license-dialog` count = 0, `setup-license-id` count = 0, `setup-master-code` still renders, all other flows intact.
+
 ## Prioritized Backlog
 
 ### P0 — next iteration

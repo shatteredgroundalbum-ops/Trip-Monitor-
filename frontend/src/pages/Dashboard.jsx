@@ -24,6 +24,7 @@ import {
 import LicensePremiumDialog from "../components/app/LicensePremiumDialog";
 import StorageSettingsDialog from "../components/app/StorageSettingsDialog";
 import { getStorageUsage, isAboveQuotaWarning, QUOTA_WARNING_PCT } from "../lib/storage-location";
+import { WEBSITE_FEATURES_ENABLED } from "../lib/feature-flags";
 import { toast } from "sonner";
 
 export default function Dashboard() {
@@ -167,15 +168,17 @@ export default function Dashboard() {
               className="h-9 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
               <UserCog className="h-4 w-4" />
             </Button>
-            <Button
-              data-testid="open-license-dialog"
-              variant="outline" size="sm"
-              onClick={() => setShowLicense(true)}
-              title="Website License ID & Premium"
-              className="h-9 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md"
-            >
-              <IdCard className="h-4 w-4" />
-            </Button>
+            {WEBSITE_FEATURES_ENABLED && (
+              <Button
+                data-testid="open-license-dialog"
+                variant="outline" size="sm"
+                onClick={() => setShowLicense(true)}
+                title="Website License ID & Premium"
+                className="h-9 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md"
+              >
+                <IdCard className="h-4 w-4" />
+              </Button>
+            )}
             <Button
               data-testid="open-storage-dialog"
               variant="outline" size="sm"
@@ -399,7 +402,9 @@ export default function Dashboard() {
           refreshStats();
         }} />
 
-      <LicensePremiumDialog open={showLicense} onClose={() => setShowLicense(false)} />
+      {WEBSITE_FEATURES_ENABLED && (
+        <LicensePremiumDialog open={showLicense} onClose={() => setShowLicense(false)} />
+      )}
 
       <StorageSettingsDialog open={showStorage} onClose={() => setShowStorage(false)} />
 

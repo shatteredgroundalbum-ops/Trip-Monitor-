@@ -14,6 +14,7 @@ import {
 } from "../lib/local-auth";
 import { useAuth } from "../lib/auth";
 import StorageWizard from "../components/app/StorageWizard";
+import { WEBSITE_FEATURES_ENABLED } from "../lib/feature-flags";
 
 /**
  * Onboarding wizard for first-run device setup.
@@ -194,35 +195,37 @@ export default function SetupAccessCode() {
               <span className="h-px w-8 bg-[var(--tm-blue)]" aria-hidden />
               <span className="text-[var(--tm-orange)]">Step 4 of 5</span>
               <span className="text-[var(--tm-text-muted)]">·</span>
-              <span className="text-[var(--tm-blue)]">Your codes</span>
+              <span className="text-[var(--tm-blue)]">{WEBSITE_FEATURES_ENABLED ? "Your codes" : "Emergency code"}</span>
             </div>
             <h1 className="font-black tracking-tight leading-[0.95]" style={{ fontSize: "clamp(1.75rem, 6vw, 2.5rem)" }}>
-              Two codes, two jobs.
+              {WEBSITE_FEATURES_ENABLED ? "Two codes, two jobs." : "Save this code."}
             </h1>
 
             {/* Public website license ID — safe to share */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-[var(--tm-blue)]">
-                  Website License ID · public · safe to share
-                </span>
+            {WEBSITE_FEATURES_ENABLED && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-[var(--tm-blue)]">
+                    Website License ID · public · safe to share
+                  </span>
+                </div>
+                <div
+                  data-testid="setup-license-id"
+                  className="font-mono text-xl md:text-2xl tracking-[0.15em] bg-white border-2 border-[var(--tm-blue)] rounded-md p-4 text-center select-all text-[var(--tm-navy)]"
+                >
+                  {licenseId}
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={copyLicense} className="flex-1 h-9 bg-white text-xs" data-testid="setup-license-copy">
+                    {copiedLicense ? <Check className="h-3.5 w-3.5 mr-1 text-[var(--tm-blue)]" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
+                    {copiedLicense ? "Copied" : "Copy license ID"}
+                  </Button>
+                </div>
+                <p className="text-[11px] text-[var(--tm-text-soft)] leading-snug">
+                  Use this to log into the Trip Monitor website for purchases, premium unlock, and customer support. Safe to dictate to support over the phone.
+                </p>
               </div>
-              <div
-                data-testid="setup-license-id"
-                className="font-mono text-xl md:text-2xl tracking-[0.15em] bg-white border-2 border-[var(--tm-blue)] rounded-md p-4 text-center select-all text-[var(--tm-navy)]"
-              >
-                {licenseId}
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={copyLicense} className="flex-1 h-9 bg-white text-xs" data-testid="setup-license-copy">
-                  {copiedLicense ? <Check className="h-3.5 w-3.5 mr-1 text-[var(--tm-blue)]" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
-                  {copiedLicense ? "Copied" : "Copy license ID"}
-                </Button>
-              </div>
-              <p className="text-[11px] text-[var(--tm-text-soft)] leading-snug">
-                Use this to log into the Trip Monitor website for purchases, premium unlock, and customer support. Safe to dictate to support over the phone.
-              </p>
-            </div>
+            )}
 
             {/* Private emergency backup master code — shown once */}
             <div className="pt-2 space-y-2">
@@ -232,7 +235,7 @@ export default function SetupAccessCode() {
               <div className="bg-[var(--tm-orange)] bg-opacity-10 border-2 border-[var(--tm-orange)] rounded-md p-3 text-xs text-[var(--tm-navy)] flex gap-2 items-start" data-testid="setup-master-warning">
                 <AlertTriangle className="h-4 w-4 text-[var(--tm-orange)] shrink-0 mt-0.5" />
                 <div>
-                  Last-ditch recovery if you forget BOTH your PIN and your phrase. Write it down. <strong>Never enter this into the website or send it to support.</strong>
+                  Last-ditch recovery if you forget BOTH your PIN and your phrase. Write it down. <strong>{WEBSITE_FEATURES_ENABLED ? "Never enter this into the website or send it to support." : "Never share it with anyone — not even support."}</strong>
                 </div>
               </div>
               <div
