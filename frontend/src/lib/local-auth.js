@@ -35,6 +35,7 @@ const MASTER_CODE_KEY = "master_code";
 const DEVICE_ID_KEY = "device_id";
 const DRIVER_ID_KEY = "driver_id";
 const DISPLAY_USERNAME_KEY = "display_username";
+const LICENSE_ID_KEY = "website_license_id";
 
 // auth vault keys
 const PIN_VERIFIER_KEY = "pin_verifier";
@@ -43,10 +44,19 @@ const MASTER_VERIFIER_KEY = "master_verifier";
 const FINGERPRINT_KEY = "webauthn_credential";
 const PIN_ATTEMPT_KEY = "pin_attempts";
 const RECOVERY_ATTEMPT_KEY = "recovery_attempts";
+const PREMIUM_STATE_KEY = "premium_state";
 
 // constants
 const MASTER_CODE_LENGTH = 24;
 const MASTER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+// License ID is PUBLIC (shared with website + support). Format:
+// "TM-" + 3 groups of 4 upper-case alphanumerics separated by "-".
+// Alphabet excludes visually-ambiguous chars (I, O, 0, 1) so a driver
+// can dictate their license ID over the phone without mistakes.
+const LICENSE_ID_PREFIX = "TM";
+const LICENSE_ID_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const LICENSE_ID_GROUP_SIZE = 4;
+const LICENSE_ID_GROUPS = 3;
 const PBKDF2_ITERATIONS = 100_000;
 const MAX_PIN_ATTEMPTS = 5;
 const PIN_LOCKOUT_MS = 30_000;
@@ -183,6 +193,33 @@ export function formatMasterCode(code) {
   return clean.match(/.{1,4}/g)?.join(" ") || clean;
 }
 
+/**
+ * Generates a PUBLIC Website License ID that the driver can share
+ * with customer support or type into the Trip Monitor website for
+ * purchases. This is NOT a secret — it's the opposite of the master
+ * code. Example output: "TM-8F4K-22P9-X7Q1".
+ *
+ * The master code must NEVER be sent to the website. The license ID
+ * is the public-facing identifier for purchases / support / premium
+ * unlock and is safe to share over phone, email, or a ticket.
+ */
+export function generateLicenseId() {
+  const groups = [];
+  for (let g = 0; g < LICENSE_ID_GROUPS; g++) {
+    const bytes = randomBytes(LICENSE_ID_GROUP_SIZE);
+    let s = "";
+    for (let i = 0; i < LICENSE_ID_GROUP_SIZE; i++) {
+      s += LICENSE_ID_ALPHABET[bytes[i] % LICENSE_ID_ALPHABET.length];
+    }
+    groups.push(s);
+  }
+  return `${LICENSE_ID_PREFIX}-${groups.join("-")}`;
+}
+
+export async function getLicenseId() {
+  return (await kvGet(KEYCHAIN_DB, KEYCHAIN_STORE, LICENSE_ID_KEY)) || "";
+}
+
 // ---------- Public state helpers ----------
 
 export async function isSetup() {
@@ -221,6 +258,7 @@ export async function setupAuth({ displayUsername, driverId, pin, recoveryPhrase
   const driver = String(driverId).trim();
   const phrase = normalizePhrase(recoveryPhrase);
   const masterCode = generateMasterCode();
+  const licenseId = generateLicenseId();
 
   // Derive all hashes first — if any fails we abort before touching keychain.
   const pinSalt = randomBytes(16);
@@ -240,6 +278,7 @@ export async function setupAuth({ displayUsername, driverId, pin, recoveryPhrase
   await kvSet(KEYCHAIN_DB, KEYCHAIN_STORE, MASTER_CODE_KEY, masterCode);
   await kvSet(KEYCHAIN_DB, KEYCHAIN_STORE, DRIVER_ID_KEY, driver);
   await kvSet(KEYCHAIN_DB, KEYCHAIN_STORE, DISPLAY_USERNAME_KEY, username);
+  await kvSet(KEYCHAIN_DB, KEYCHAIN_STORE, LICENSE_ID_KEY, licenseId);
   await getDeviceId();
 
   // Vault writes
@@ -264,9 +303,10 @@ export async function setupAuth({ displayUsername, driverId, pin, recoveryPhrase
     throw err;
   }
 
-  // Return the master code ONCE so the setup UI can display it as
-  // emergency backup. It is never returned again after this call.
-  return { masterCode };
+  // Return the master code + license ID. Master code is SECRET and
+  // shown once by the setup UI. License ID is PUBLIC and can be shown
+  // again any time via getLicenseId().
+  return { masterCode, licenseId };
 }
 
 // ---------- PIN verification ----------
@@ -457,6 +497,100 @@ export async function verifyFingerprint() {
 export async function wipeAuth() {
   await deleteDatabase(KEYCHAIN_DB);
   await deleteDatabase(AUTH_DB);
+}
+
+// ---------- Premium license (offline unlock) ----------
+
+/**
+ * Premium unlock scaffolding. The website (future) issues Premium
+ * Unlock Codes signed with a private ECDSA P-256 key; this app
+ * verifies them against the bundled public key below. Until the
+ * website + signing server exist, the verification logic is ready
+ * but no valid codes can be generated — so Premium effectively
+ * cannot be unlocked yet, which is the correct behaviour (gated
+ * behind a purchase).
+ *
+ * Code format: base64url(payload) + "." + base64url(sig)
+ *   payload = JSON {license_id, tier, iat, exp, nonce}
+ *   sig     = ECDSA P-256 signature over the payload bytes
+ *
+ * Security rule (per spec): the MASTER recovery code must never be
+ * sent to the website. Premium codes are bound to the PUBLIC
+ * license_id only.
+ */
+const PREMIUM_PUBLIC_KEY_SPKI_B64 = ""; // TBD — filled in when website infra lands
+
+function b64urlToBytes(s) {
+  const pad = "=".repeat((4 - (s.length % 4)) % 4);
+  const normalized = s.replace(/-/g, "+").replace(/_/g, "/") + pad;
+  const bin = atob(normalized);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+async function _loadPremiumPubKey() {
+  if (!PREMIUM_PUBLIC_KEY_SPKI_B64) return null;
+  try {
+    return await crypto.subtle.importKey(
+      "spki", b64urlToBytes(PREMIUM_PUBLIC_KEY_SPKI_B64),
+      { name: "ECDSA", namedCurve: "P-256" },
+      false, ["verify"],
+    );
+  } catch { return null; }
+}
+
+export async function verifyPremiumUnlockCode(code) {
+  const trimmed = String(code || "").trim();
+  if (!trimmed || !trimmed.includes(".")) {
+    return { ok: false, reason: "malformed" };
+  }
+  const [payloadB64, sigB64] = trimmed.split(".");
+  let payload;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(b64urlToBytes(payloadB64)));
+  } catch {
+    return { ok: false, reason: "malformed" };
+  }
+  const licenseId = await getLicenseId();
+  if (!licenseId || payload.license_id !== licenseId) {
+    return { ok: false, reason: "license_mismatch" };
+  }
+  if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+    return { ok: false, reason: "expired" };
+  }
+  const pub = await _loadPremiumPubKey();
+  if (!pub) {
+    // Premium signing infra not deployed yet — refuse all codes even
+    // if shaped correctly. This keeps the premium gate closed.
+    return { ok: false, reason: "not_available" };
+  }
+  const sigBytes = b64urlToBytes(sigB64);
+  const payloadBytes = b64urlToBytes(payloadB64);
+  const ok = await crypto.subtle.verify(
+    { name: "ECDSA", hash: "SHA-256" }, pub, sigBytes, payloadBytes,
+  );
+  if (!ok) return { ok: false, reason: "bad_signature" };
+  await kvSet(AUTH_DB, AUTH_STORE, PREMIUM_STATE_KEY, {
+    tier: payload.tier || "premium",
+    license_id: licenseId,
+    activated_at: new Date().toISOString(),
+    expires_at: payload.exp ? new Date(payload.exp * 1000).toISOString() : null,
+  });
+  return { ok: true, tier: payload.tier || "premium" };
+}
+
+export async function getPremiumState() {
+  const s = await kvGet(AUTH_DB, AUTH_STORE, PREMIUM_STATE_KEY);
+  if (!s) return { active: false, tier: null, expires_at: null };
+  if (s.expires_at && new Date(s.expires_at) < new Date()) {
+    return { active: false, tier: s.tier, expires_at: s.expires_at };
+  }
+  return { active: true, tier: s.tier, expires_at: s.expires_at };
+}
+
+export async function revokePremium() {
+  await kvDelete(AUTH_DB, AUTH_STORE, PREMIUM_STATE_KEY);
 }
 
 export const AUTH_CONSTANTS = Object.freeze({

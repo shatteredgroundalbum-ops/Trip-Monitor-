@@ -12,7 +12,7 @@ import WeeklyTrend from "../components/app/WeeklyTrend";
 import InstallPrompt from "../components/app/InstallPrompt";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
-import { LogOut, UserCog, CheckCircle2, Save, Eye, History, Truck, Gauge, Route, ListChecks, ArrowRight, Plus, FileText, Fingerprint } from "lucide-react";
+import { LogOut, UserCog, CheckCircle2, Save, Eye, History, Truck, Gauge, Route, ListChecks, ArrowRight, Plus, FileText, Fingerprint, IdCard } from "lucide-react";
 import PaperSheet from "../components/app/PaperSheet";
 import DynamicPaperSheet from "../components/app/DynamicPaperSheet";
 import { ensureDefaultTemplate, getActiveTemplate } from "../lib/template-store";
@@ -21,6 +21,7 @@ import { ROLE_LABEL } from "../data/constants";
 import {
   enrollFingerprint, disableFingerprint, isFingerprintEnrolled, isFingerprintSupported,
 } from "../lib/local-auth";
+import LicensePremiumDialog from "../components/app/LicensePremiumDialog";
 import { toast } from "sonner";
 
 export default function Dashboard() {
@@ -34,6 +35,7 @@ export default function Dashboard() {
   const [achievements, setAchievements] = useState(null);
   const [template, setTemplate] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
+  const [showLicense, setShowLicense] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [showContinue, setShowContinue] = useState(false);
   const [showFinish, setShowFinish] = useState(false);
@@ -158,6 +160,15 @@ export default function Dashboard() {
               onClick={() => setShowProfile(true)}
               className="h-9 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md">
               <UserCog className="h-4 w-4" />
+            </Button>
+            <Button
+              data-testid="open-license-dialog"
+              variant="outline" size="sm"
+              onClick={() => setShowLicense(true)}
+              title="Website License ID & Premium"
+              className="h-9 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md"
+            >
+              <IdCard className="h-4 w-4" />
             </Button>
             <FingerprintToggle />
             <Button data-testid="logout-btn" variant="outline" size="sm"
@@ -350,6 +361,8 @@ export default function Dashboard() {
           setShowProfile(false);
           refreshStats();
         }} />
+
+      <LicensePremiumDialog open={showLicense} onClose={() => setShowLicense(false)} />
 
       {profile && (
         <SessionWizard open={showWizard} profile={profile}

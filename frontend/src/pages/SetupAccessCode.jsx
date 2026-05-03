@@ -39,10 +39,12 @@ export default function SetupAccessCode() {
   // Step 3
   const [phrase, setPhrase] = useState("");
   const [phraseConfirm, setPhraseConfirm] = useState("");
-  // Step 4
-  const [masterCode, setMasterCode] = useState(""); // returned from setupAuth
+  // Step 4 — both codes returned from setupAuth
+  const [masterCode, setMasterCode] = useState("");
+  const [licenseId, setLicenseId] = useState("");
   const [showMaster, setShowMaster] = useState(true);
   const [copiedMaster, setCopiedMaster] = useState(false);
+  const [copiedLicense, setCopiedLicense] = useState(false);
   const [masterAcked, setMasterAcked] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -82,10 +84,11 @@ export default function SetupAccessCode() {
     // the generated master code from the setupAuth return value.
     setBusy(true);
     try {
-      const { masterCode: mc } = await setupAuth({
+      const { masterCode: mc, licenseId: lic } = await setupAuth({
         displayUsername, driverId, pin, recoveryPhrase: phrase,
       });
       setMasterCode(mc);
+      setLicenseId(lic);
       setStep("master");
     } catch (err) {
       toast.error(err?.message || "Setup failed");
@@ -101,6 +104,10 @@ export default function SetupAccessCode() {
   };
   const copyMaster = async () => {
     try { await navigator.clipboard.writeText(masterCode); setCopiedMaster(true); toast.success("Copied — store it somewhere safe"); }
+    catch { toast.error("Copy failed — please write it down"); }
+  };
+  const copyLicense = async () => {
+    try { await navigator.clipboard.writeText(licenseId); setCopiedLicense(true); toast.success("License ID copied"); }
     catch { toast.error("Copy failed — please write it down"); }
   };
 
@@ -183,33 +190,65 @@ export default function SetupAccessCode() {
               <span className="h-px w-8 bg-[var(--tm-blue)]" aria-hidden />
               <span className="text-[var(--tm-orange)]">Step 4 of 4</span>
               <span className="text-[var(--tm-text-muted)]">·</span>
-              <span className="text-[var(--tm-blue)]">Emergency backup</span>
+              <span className="text-[var(--tm-blue)]">Your codes</span>
             </div>
             <h1 className="font-black tracking-tight leading-[0.95]" style={{ fontSize: "clamp(1.75rem, 6vw, 2.5rem)" }}>
-              Write this down.
+              Two codes, two jobs.
             </h1>
-            <div className="bg-[var(--tm-orange)] bg-opacity-10 border-2 border-[var(--tm-orange)] rounded-md p-3 text-xs text-[var(--tm-navy)] flex gap-2 items-start" data-testid="setup-master-warning">
-              <AlertTriangle className="h-4 w-4 text-[var(--tm-orange)] shrink-0 mt-0.5" />
-              <div>
-                <strong>Shown only once.</strong> This 24-character code is your last-ditch emergency recovery if you forget BOTH your PIN and your phrase. The app will never show it again.
+
+            {/* Public website license ID — safe to share */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-[var(--tm-blue)]">
+                  Website License ID · public · safe to share
+                </span>
+              </div>
+              <div
+                data-testid="setup-license-id"
+                className="font-mono text-xl md:text-2xl tracking-[0.15em] bg-white border-2 border-[var(--tm-blue)] rounded-md p-4 text-center select-all text-[var(--tm-navy)]"
+              >
+                {licenseId}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={copyLicense} className="flex-1 h-9 bg-white text-xs" data-testid="setup-license-copy">
+                  {copiedLicense ? <Check className="h-3.5 w-3.5 mr-1 text-[var(--tm-blue)]" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
+                  {copiedLicense ? "Copied" : "Copy license ID"}
+                </Button>
+              </div>
+              <p className="text-[11px] text-[var(--tm-text-soft)] leading-snug">
+                Use this to log into the Trip Monitor website for purchases, premium unlock, and customer support. Safe to dictate to support over the phone.
+              </p>
+            </div>
+
+            {/* Private emergency backup master code — shown once */}
+            <div className="pt-2 space-y-2">
+              <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-[var(--tm-orange)]">
+                Emergency master code · private · shown only once
+              </span>
+              <div className="bg-[var(--tm-orange)] bg-opacity-10 border-2 border-[var(--tm-orange)] rounded-md p-3 text-xs text-[var(--tm-navy)] flex gap-2 items-start" data-testid="setup-master-warning">
+                <AlertTriangle className="h-4 w-4 text-[var(--tm-orange)] shrink-0 mt-0.5" />
+                <div>
+                  Last-ditch recovery if you forget BOTH your PIN and your phrase. Write it down. <strong>Never enter this into the website or send it to support.</strong>
+                </div>
+              </div>
+              <div
+                data-testid="setup-master-code"
+                className="font-mono text-lg md:text-xl tracking-[0.15em] bg-[var(--tm-surface)] border-2 border-dashed border-[var(--tm-blue)] rounded-md p-4 text-center break-all select-all"
+              >
+                {showMaster ? formatMasterCode(masterCode) : "•••• •••• •••• •••• •••• ••••"}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setShowMaster((s) => !s)} className="flex-1 h-9 bg-white text-xs" data-testid="setup-master-toggle">
+                  {showMaster ? <EyeOff className="h-3.5 w-3.5 mr-1" /> : <Eye className="h-3.5 w-3.5 mr-1" />}
+                  {showMaster ? "Hide" : "Show"}
+                </Button>
+                <Button variant="outline" onClick={copyMaster} className="flex-1 h-9 bg-white text-xs" data-testid="setup-master-copy">
+                  {copiedMaster ? <Check className="h-3.5 w-3.5 mr-1 text-[var(--tm-blue)]" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
+                  {copiedMaster ? "Copied" : "Copy"}
+                </Button>
               </div>
             </div>
-            <div
-              data-testid="setup-master-code"
-              className="font-mono text-lg md:text-xl tracking-[0.15em] bg-[var(--tm-surface)] border-2 border-dashed border-[var(--tm-blue)] rounded-md p-4 text-center break-all select-all"
-            >
-              {showMaster ? formatMasterCode(masterCode) : "•••• •••• •••• •••• •••• ••••"}
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setShowMaster((s) => !s)} className="flex-1 h-10 bg-white" data-testid="setup-master-toggle">
-                {showMaster ? <EyeOff className="h-3.5 w-3.5 mr-1" /> : <Eye className="h-3.5 w-3.5 mr-1" />}
-                {showMaster ? "Hide" : "Show"}
-              </Button>
-              <Button variant="outline" onClick={copyMaster} className="flex-1 h-10 bg-white" data-testid="setup-master-copy">
-                {copiedMaster ? <Check className="h-3.5 w-3.5 mr-1 text-[var(--tm-blue)]" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
-                {copiedMaster ? "Copied" : "Copy"}
-              </Button>
-            </div>
+
             <div className="flex items-start gap-2 pt-1">
               <input
                 id="setup-master-ack-cb"
@@ -220,7 +259,7 @@ export default function SetupAccessCode() {
                 className="mt-0.5 h-4 w-4 accent-[var(--tm-orange)] cursor-pointer"
               />
               <label htmlFor="setup-master-ack-cb" data-testid="setup-master-ack" className="text-xs text-[var(--tm-text-soft)] cursor-pointer">
-                I've saved this code somewhere only I can find. I understand that if I lose my PIN, my phrase, AND this code, my local data may not be recoverable.
+                I've saved my master code somewhere only I can find. I understand that if I lose my PIN, my phrase, AND this code, my local data may not be recoverable.
               </label>
             </div>
             <Primary testid="setup-finalise" disabled={!masterAcked} onClick={onFinish}>

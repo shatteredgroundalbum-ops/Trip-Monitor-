@@ -471,6 +471,14 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
   - Backend `/api/auth/local` now accepts optional `display_username` + `driver_id` and updates the user record — Dashboard greeting end-to-end displays the driver's chosen name.
   - Live-verified: Marcus R. / MR-4429 / 135792 / "blue truck river coffee" path works end-to-end; case-insensitive phrase confirm; "Hey, Marcus 👋" on Dashboard.
 
+- ✅ **Website License ID + Premium unlock scaffolding (Iter 19f)** (2026-02-??):
+  - Spec: app generates TWO identity codes at setup — a PRIVATE 24-char master recovery code (already shipped) + a PUBLIC Website License ID used for website login / purchases / support. Format `TM-XXXX-XXXX-XXXX` where each group is 4 alphanumerics from a no-ambiguity alphabet (no I/O/0/1).
+  - `local-auth.js` adds `generateLicenseId()` + `getLicenseId()`. `setupAuth()` now persists both codes in `tm-keychain` and returns `{masterCode, licenseId}`. Security invariant: the master code NEVER leaves the keychain via any code path that hits the network; the license ID is designed to be shared.
+  - SetupAccessCode final step shows BOTH codes with distinct visual treatment: License ID in a confident blue card ("safe to share"); master code in a dashed warning card with explicit "Never enter this into the website" copy.
+  - New `LicensePremiumDialog.jsx` (Dashboard header icon `[data-testid=open-license-dialog]`) re-exposes the License ID any time, provides a "Redeem Premium Unlock Code" input, and shows the "Never share" security reminder.
+  - Premium unlock scaffolding: `verifyPremiumUnlockCode()` parses the signed `payload.signature` format (ECDSA P-256), validates license_id match, checks expiry, then verifies the signature. Public key SPKI is intentionally empty pending website infra — all codes currently fall to `{ok:false, reason:"not_available"}`, keeping the gate closed. Unlock state is persisted in `tm-auth` via `getPremiumState()`.
+  - Live-verified: License ID generated as `TM-DFNN-B7AW-UY42` (pattern match ✓), master code shown separately with warning, both copyable, Dashboard header license icon opens the dialog with the matching License ID.
+
 ## Prioritized Backlog
 
 ### P0 — next iteration
