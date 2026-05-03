@@ -27,6 +27,25 @@ const metaStore = localforage.createInstance({
 });
 
 const META_ACTIVE_KEY = "active_template_id";
+const META_DRAFT_KEY = "studio_draft";
+
+/**
+ * Draft persistence — stores an in-progress mapping session so the
+ * driver can resume after closing the app or navigating away. Only
+ * one draft at a time; saving overwrites. Cleared on map "Done".
+ */
+export async function saveDraft(draft) {
+  if (!draft) return;
+  await metaStore.setItem(META_DRAFT_KEY, {
+    ...draft, updated_at: new Date().toISOString(),
+  });
+}
+export async function getDraft() {
+  return (await metaStore.getItem(META_DRAFT_KEY)) || null;
+}
+export async function clearDraft() {
+  await metaStore.removeItem(META_DRAFT_KEY);
+}
 
 /** Persist a template (insert or update). */
 export async function saveTemplate(template) {

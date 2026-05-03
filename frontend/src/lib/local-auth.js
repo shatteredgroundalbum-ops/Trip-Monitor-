@@ -511,7 +511,10 @@ export async function wipeAuth() {
  * behind a purchase).
  *
  * Code format: base64url(payload) + "." + base64url(sig)
- *   payload = JSON {license_id, tier, iat, exp, nonce}
+ *   payload = JSON {license_id, tier, duration, iat, exp, nonce}
+ *     - tier:     "FREE" | "QCK" | "STU" (Free / Quick / Studio)
+ *     - duration: "3M" | "6M" | "1Y" | "5Y" | "LT" (lifetime)
+ *     - exp:      unix-seconds when the unlock expires (omit for LT)
  *   sig     = ECDSA P-256 signature over the payload bytes
  *
  * Security rule (per spec): the MASTER recovery code must never be
@@ -519,6 +522,18 @@ export async function wipeAuth() {
  * license_id only.
  */
 const PREMIUM_PUBLIC_KEY_SPKI_B64 = ""; // TBD — filled in when website infra lands
+
+// Feature tier hierarchy. Higher tiers include everything from lower
+// tiers. Used by hasFeatureTier() to gate features in the UI.
+export const TIER_RANK = Object.freeze({ FREE: 0, QCK: 1, STU: 2 });
+export const TIER_LABEL = Object.freeze({
+  FREE: "Free",
+  QCK: "Quick",
+  STU: "Studio",
+});
+export const DURATION_LABEL = Object.freeze({
+  "3M": "3 months", "6M": "6 months", "1Y": "1 year", "5Y": "5 years", LT: "Lifetime",
+});
 
 function b64urlToBytes(s) {
   const pad = "=".repeat((4 - (s.length % 4)) % 4);
@@ -572,21 +587,42 @@ export async function verifyPremiumUnlockCode(code) {
   );
   if (!ok) return { ok: false, reason: "bad_signature" };
   await kvSet(AUTH_DB, AUTH_STORE, PREMIUM_STATE_KEY, {
-    tier: payload.tier || "premium",
+    tier: payload.tier || "STU",
+    duration: payload.duration || (payload.exp ? "1Y" : "LT"),
     license_id: licenseId,
     activated_at: new Date().toISOString(),
     expires_at: payload.exp ? new Date(payload.exp * 1000).toISOString() : null,
   });
-  return { ok: true, tier: payload.tier || "premium" };
+  return { ok: true, tier: payload.tier || "STU", duration: payload.duration || "LT" };
 }
 
 export async function getPremiumState() {
   const s = await kvGet(AUTH_DB, AUTH_STORE, PREMIUM_STATE_KEY);
-  if (!s) return { active: false, tier: null, expires_at: null };
+  if (!s) return { active: false, tier: "FREE", duration: null, expires_at: null };
   if (s.expires_at && new Date(s.expires_at) < new Date()) {
-    return { active: false, tier: s.tier, expires_at: s.expires_at };
+    return { active: false, tier: "FREE", expired_tier: s.tier, duration: s.duration, expires_at: s.expires_at };
   }
-  return { active: true, tier: s.tier, expires_at: s.expires_at };
+  return { active: true, tier: s.tier || "STU", duration: s.duration || "LT", expires_at: s.expires_at };
+}
+
+/**
+ * Returns the user's current FEATURE tier ("FREE" | "QCK" | "STU"),
+ * collapsing expired premium back to FREE. Use this — not the raw
+ * premium state — for UI gating.
+ */
+export async function getFeatureTier() {
+  const s = await getPremiumState();
+  return s.active ? (s.tier || "STU") : "FREE";
+}
+
+/**
+ * Returns true if the current feature tier meets-or-exceeds the
+ * required tier. Use this for feature gating: e.g. Pro Mapping
+ * Studio requires "STU"; Quick Map requires "QCK".
+ */
+export async function hasFeatureTier(requiredTier) {
+  const current = await getFeatureTier();
+  return TIER_RANK[current] >= TIER_RANK[requiredTier];
 }
 
 export async function revokePremium() {

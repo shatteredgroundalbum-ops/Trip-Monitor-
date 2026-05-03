@@ -1,80 +1,77 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Camera,
-  Upload,
-  ScanLine,
-  ArrowLeft,
-  Loader2,
-  FileText,
-  Trash2,
-  Check,
-  CircleDot,
-  Sparkles,
-  AlertTriangle,
+  Camera, Upload, ScanLine, ArrowLeft, Loader2, FileText, Sparkles,
+  Lock, Crown, RotateCcw, Check, X, RefreshCw,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
 import TemplateMappingWizard from "../components/app/TemplateMappingWizard";
 import ProMappingStudio from "../components/app/ProMappingStudio";
-import BoundarySetup from "../components/app/BoundarySetup";
 import { normalizeCapture, runOcr, formatBytes } from "../lib/scan-pipeline";
 import {
-  listTemplates,
-  deleteTemplate,
-  totalStorageBytes,
-  setActiveTemplateId,
-  getActiveTemplateId,
-  ensureDefaultTemplate,
-  DEFAULT_TEMPLATE_ID,
+  setActiveTemplateId, ensureDefaultTemplate, DEFAULT_TEMPLATE_ID,
+  totalStorageBytes, saveDraft, getDraft, clearDraft,
 } from "../lib/template-store";
-import { emptyTemplate, PRESET_FIELDS } from "../lib/template-types";
-
-const STEPS = ["Pick", "Capture", "Boundary", "Map"];
+import { emptyTemplate } from "../lib/template-types";
+import {
+  DEFAULT_BOUNDARIES, analyzeFontDefaults, FONT_PRESETS_BY_ID,
+} from "../lib/pro-mapping-v2";
+import { hasFeatureTier, getFeatureTier, TIER_LABEL } from "../lib/local-auth";
 
 /**
- * User-facing Template Setup — surfaces the scan + OCR pipeline built in
- * Batch 1 and the tap-to-assign mapping wizard from Batch 2.
- *
- * Flow:
- *   1. Pick : "Use TripMonitor default" OR "Scan my company sheet"
- *   2. Capture : camera / photo-upload → normalize to <=1600px JPEG
- *   3. Map : tap-to-assign all 13 preset fields (skippable)
- *
- * Also lists already-stored templates with switch / delete actions.
+ * Trip Sheet Template setup — overhauled per spec iter 19g.
+ * - Pick screen: 2 cards only (Default / Scan).
+ * - Upload screen merges scan + boundary; 3 small evenly spaced
+ *   buttons (Reset · Text Analyzer · Set).
+ * - Quick Map / Pro Studio cards act as their own continue.
+ * - Pro Studio tap shows a final boundary-lock confirm modal.
+ * - Resume popup if a previous draft mapping session exists.
+ * - No top step bubbles (they were inert decoration).
+ * - Feature gating: FREE → Default only; QCK → +Quick Map; STU → +Studio.
  */
 export default function TemplateSetup() {
   const navigate = useNavigate();
   const fileRef = useRef(null);
-  const [step, setStep] = useState("Pick");
+
+  const [view, setView] = useState("pick");          // pick | upload | map
   const [busy, setBusy] = useState(false);
-  const [scan, setScan] = useState(null);
-  const [ocrProgress, setOcrProgress] = useState(0);
-  const [ocrStatus, setOcrStatus] = useState("");
-  const [ocrWords, setOcrWords] = useState([]);
-  const [draftTemplate, setDraftTemplate] = useState(null);
-  const [mapMode, setMapMode] = useState("quick"); // "quick" (13-tap) | "pro" (markup editor)
-  const [analysis, setAnalysis] = useState(null);
-  const [templates, setTemplates] = useState([]);
-  const [activeId, setActiveId] = useState(null);
   const [bytes, setBytes] = useState(0);
 
-  const refresh = async () => {
-    await ensureDefaultTemplate();
-    const all = await listTemplates();
-    setTemplates(all);
-    setActiveId(await getActiveTemplateId());
-    setBytes(await totalStorageBytes());
-  };
+  const [scan, setScan] = useState(null);
+  const [boundaries, setBoundaries] = useState({ ...DEFAULT_BOUNDARIES });
+  const [boundaryDrag, setBoundaryDrag] = useState(null);
+  const [analysis, setAnalysis] = useState(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeProgress, setAnalyzeProgress] = useState(0);
 
-  useEffect(() => { refresh(); }, []);
+  const [draftTemplate, setDraftTemplate] = useState(null);
+  const [mapMode, setMapMode] = useState("quick");
+
+  const [resumeDraft, setResumeDraft] = useState(null);
+  const [showStudioConfirm, setShowStudioConfirm] = useState(false);
+  const [upgradePrompt, setUpgradePrompt] = useState(null);
+
+  const [tier, setTier] = useState("FREE");
+
+  useEffect(() => {
+    (async () => {
+      await ensureDefaultTemplate();
+      setBytes(await totalStorageBytes());
+      setTier(await getFeatureTier());
+      const d = await getDraft();
+      if (d?.template) setResumeDraft(d);
+    })();
+  }, []);
 
   const handlePickDefault = async () => {
-    await ensureDefaultTemplate();
     await setActiveTemplateId(DEFAULT_TEMPLATE_ID);
     toast.success("Using TripMonitor default sheet");
-    refresh();
     navigate("/dashboard");
+  };
+  const handlePickScan = async () => {
+    if (!(await hasFeatureTier("QCK"))) { setUpgradePrompt({ required: "QCK" }); return; }
+    setView("upload");
   };
 
   const handleFile = async (file) => {
@@ -83,113 +80,101 @@ export default function TemplateSetup() {
     try {
       const normalized = await normalizeCapture(file);
       setScan(normalized);
-      toast.success(`Scan normalized to ${normalized.width}×${normalized.height}`);
+      setBoundaries({ ...DEFAULT_BOUNDARIES });
+      setAnalysis(null);
+      toast.success(`Scan ready · ${normalized.width}×${normalized.height}`);
     } catch (e) {
       toast.error(`Capture failed: ${e?.message || e}`);
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   };
 
-  const handleRunOcr = async () => {
+  const onResetBoundary = () => {
+    setBoundaries({ ...DEFAULT_BOUNDARIES });
+    setAnalysis(null);
+    toast.success("Boundary reset to 1″ margin");
+  };
+  const onAnalyze = async () => {
     if (!scan) return;
-    setBusy(true);
-    setOcrWords([]);
-    setOcrProgress(0);
-    setOcrStatus("loading");
+    setAnalyzing(true);
+    setAnalyzeProgress(0);
     try {
-      const words = await runOcr(scan, {
-        onProgress: (p, status) => {
-          setOcrProgress(Math.round(p * 100));
-          setOcrStatus(status || "");
-        },
-      });
-      setOcrWords(words);
-      toast.success(`OCR found ${words.length} words`);
+      const words = await runOcr(scan, { onProgress: (p) => setAnalyzeProgress(Math.round(p * 100)) });
+      const a = analyzeFontDefaults(words, scan.width, scan.height);
+      setAnalysis(a);
+      toast.success(`Detected: ${FONT_PRESETS_BY_ID[a.fontFamily]?.label || "font"} · ${a.fontSizePt}pt · ${a.weight}`);
     } catch (e) {
-      toast.error(`OCR failed: ${e?.message || e}`);
-    } finally {
-      setBusy(false);
-      setOcrStatus("");
-    }
+      toast.error(`Analyze failed: ${e?.message || e}`);
+    } finally { setAnalyzing(false); }
   };
 
-  const handleContinueToMap = async () => {
-    if (!scan) { toast.error("Capture a scan first"); return; }
-    const existingScanCount = templates.filter((t) => t.source === "scanned").length;
-    if (existingScanCount >= 1) {
-      // Non-blocking notice — adding more scanned templates uses a bit
-      // more device storage but otherwise works fine. The old window.confirm
-      // popup made the Continue button feel broken when users hit Cancel
-      // by reflex or when the browser blocked the dialog.
-      toast.info(`You already have ${existingScanCount} scanned template${existingScanCount > 1 ? "s" : ""} — adding another.`);
-    }
-    // Quick Map skips Boundary (uses tap-to-anchor coords directly on
-    // the scan). Pro Studio routes through the Boundary phase first so
-    // the printable area is locked before any element is placed.
-    if (mapMode === "pro") {
-      setStep("Boundary");
-      return;
-    }
-    const tpl = emptyTemplate({ source: "scanned", name: `Scan ${templates.length + 1}` });
+  const buildDraftWithBoundary = () => {
+    const tpl = emptyTemplate({ source: "scanned", name: "New scan" });
     tpl.scan = scan;
-    tpl.ocr_words = ocrWords;
-    setDraftTemplate(tpl);
-    setStep("Map");
-  };
-
-  const handleBoundaryConfirm = ({ boundaries, analysis: a }) => {
-    const tpl = emptyTemplate({ source: "scanned", name: `Scan ${templates.length + 1}` });
-    tpl.scan = scan;
-    tpl.ocr_words = ocrWords;
-    // Pre-seed the Studio schema with the locked boundary so the
-    // Studio renders the boundary as fixed (no editable handles).
     tpl.schema = {
-      version: 2,
-      boundaries,
-      elements: [],
+      version: 2, boundaries, elements: [],
       assets: { logo: null, qr: null },
-      fonts: { default: "arial" },
-      locked: false,
-      boundaryLocked: true,
+      fonts: { default: analysis?.fontFamily || "arial" },
+      locked: false, boundaryLocked: true,
     };
-    setAnalysis(a || null);
-    setDraftTemplate(tpl);
-    setStep("Map");
+    return tpl;
+  };
+
+  const onEnterQuickMap = async () => {
+    if (!scan) { toast.error("Add a scan first"); return; }
+    if (!(await hasFeatureTier("QCK"))) { setUpgradePrompt({ required: "QCK" }); return; }
+    setDraftTemplate(buildDraftWithBoundary());
+    setMapMode("quick");
+    setView("map");
+  };
+  const onEnterProStudio = async () => {
+    if (!scan) { toast.error("Add a scan first"); return; }
+    if (!(await hasFeatureTier("STU"))) { setUpgradePrompt({ required: "STU" }); return; }
+    setShowStudioConfirm(true);
+  };
+  const onStudioConfirmed = () => {
+    setDraftTemplate(buildDraftWithBoundary());
+    setMapMode("pro");
+    setShowStudioConfirm(false);
+    setView("map");
   };
 
   const handleMapDone = async () => {
-    await refresh();
     setScan(null);
-    setOcrWords([]);
     setDraftTemplate(null);
+    setAnalysis(null);
+    await clearDraft();
+    setBytes(await totalStorageBytes());
     toast.success("Template activated");
     navigate("/dashboard");
   };
-
-  const handleActivate = async (id) => {
-    await setActiveTemplateId(id);
-    await refresh();
-    toast.success("Template switched");
+  const handleMapCancel = async () => {
+    if (draftTemplate) {
+      await saveDraft({ template: draftTemplate, mapMode, analysis, savedAt: new Date().toISOString() });
+      toast.info("Saved as draft — resume from /templates");
+    }
+    setView("pick");
+    setDraftTemplate(null);
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("Delete this template?")) return;
-    await deleteTemplate(id);
-    await refresh();
-    toast.success("Deleted");
+  const onResumeContinue = () => {
+    setDraftTemplate(resumeDraft.template);
+    setMapMode(resumeDraft.mapMode || "pro");
+    setAnalysis(resumeDraft.analysis || null);
+    setResumeDraft(null);
+    setView("map");
   };
+  const onResumeNew = async () => { await clearDraft(); setResumeDraft(null); };
 
   return (
     <div className="min-h-screen bg-white text-[var(--tm-navy)]" data-testid="template-setup-page">
       <header className="border-b border-[var(--tm-border)] px-4 py-3 flex items-center gap-3 sticky top-0 bg-white z-10">
         <button
           type="button"
-          onClick={() => navigate("/dashboard")}
+          onClick={() => view === "pick" ? navigate("/dashboard") : setView("pick")}
           className="text-[var(--tm-text-soft)] hover:text-[var(--tm-blue)] inline-flex items-center gap-1 text-xs uppercase tracking-wider font-bold"
           data-testid="template-setup-back"
         >
-          <ArrowLeft className="h-3.5 w-3.5" /> Back to Dashboard
+          <ArrowLeft className="h-3.5 w-3.5" /> {view === "pick" ? "Back to Dashboard" : "Back"}
         </button>
         <div className="flex-1 text-center">
           <span className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-text-muted)] font-bold">
@@ -201,320 +186,418 @@ export default function TemplateSetup() {
         </span>
       </header>
 
-      <div className="px-4 pt-3">
-        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.25em] font-bold">
-          {STEPS.map((s) => {
-            const active = s === step;
-            return (
-              <span
-                key={s}
-                className={`px-2 py-1 rounded-full ${
-                  active
-                    ? "bg-[var(--tm-orange)] text-white"
-                    : "bg-[var(--tm-surface-2)] text-[var(--tm-text-muted)]"
-                }`}
-              >
-                {s}
-              </span>
-            );
-          })}
-        </div>
-      </div>
-
-      <main className={`mx-auto p-4 space-y-5 ${step === "Map" && mapMode === "pro" ? "max-w-[1600px]" : "max-w-2xl"}`}>
-        {step === "Pick" && (
-          <section data-testid="template-setup-pick" className="space-y-3">
-            <div className="space-y-1">
-              <h1 className="text-3xl font-black tracking-tight">Pick your trip sheet</h1>
-              <p className="text-sm text-[var(--tm-text-soft)]">
-                Scan once, reuse forever. You can always re-scan or switch templates later.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              data-testid="pick-default"
-              onClick={handlePickDefault}
-              className="w-full text-left bg-white border-2 border-[var(--tm-border)] hover:border-[var(--tm-blue)] rounded-md p-4 flex items-center gap-3 transition-colors shadow-sm"
-            >
-              <div className="h-12 w-12 rounded-md bg-[var(--tm-navy)] text-white flex items-center justify-center shrink-0">
-                <FileText className="h-5 w-5" />
-              </div>
-              <div className="flex-1">
-                <div className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-orange)] font-bold">Recommended</div>
-                <div className="text-base font-bold">Use the TripMonitor default</div>
-                <div className="text-xs text-[var(--tm-text-soft)]">
-                  The built-in sheet shipped with the app. Works out of the box.
-                </div>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              data-testid="pick-scan"
-              onClick={() => setStep("Capture")}
-              className="w-full text-left bg-white border-2 border-[var(--tm-border)] hover:border-[var(--tm-orange)] rounded-md p-4 flex items-center gap-3 transition-colors shadow-sm"
-            >
-              <div className="h-12 w-12 rounded-md bg-[var(--tm-orange)] text-white flex items-center justify-center shrink-0">
-                <ScanLine className="h-5 w-5" />
-              </div>
-              <div className="flex-1">
-                <div className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-blue)] font-bold">Custom</div>
-                <div className="text-base font-bold">Scan my company trip sheet</div>
-                <div className="text-xs text-[var(--tm-text-soft)]">
-                  Capture once, map the fields, reuse forever.
-                </div>
-              </div>
-            </button>
-
-            <StoredTemplates
-              templates={templates}
-              activeId={activeId}
-              onActivate={handleActivate}
-              onDelete={handleDelete}
-            />
-          </section>
+      <main className={`mx-auto p-4 space-y-5 ${view === "map" && mapMode === "pro" ? "max-w-[1600px]" : "max-w-2xl"}`}>
+        {view === "pick" && (
+          <PickView tier={tier} onDefault={handlePickDefault} onScan={handlePickScan} />
         )}
-
-        {step === "Capture" && (
-          <section data-testid="template-setup-capture" className="space-y-4">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setStep("Pick")}
-                className="text-xs uppercase tracking-wider font-bold text-[var(--tm-text-soft)] hover:text-[var(--tm-blue)] inline-flex items-center gap-1"
-              >
-                <ArrowLeft className="h-3 w-3" /> Back
-              </button>
-            </div>
-            <h1 className="text-2xl font-black tracking-tight">Scan your sheet</h1>
-            <p className="text-xs text-[var(--tm-text-soft)]">
-              Flat surface, good lighting, full sheet visible. The scan is stored on this device only — nothing is uploaded.
-            </p>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              data-testid="template-setup-file-input"
-              onChange={(e) => handleFile(e.target.files?.[0])}
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                data-testid="template-setup-camera"
-                disabled={busy}
-                onClick={() => fileRef.current?.click()}
-                className="h-12 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md"
-              >
-                <Camera className="h-4 w-4 mr-1" /> Camera / Photo
-              </Button>
-              <Button
-                data-testid="template-setup-upload"
-                disabled={busy}
-                variant="outline"
-                onClick={() => {
-                  if (fileRef.current) {
-                    fileRef.current.removeAttribute("capture");
-                    fileRef.current.click();
-                    setTimeout(() => fileRef.current?.setAttribute("capture", "environment"), 0);
-                  }
-                }}
-                className="h-12 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md"
-              >
-                <Upload className="h-4 w-4 mr-1" /> Upload file
-              </Button>
-            </div>
-
-            {scan && (
-              <div className="space-y-3">
-                <div className="relative border border-[var(--tm-border)] rounded-md overflow-hidden">
-                  <img
-                    src={scan.data_url}
-                    alt="Scan preview"
-                    className="block w-full h-auto"
-                    data-testid="template-setup-preview"
-                  />
-                  {ocrWords.length > 0 && (
-                    <svg viewBox="0 0 1 1" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
-                      {ocrWords.map((w, i) => (
-                        <rect key={i} x={w.x} y={w.y} width={w.w} height={w.h} fill="none" stroke="rgba(255,95,21,0.55)" strokeWidth="0.0015" />
-                      ))}
-                    </svg>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    data-testid="template-setup-run-ocr"
-                    disabled={busy}
-                    onClick={handleRunOcr}
-                    className="h-11 flex-1 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md"
-                  >
-                    {busy && ocrStatus ? (
-                      <span className="inline-flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        {ocrProgress}% — {ocrStatus}
-                      </span>
-                    ) : (
-                      <>
-                        <Sparkles className="h-4 w-4 mr-1" /> Detect text (optional)
-                      </>
-                    )}
-                  </Button>
-                </div>
-                {/* Map-mode picker */}
-                <div
-                  className="grid grid-cols-2 gap-2 bg-[var(--tm-surface)] border border-[var(--tm-border)] rounded-md p-2"
-                  data-testid="mapmode-picker"
-                >
-                  <button
-                    type="button"
-                    data-testid="mapmode-quick"
-                    onClick={() => setMapMode("quick")}
-                    className={`p-3 rounded-md border-2 text-left transition-colors ${
-                      mapMode === "quick"
-                        ? "bg-white border-[var(--tm-orange)]"
-                        : "bg-white border-[var(--tm-border)] hover:border-[var(--tm-blue)]"
-                    }`}
-                  >
-                    <div className="text-[10px] uppercase tracking-wider text-[var(--tm-blue)] font-bold">Quick</div>
-                    <div className="text-sm font-bold">Quick Map</div>
-                    <div className="text-[10px] text-[var(--tm-text-soft)] mt-0.5">
-                      13 taps · ~90 sec · drops typed values over the scan.
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="mapmode-pro"
-                    onClick={() => setMapMode("pro")}
-                    className={`p-3 rounded-md border-2 text-left transition-colors ${
-                      mapMode === "pro"
-                        ? "bg-white border-[var(--tm-orange)]"
-                        : "bg-white border-[var(--tm-border)] hover:border-[var(--tm-blue)]"
-                    }`}
-                  >
-                    <div className="text-[10px] uppercase tracking-wider text-[var(--tm-orange)] font-bold">Pro · Studio</div>
-                    <div className="text-sm font-bold">Pro Mapping Studio</div>
-                    <div className="text-[10px] text-[var(--tm-text-soft)] mt-0.5">
-                      Draw left · clean reconstruct right · 5 fonts + custom trace · logo + QR assets · lock template.
-                    </div>
-                  </button>
-                </div>
-                <Button
-                  data-testid="template-setup-continue-map"
-                  disabled={busy}
-                  onClick={handleContinueToMap}
-                  className="h-11 w-full bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md"
-                >
-                  Continue to {mapMode === "pro" ? "Pro Studio" : "Quick Map"} <Check className="h-4 w-4 ml-1" />
-                </Button>
-                {ocrWords.length > 0 && (
-                  <div className="text-[11px] uppercase tracking-wider text-[var(--tm-text-soft)] font-bold flex items-center gap-1">
-                    <CircleDot className="h-3 w-3 text-[var(--tm-blue)]" />
-                    {ocrWords.length} words detected · {Math.round(ocrWords.reduce((a, w) => a + w.confidence, 0) / ocrWords.length)}% avg confidence
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="text-[10px] uppercase tracking-wider text-[var(--tm-text-muted)] font-bold flex items-center gap-1">
-              <AlertTriangle className="h-3 w-3 text-[var(--tm-orange)]" />
-              OCR is a helper only — mapping is still human-driven.
-            </div>
-          </section>
-        )}
-
-        {step === "Boundary" && scan && (
-          <BoundarySetup
-            scan={scan}
-            ocrWords={ocrWords}
-            onBack={() => setStep("Capture")}
-            onConfirm={handleBoundaryConfirm}
+        {view === "upload" && (
+          <UploadView
+            scan={scan} busy={busy} fileRef={fileRef} onFile={handleFile}
+            boundaries={boundaries} setBoundaries={setBoundaries}
+            boundaryDrag={boundaryDrag} setBoundaryDrag={setBoundaryDrag}
+            analysis={analysis} analyzing={analyzing} analyzeProgress={analyzeProgress}
+            onReset={onResetBoundary} onAnalyze={onAnalyze}
+            tier={tier} onQuick={onEnterQuickMap} onPro={onEnterProStudio}
           />
         )}
-
-        {step === "Map" && draftTemplate && (
+        {view === "map" && draftTemplate && (
           mapMode === "pro" ? (
-            <ProMappingStudio
-              template={draftTemplate}
-              analysis={analysis}
-              onDone={handleMapDone}
-              onCancel={() => setStep("Boundary")}
-            />
+            <ProMappingStudio template={draftTemplate} analysis={analysis}
+              onDone={handleMapDone} onCancel={handleMapCancel} />
           ) : (
-            <TemplateMappingWizard
-              template={draftTemplate}
-              onDone={handleMapDone}
-              onCancel={() => setStep("Capture")}
-            />
+            <TemplateMappingWizard template={draftTemplate}
+              onDone={handleMapDone} onCancel={handleMapCancel} />
           )
         )}
       </main>
+
+      {resumeDraft && <ResumeDialog draft={resumeDraft} onContinue={onResumeContinue} onNew={onResumeNew} />}
+      {showStudioConfirm && (
+        <StudioLockDialog
+          onCancel={() => setShowStudioConfirm(false)}
+          onReset={() => { setShowStudioConfirm(false); onResetBoundary(); }}
+          onConfirm={onStudioConfirmed}
+        />
+      )}
+      {upgradePrompt && (
+        <UpgradePrompt required={upgradePrompt.required} onClose={() => setUpgradePrompt(null)} />
+      )}
     </div>
   );
 }
 
-function StoredTemplates({ templates, activeId, onActivate, onDelete }) {
-  if (!templates.length) return null;
+function PickView({ tier, onDefault, onScan }) {
+  const scanLocked = tier === "FREE";
   return (
-    <section className="bg-[var(--tm-surface)] border border-[var(--tm-border)] rounded-md p-3 mt-4" data-testid="stored-templates">
-      <div className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-orange)] font-bold mb-2">
-        Your templates ({templates.length})
+    <section data-testid="template-setup-pick" className="space-y-4">
+      <div className="space-y-1">
+        <h1 className="text-3xl font-black tracking-tight">Pick your trip sheet</h1>
+        <p className="text-sm text-[var(--tm-text-soft)]">
+          Two ways in. Stick with the built-in sheet, or scan your company's.
+        </p>
       </div>
-      <ul className="space-y-2">
-        {templates.map((t) => {
-          const isActive = t.id === activeId;
-          const mapped = Object.keys(t.fields || {}).length;
-          return (
-            <li
-              key={t.id}
-              data-testid={`stored-template-${t.id}`}
-              className={`flex items-center gap-3 border rounded-md p-2 bg-white ${
-                isActive ? "border-[var(--tm-orange)]" : "border-[var(--tm-border)]"
-              }`}
-            >
-              {t.scan?.data_url ? (
-                <img src={t.scan.data_url} alt={t.name} className="h-12 w-12 rounded-md object-cover border border-[var(--tm-border)]" />
-              ) : (
-                <div className="h-12 w-12 rounded-md bg-[var(--tm-navy)] text-white flex items-center justify-center">
-                  <FileText className="h-4 w-4" />
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-bold truncate">{t.name}</div>
-                <div className="text-[10px] uppercase tracking-wider text-[var(--tm-text-muted)] font-bold">
-                  {t.source} · {mapped}/{PRESET_FIELDS.length} fields
-                </div>
-              </div>
-              {isActive ? (
-                <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-1 rounded-full bg-[var(--tm-orange)] text-white">
-                  Active
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => onActivate(t.id)}
-                  data-testid={`activate-${t.id}`}
-                  className="text-[10px] uppercase tracking-wider font-bold px-2 py-1 rounded-full bg-[var(--tm-blue)] text-white hover:bg-[var(--tm-blue-deep)]"
-                >
-                  Activate
-                </button>
-              )}
-              {t.id !== DEFAULT_TEMPLATE_ID && (
-                <button
-                  type="button"
-                  onClick={() => onDelete(t.id)}
-                  aria-label={`Delete ${t.name}`}
-                  className="text-[var(--tm-text-soft)] hover:text-[#FF3B30] shrink-0 p-1"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+
+      <button
+        type="button" data-testid="pick-default" onClick={onDefault}
+        className="w-full text-left bg-white border-2 border-[var(--tm-border)] hover:border-[var(--tm-blue)] rounded-md p-4 flex items-center gap-3 transition-colors shadow-sm"
+      >
+        <div className="h-12 w-12 rounded-md bg-[var(--tm-navy)] text-white flex items-center justify-center shrink-0">
+          <FileText className="h-5 w-5" />
+        </div>
+        <div className="flex-1">
+          <div className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-orange)] font-bold">Recommended</div>
+          <div className="text-base font-bold">Use the TripMonitor Default</div>
+          <div className="text-xs text-[var(--tm-text-soft)]">
+            The built-in legacy sheet shipped with the app. Works out of the box.
+          </div>
+        </div>
+      </button>
+
+      <button
+        type="button" data-testid="pick-scan" onClick={onScan}
+        className="relative w-full text-left bg-white border-2 border-[var(--tm-border)] hover:border-[var(--tm-orange)] rounded-md p-4 flex items-center gap-3 transition-colors shadow-sm"
+      >
+        <div className="h-12 w-12 rounded-md bg-[var(--tm-orange)] text-white flex items-center justify-center shrink-0">
+          <ScanLine className="h-5 w-5" />
+        </div>
+        <div className="flex-1">
+          <div className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-blue)] font-bold flex items-center gap-1.5">
+            Custom
+            {scanLocked && (
+              <span data-testid="scan-locked-chip" className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-[var(--tm-orange)] text-white text-[9px]">
+                <Lock className="h-2.5 w-2.5" /> Quick or Studio
+              </span>
+            )}
+          </div>
+          <div className="text-base font-bold">Scan My Company Trip Sheet</div>
+          <div className="text-xs text-[var(--tm-text-soft)]">
+            Capture once, map the fields, reuse forever.
+          </div>
+        </div>
+      </button>
     </section>
   );
+}
+
+function UploadView({
+  scan, busy, fileRef, onFile,
+  boundaries, setBoundaries, boundaryDrag, setBoundaryDrag,
+  analysis, analyzing, analyzeProgress, onReset, onAnalyze,
+  tier, onQuick, onPro,
+}) {
+  const proLocked = tier !== "STU";
+  const ptFromEvent = (e) => {
+    const r = e.currentTarget?.getBoundingClientRect();
+    if (!r) return null;
+    return { x: clamp01((e.clientX - r.left) / r.width), y: clamp01((e.clientY - r.top) / r.height) };
+  };
+  const onPointerDown = (e) => {
+    const pt = ptFromEvent(e); if (!pt) return;
+    const k = hitHandle(pt, boundaries, 0.022);
+    if (!k) return;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    setBoundaryDrag({ handle: k, original: { ...boundaries } });
+  };
+  const onPointerMove = (e) => {
+    if (!boundaryDrag) return;
+    const pt = ptFromEvent(e); if (!pt) return;
+    setBoundaries(applyHandle(boundaryDrag.original, boundaryDrag.handle, pt));
+  };
+  const onPointerUp = () => setBoundaryDrag(null);
+
+  return (
+    <section data-testid="template-setup-upload" className="space-y-4">
+      <h1 className="text-2xl font-black tracking-tight">Upload your sheet</h1>
+      <p className="text-xs text-[var(--tm-text-soft)]">
+        Flat surface, full sheet visible. Adjust the dotted boundary to match the printable area, then enter Quick Map or Studio. Stays on this device — nothing is uploaded.
+      </p>
+
+      <input
+        ref={fileRef} type="file" accept="image/*" capture="environment"
+        className="hidden" data-testid="template-setup-file-input"
+        onChange={(e) => onFile(e.target.files?.[0])}
+      />
+
+      {!scan && (
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            data-testid="template-setup-camera" disabled={busy}
+            onClick={() => fileRef.current?.click()}
+            className="h-12 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md"
+          >
+            <Camera className="h-4 w-4 mr-1" /> Camera / Photo
+          </Button>
+          <Button
+            data-testid="template-setup-upload-btn" disabled={busy} variant="outline"
+            onClick={() => {
+              if (fileRef.current) {
+                fileRef.current.removeAttribute("capture");
+                fileRef.current.click();
+                setTimeout(() => fileRef.current?.setAttribute("capture", "environment"), 0);
+              }
+            }}
+            className="h-12 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md"
+          >
+            <Upload className="h-4 w-4 mr-1" /> Upload file
+          </Button>
+        </div>
+      )}
+
+      {scan && (
+        <>
+          <div
+            data-testid="upload-canvas"
+            className="relative select-none border-2 border-[var(--tm-blue)] rounded-md overflow-hidden bg-white shadow-md mx-auto touch-none"
+            style={{ width: "100%", maxWidth: 540, aspectRatio: "8.5 / 11", cursor: boundaryDrag ? "grabbing" : "crosshair" }}
+            onPointerDown={onPointerDown} onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
+          >
+            <img src={scan.data_url} alt="Scan" draggable={false}
+              style={{ width: "100%", height: "100%", objectFit: "fill", display: "block" }} />
+            <svg viewBox="0 0 1 1" preserveAspectRatio="none" className="absolute inset-0 w-full h-full">
+              <BoundaryPolygon b={boundaries} />
+              <BoundaryHandlesSvg b={boundaries} />
+            </svg>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3" data-testid="upload-controls">
+            <Button
+              variant="outline" data-testid="upload-reset" onClick={onReset}
+              className="h-10 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] text-xs font-bold"
+            >
+              <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset
+            </Button>
+            <Button
+              variant="outline" data-testid="upload-analyze" onClick={onAnalyze} disabled={analyzing}
+              className="h-10 bg-white border-[var(--tm-blue)] text-[var(--tm-navy)] text-xs font-bold"
+            >
+              {analyzing ? (
+                <span className="inline-flex items-center gap-1">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> {analyzeProgress}%
+                </span>
+              ) : (
+                <>
+                  <Sparkles className="h-3.5 w-3.5 mr-1" /> {analysis ? "Re-analyze" : "Text Analyzer"}
+                </>
+              )}
+            </Button>
+            <Button
+              variant="outline" data-testid="upload-set"
+              onClick={() => toast.success("Boundary saved — pick a mapping mode below to lock & continue")}
+              className="h-10 bg-white border-[var(--tm-orange)] text-[var(--tm-navy)] text-xs font-bold"
+            >
+              <Check className="h-3.5 w-3.5 mr-1" /> Set
+            </Button>
+          </div>
+
+          {analysis && (
+            <div data-testid="upload-analysis-card" className="bg-[var(--tm-surface)] border border-[var(--tm-border)] rounded-md p-3">
+              <div className="text-[10px] uppercase tracking-[0.25em] font-bold text-[var(--tm-orange)] mb-2">
+                Detected text · used as Studio defaults
+              </div>
+              <dl className="grid grid-cols-3 gap-x-3 gap-y-1.5 text-xs">
+                <Stat k="Font" v={FONT_PRESETS_BY_ID[analysis.fontFamily]?.label || analysis.fontFamily} testid="analysis-font" />
+                <Stat k="Size" v={`${analysis.fontSizePt}pt`} testid="analysis-size" />
+                <Stat k="Thickness" v={analysis.weight} testid="analysis-weight" />
+              </dl>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2 pt-2" data-testid="map-mode-cards">
+            <button
+              type="button" data-testid="enter-quick-map" onClick={onQuick}
+              className="text-left bg-white border-2 border-[var(--tm-border)] hover:border-[var(--tm-orange)] rounded-md p-3 transition shadow-sm"
+            >
+              <div className="text-[10px] uppercase tracking-wider text-[var(--tm-blue)] font-bold">Quick</div>
+              <div className="text-sm font-bold">Quick Map</div>
+              <div className="text-[10px] text-[var(--tm-text-soft)] mt-0.5">
+                13 taps · ~90 sec · drops typed values over the scan.
+              </div>
+            </button>
+            <button
+              type="button" data-testid="enter-pro-studio" onClick={onPro}
+              className="relative text-left bg-white border-2 border-[var(--tm-border)] hover:border-[var(--tm-orange)] rounded-md p-3 transition shadow-sm"
+            >
+              <div className="text-[10px] uppercase tracking-wider text-[var(--tm-orange)] font-bold flex items-center gap-1.5">
+                Pro · Studio
+                {proLocked && (
+                  <span data-testid="pro-locked-chip" className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-[var(--tm-orange)] text-white text-[9px]">
+                    <Lock className="h-2.5 w-2.5" /> Studio
+                  </span>
+                )}
+              </div>
+              <div className="text-sm font-bold">Pro Mapping Studio</div>
+              <div className="text-[10px] text-[var(--tm-text-soft)] mt-0.5">
+                Draw left · clean reconstruct right · text controls + grid + logo.
+              </div>
+            </button>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function Stat({ k, v, testid }) {
+  return (
+    <>
+      <dt className="text-[10px] uppercase tracking-wider font-bold text-[var(--tm-text-muted)]">{k}</dt>
+      <dd data-testid={testid} className="col-span-2 text-xs font-bold text-[var(--tm-navy)]">{v}</dd>
+    </>
+  );
+}
+
+function ResumeDialog({ draft, onContinue, onNew }) {
+  return (
+    <div data-testid="resume-dialog" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+      <div className="bg-white border-2 border-[var(--tm-blue)] rounded-md shadow-2xl max-w-sm w-full p-5">
+        <div className="text-[10px] uppercase tracking-[0.3em] font-bold text-[var(--tm-blue)] mb-1">Mapping draft found</div>
+        <div className="text-lg font-black text-[var(--tm-navy)] mb-2">Previous mapping session found.</div>
+        <p className="text-xs text-[var(--tm-text-soft)] mb-4">
+          Saved {draft.savedAt ? new Date(draft.savedAt).toLocaleString() : "earlier"}. Pick up where you left off, or start fresh.
+        </p>
+        <div className="flex gap-2">
+          <button type="button" onClick={onNew} data-testid="resume-new"
+            className="flex-1 h-10 rounded-md bg-white border border-[var(--tm-border)] text-[var(--tm-navy)] font-bold text-sm">
+            New
+          </button>
+          <button type="button" onClick={onContinue} data-testid="resume-continue"
+            className="flex-1 h-10 rounded-md bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold text-sm">
+            Continue
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StudioLockDialog({ onCancel, onReset, onConfirm }) {
+  return (
+    <div data-testid="studio-lock-dialog" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={onCancel}>
+      <div className="bg-white border-2 border-[var(--tm-orange)] rounded-md shadow-2xl max-w-sm w-full p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="text-[10px] uppercase tracking-[0.3em] font-bold text-[var(--tm-orange)] mb-1 inline-flex items-center gap-1">
+          <Lock className="h-3 w-3" /> Final boundary check
+        </div>
+        <div className="text-lg font-black text-[var(--tm-navy)] mb-2">
+          Once you enter Studio, the boundary will be locked.
+        </div>
+        <p className="text-xs text-[var(--tm-text-soft)] mb-4">
+          Confirm that the dotted rectangle frames the printable area exactly. You can't change it from inside the Studio.
+        </p>
+        <div className="flex gap-2">
+          <button type="button" onClick={onReset} data-testid="studio-confirm-reset"
+            className="flex-1 h-10 rounded-md bg-white border border-[var(--tm-border)] text-[var(--tm-navy)] font-bold text-sm inline-flex items-center justify-center gap-1">
+            <RefreshCw className="h-3.5 w-3.5" /> Reset boundary
+          </button>
+          <button type="button" onClick={onConfirm} data-testid="studio-confirm-enter"
+            className="flex-1 h-10 rounded-md bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold text-sm inline-flex items-center justify-center gap-1">
+            <Check className="h-3.5 w-3.5" /> Confirm &amp; enter Studio
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UpgradePrompt({ required, onClose }) {
+  return (
+    <div data-testid="upgrade-prompt" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={onClose}>
+      <div className="bg-white rounded-md shadow-2xl max-w-sm w-full p-5 border border-[var(--tm-border)]" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-[10px] uppercase tracking-[0.3em] font-bold text-[var(--tm-orange)] inline-flex items-center gap-1">
+            <Crown className="h-3 w-3" /> Premium
+          </div>
+          <button onClick={onClose} className="p-1 text-[var(--tm-text-soft)]"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="text-lg font-black text-[var(--tm-navy)] mb-2">
+          {TIER_LABEL[required]} unlocks this feature
+        </div>
+        <p className="text-xs text-[var(--tm-text-soft)] mb-4">
+          {required === "STU"
+            ? "Pro Mapping Studio is a Studio-tier feature. Buy it on the Trip Monitor website using your Website License ID, then redeem the unlock code in the app."
+            : "Quick Mapping is a Quick-tier feature. Buy it on the Trip Monitor website using your Website License ID, then redeem the unlock code in the app."}
+        </p>
+        <button type="button" onClick={onClose} data-testid="upgrade-close"
+          className="w-full h-10 rounded-md bg-[var(--tm-navy)] hover:bg-[var(--tm-navy-deep)] text-white font-bold text-sm">
+          Got it
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Boundary helpers ----------
+
+function BoundaryPolygon({ b }) {
+  return (
+    <polygon
+      data-testid="boundary-rect"
+      points={`${b.tl.x},${b.tl.y} ${b.tr.x},${b.tr.y} ${b.br.x},${b.br.y} ${b.bl.x},${b.bl.y}`}
+      fill="rgba(12,74,183,0.05)" stroke="rgba(12,74,183,0.85)"
+      strokeWidth="0.0035" strokeDasharray="0.01 0.006"
+    />
+  );
+}
+function BoundaryHandlesSvg({ b }) {
+  const corners = [["tl", b.tl], ["tr", b.tr], ["br", b.br], ["bl", b.bl]];
+  const edges = [
+    ["top", { x: (b.tl.x + b.tr.x) / 2, y: (b.tl.y + b.tr.y) / 2 }],
+    ["right", { x: (b.tr.x + b.br.x) / 2, y: (b.tr.y + b.br.y) / 2 }],
+    ["bot", { x: (b.bl.x + b.br.x) / 2, y: (b.bl.y + b.br.y) / 2 }],
+    ["left", { x: (b.tl.x + b.bl.x) / 2, y: (b.tl.y + b.bl.y) / 2 }],
+  ];
+  const r = 0.012;
+  return (
+    <>
+      {corners.map(([k, p]) => (
+        <rect key={k} data-testid={`boundary-handle-${k}`}
+          x={p.x - r} y={p.y - r} width={r * 2} height={r * 2}
+          fill="white" stroke="rgba(12,74,183,0.95)" strokeWidth="0.003" />
+      ))}
+      {edges.map(([k, p]) => (
+        <circle key={k} data-testid={`boundary-edge-${k}`}
+          cx={p.x} cy={p.y} r={r * 0.85}
+          fill="white" stroke="rgba(12,74,183,0.95)" strokeWidth="0.003" />
+      ))}
+    </>
+  );
+}
+function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+function dist(a, b) { return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2); }
+function hitHandle(pt, b, threshold) {
+  const corners = { tl: b.tl, tr: b.tr, br: b.br, bl: b.bl };
+  for (const [k, p] of Object.entries(corners)) if (dist(pt, p) < threshold) return k;
+  const edges = {
+    top: { x: (b.tl.x + b.tr.x) / 2, y: (b.tl.y + b.tr.y) / 2 },
+    right: { x: (b.tr.x + b.br.x) / 2, y: (b.tr.y + b.br.y) / 2 },
+    bot: { x: (b.bl.x + b.br.x) / 2, y: (b.bl.y + b.br.y) / 2 },
+    left: { x: (b.tl.x + b.bl.x) / 2, y: (b.tl.y + b.bl.y) / 2 },
+  };
+  for (const [k, p] of Object.entries(edges)) if (dist(pt, p) < threshold) return k;
+  return null;
+}
+function applyHandle(orig, k, pt) {
+  const next = { ...orig };
+  if (["tl", "tr", "br", "bl"].includes(k)) {
+    next[k] = { x: clamp01(pt.x), y: clamp01(pt.y) };
+    return next;
+  }
+  if (k === "top") {
+    const dy = pt.y - (orig.tl.y + orig.tr.y) / 2;
+    next.tl = { ...orig.tl, y: clamp01(orig.tl.y + dy) };
+    next.tr = { ...orig.tr, y: clamp01(orig.tr.y + dy) };
+  } else if (k === "bot") {
+    const dy = pt.y - (orig.bl.y + orig.br.y) / 2;
+    next.bl = { ...orig.bl, y: clamp01(orig.bl.y + dy) };
+    next.br = { ...orig.br, y: clamp01(orig.br.y + dy) };
+  } else if (k === "left") {
+    const dx = pt.x - (orig.tl.x + orig.bl.x) / 2;
+    next.tl = { ...orig.tl, x: clamp01(orig.tl.x + dx) };
+    next.bl = { ...orig.bl, x: clamp01(orig.bl.x + dx) };
+  } else if (k === "right") {
+    const dx = pt.x - (orig.tr.x + orig.br.x) / 2;
+    next.tr = { ...orig.tr, x: clamp01(orig.tr.x + dx) };
+    next.br = { ...orig.br, x: clamp01(orig.br.x + dx) };
+  }
+  return next;
 }

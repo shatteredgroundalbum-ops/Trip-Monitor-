@@ -109,6 +109,11 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
   const [draft, setDraft] = useState(null);
   const [fieldLabel, setFieldLabel] = useState("");
   const [fontSel, setFontSel] = useState(analysis?.fontFamily || "arial");
+  // Per spec iter 19g: Studio top toolbar exposes Font / Size / Thickness
+  // controls. Defaults come from the upload-screen Text Analyzer (via
+  // the `analysis` prop); user can manually adjust at any time.
+  const [fontSize, setFontSize] = useState(analysis?.fontSizePt || 12);
+  const [fontWeight, setFontWeight] = useState(analysis?.weight || "normal");
   const [dockTab, setDockTab] = useState("inspector");
   const [dockOpen, setDockOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -438,7 +443,7 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
           const text = fieldLabel.trim() || "Bullet text";
           pushElement("bullet", {
             dot: draft.dot, textStart: pt, text,
-            fontFamily: fontSel, fontSize: 13,
+            fontFamily: fontSel, fontSize, fontWeight,
           });
           setFieldLabel("");
         }
@@ -570,7 +575,7 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
       }
       pushElement("text_marker", {
         from: d.start, to: d.end,
-        align: "left", fontFamily: fontSel, fontSize: 12,
+        align: "left", fontFamily: fontSel, fontSize, fontWeight,
         fieldName, value: fieldName,
       });
       setFieldLabel("");
@@ -614,7 +619,7 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
     pushElement("grid", { ...bbox, colLines: cols, rowLines: rows,
       cols: cols.length + 1, rows: rows.length + 1,
       headers: headers || [],
-      fontFamily: fontSel,
+      fontFamily: fontSel, fontSize, fontWeight,
     });
     setGridDraft(null);
   };
@@ -634,7 +639,7 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
       ...bbox, colLines: cols, rowLines: rows,
       cols: colCount, rows: rowCount,
       headers: (headers || []).slice(0, colCount),
-      fontFamily: fontSel,
+      fontFamily: fontSel, fontSize, fontWeight,
     });
     setGridDraft(null);
   };
@@ -847,8 +852,27 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
             data-testid="studio-font-select"
             value={fontSel} onChange={(e) => setFontSel(e.target.value)}
             className="h-8 px-2 text-xs bg-white border border-[var(--tm-border)] rounded-md text-[var(--tm-navy)] font-bold"
+            title="Font family (auto-set by Text Analyzer)"
           >
             {FONT_PRESETS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+          </select>
+          <div className="inline-flex items-center gap-1 h-8 px-1 bg-white border border-[var(--tm-border)] rounded-md" title="Font size (auto-set by Text Analyzer)">
+            <button type="button" data-testid="studio-font-size-dec"
+              onClick={() => setFontSize((v) => Math.max(6, v - 1))}
+              className="w-6 text-xs font-bold text-[var(--tm-navy)] hover:text-[var(--tm-blue)]">−</button>
+            <span data-testid="studio-font-size-value" className="px-1 text-xs font-bold text-[var(--tm-navy)] min-w-[2.5rem] text-center">{fontSize}pt</span>
+            <button type="button" data-testid="studio-font-size-inc"
+              onClick={() => setFontSize((v) => Math.min(72, v + 1))}
+              className="w-6 text-xs font-bold text-[var(--tm-navy)] hover:text-[var(--tm-blue)]">+</button>
+          </div>
+          <select
+            data-testid="studio-font-weight"
+            value={fontWeight} onChange={(e) => setFontWeight(e.target.value)}
+            title="Thickness (auto-set by Text Analyzer)"
+            className="h-8 px-2 text-xs bg-white border border-[var(--tm-border)] rounded-md text-[var(--tm-navy)] font-bold"
+          >
+            <option value="normal">Regular</option>
+            <option value="bold">Bold</option>
           </select>
           {fontSel === "custom" && (
             <Button variant="outline" size="sm"
