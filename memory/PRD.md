@@ -479,13 +479,26 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
   - Premium unlock scaffolding: `verifyPremiumUnlockCode()` parses the signed `payload.signature` format (ECDSA P-256), validates license_id match, checks expiry, then verifies the signature. Public key SPKI is intentionally empty pending website infra — all codes currently fall to `{ok:false, reason:"not_available"}`, keeping the gate closed. Unlock state is persisted in `tm-auth` via `getPremiumState()`.
   - Live-verified: License ID generated as `TM-DFNN-B7AW-UY42` (pattern match ✓), master code shown separately with warning, both copyable, Dashboard header license icon opens the dialog with the matching License ID.
 
+- ✅ **Storage Location Wizard + Export pipeline upgrade (Iter 20)** (2026-02-??):
+  - User confirmed: storage wizard shown during setup AND in dashboard; 90% quota warning; all 4 export formats; use Studio Clean Render for vector reconstruction (already wired).
+  - **NEW lib `/app/frontend/src/lib/storage-location.js`** — destination config persistence (new `tm-storage` IndexedDB), 4 modes (`app`, `documents`, `sdcard`, `custom`), File System Access API wrapper (`pickDestinationFolder`), `writeFileToDestination(filename, blob)` with picker → handle → permission re-grant → fallback to browser-download flow, `getStorageUsage()` via `navigator.storage.estimate()`, `formatBytes`, `QUOTA_WARNING_PCT=90`. FSA support detection so iOS Safari falls back gracefully.
+  - **NEW component `StorageWizard.jsx`** — usage meter (bytes/quota/% bar) + 4 mode cards + FSA-not-supported hint. Reused both during setup and from the Dashboard dialog.
+  - **NEW component `StorageSettingsDialog.jsx`** — Dashboard wrapper around `StorageWizard`. Opened from a HardDrive icon in the Dashboard header (`[data-testid=open-storage-dialog]`). Header icon turns orange when usage > 90%.
+  - **NEW lib `/app/frontend/src/lib/export-pipeline.js`** — `buildTripCsvBlob(session, profile)` (per-stop rows + metadata + expenses), `buildTripBackupBlob({session, profile, template})` (full structured JSON, sanitizes large data-URLs).
+  - **`SetupAccessCode.jsx`** — added 5th step `storage` after the master-code ack. Step bar updated to 5 dots; all overlines say "Step X of 5". Master step's "Finish setup" button now reads "Continue" → routes to storage step → real "Finish setup" lives there.
+  - **`Dashboard.jsx`** — header gains HardDrive button + storage-quota-warning banner (orange-on-orange) when usage ≥ 90%, wired to open the storage dialog.
+  - **`FinishExportDialog.jsx`** — adds 2 new export options (`export-csv`, `export-backup`) for a total of 6 (JPEG, PDF, CSV, JSON-backup, Print, Email). Default ON: JPEG + PDF. Default OFF: CSV + Backup + Print + Email. Adds `export-destination-chip` showing where files will land (hidden when only Email selected). Refactored `downloadBlob` to call `writeFileToDestination` so all four file formats respect the chosen folder destination — falls back to browser download when FSA unavailable / handle stale / user denies.
+  - Privacy preserved: `total_trip_miles` + `segment_miles` stay out of JPEG/PDF (PaperSheet). They DO appear in CSV/JSON because that's the driver's own backup, not an exported document.
+  - Testing: Iter 20 → **15/15 PASS** via testing_agent_v3_fork. 11/11 spec assertions verified. Zero defects in Iter 20 scope.
+
 ## Prioritized Backlog
 
 ### P0 — next iteration
-- **Storage model wizard (deferred)**: Add setup step 5 "How do you want your trip data saved?" with 4 options: in-app only / device Documents folder / SD-USB / user-picked folder (File System Access API). Storage-cap warnings + "Archive to Documents" flow when the cap is approached.
-- **Exports**: Image copy, structured backup JSON, CSV/report (PDF already exists).
+- **Bulk export from History page** — ZIP of selected finished trips (CSV + JSON for each).
+- **Auto-archive prompt** — when storage > 90%, offer to archive oldest trips (.json) to the chosen destination and clear them locally.
 
 ### P1
+- **Re-import from JSON backup** — completing the round-trip so backups are restorable, not just exportable.
 - Pro Mapping Studio polish (Delivery 2)
    - SPLIT FILE: `ProMappingStudio.jsx` is now ~1,343 LoC. Extract
      `SelectionFrame` + `GridEditOverlay` + `MarkupOverlay` +

@@ -231,14 +231,16 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
         </DialogHeader>
 
         <div className="space-y-3 mt-2">
-          <div data-testid="export-destination-chip" className="flex items-center justify-between text-[11px] uppercase tracking-wider font-bold bg-[var(--tm-surface)] border border-[var(--tm-border)] rounded-md px-3 py-2">
-            <span className="text-[var(--tm-text-muted)]">Saving to</span>
-            <span className="text-[var(--tm-navy)] truncate ml-2 max-w-[60%]" title={destination.folder_name || "In-app"}>
-              {destination.mode === "app"
-                ? "Browser downloads / in-app"
-                : (destination.folder_name || destination.mode)}
-            </span>
-          </div>
+          {(doJpeg || doPdf || doCsv || doBackup || doPrint) && (
+            <div data-testid="export-destination-chip" className="flex items-center justify-between text-[11px] uppercase tracking-wider font-bold bg-[var(--tm-surface)] border border-[var(--tm-border)] rounded-md px-3 py-2">
+              <span className="text-[var(--tm-text-muted)]">Saving to</span>
+              <span className="text-[var(--tm-navy)] truncate ml-2 max-w-[60%]" title={destination.folder_name || "In-app"}>
+                {destination.mode === "app"
+                  ? "Browser downloads / in-app"
+                  : (destination.folder_name || destination.mode)}
+              </span>
+            </div>
+          )}
           <Option icon={<Image className="h-5 w-5" />} label="Save as JPEG"
             description="Image of the trip sheet"
             checked={doJpeg} onCheckedChange={setDoJpeg} testId="export-jpeg" disabled={busy} />
