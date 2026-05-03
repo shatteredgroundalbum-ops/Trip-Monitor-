@@ -9,11 +9,15 @@ import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { api } from "../../lib/api";
-import { Image, FileText, Mail, Loader2, Printer } from "lucide-react";
+import { Image, FileText, Mail, Loader2, Printer, Table as TableIcon, Database } from "lucide-react";
+import { writeFileToDestination, getDestinationConfig } from "../../lib/storage-location";
+import { buildTripCsvBlob, buildTripBackupBlob, safeBaseName } from "../../lib/export-pipeline";
 
 export default function FinishExportDialog({ open, onOpenChange, session, profile, template }) {
   const [doJpeg, setDoJpeg] = useState(true);
   const [doPdf, setDoPdf] = useState(true);
+  const [doCsv, setDoCsv] = useState(false);
+  const [doBackup, setDoBackup] = useState(false);
   const [doPrint, setDoPrint] = useState(false);
   const [doEmail, setDoEmail] = useState(false);
   const [recipient, setRecipient] = useState(profile?.dispatcher_email || "");
@@ -21,9 +25,15 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
   const [busyStep, setBusyStep] = useState("");
   const [progress, setProgress] = useState(0);
   const [recapSessionId, setRecapSessionId] = useState(null);
+  const [destination, setDestination] = useState({ mode: "app", folder_name: "" });
   const paperRef = useRef(null);
 
-  const baseName = `TripSheet_${session.order_number || "NO-ORDER"}_${(profile?.full_name || "driver").replace(/\s+/g, "_")}`;
+  const baseName = safeBaseName(session, profile);
+
+  React.useEffect(() => {
+    if (!open) return;
+    getDestinationConfig().then(setDestination);
+  }, [open]);
 
   /** Animate progress smoothly toward target over duration ms. Returns when done. */
   const animateTo = (start, end, durationMs) =>
@@ -44,11 +54,8 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
     return await html2canvas(el, { backgroundColor: "#FFFFFF", scale: 2, useCORS: true });
   };
 
-  const downloadBlob = (blob, filename) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = filename; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const downloadBlob = async (blob, filename) => {
+    return await writeFileToDestination(filename, blob);
   };
 
   /**
@@ -65,15 +72,15 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
   };
 
   const exportJpegPhase = (fromPct, toPct) =>
-    runPhase("Saving JPEG to your device...", async () => {
+    runPhase("Saving JPEG...", async () => {
       const canvas = await captureCanvas();
       const blob = await new Promise((res) => canvas.toBlob((b) => res(b), "image/jpeg", 0.95));
-      if (blob) downloadBlob(blob, `${baseName}.jpg`);
+      if (blob) await downloadBlob(blob, `${baseName}.jpg`);
       return blob;
     }, fromPct, toPct, 1600);
 
   const exportPdfPhase = (fromPct, toPct) =>
-    runPhase("Saving PDF to your device...", async () => {
+    runPhase("Saving PDF...", async () => {
       const canvas = await captureCanvas();
       const imgData = canvas.toDataURL("image/jpeg", 0.95);
       const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "letter" });
@@ -84,8 +91,21 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
       let h = w / ratio;
       if (h > pageH - 40) { h = pageH - 40; w = h * ratio; }
       pdf.addImage(imgData, "JPEG", (pageW - w) / 2, 20, w, h);
-      pdf.save(`${baseName}.pdf`);
+      const blob = pdf.output("blob");
+      await downloadBlob(blob, `${baseName}.pdf`);
     }, fromPct, toPct, 1900);
+
+  const exportCsvPhase = (fromPct, toPct) =>
+    runPhase("Saving CSV...", async () => {
+      const blob = buildTripCsvBlob(session, profile);
+      await downloadBlob(blob, `${baseName}.csv`);
+    }, fromPct, toPct, 800);
+
+  const exportBackupPhase = (fromPct, toPct) =>
+    runPhase("Saving backup...", async () => {
+      const blob = buildTripBackupBlob({ session, profile, template });
+      await downloadBlob(blob, `${baseName}.backup.json`);
+    }, fromPct, toPct, 800);
 
   /** Open the OS print dialog with the paper sheet rendered as a printable page. */
   const printPhase = (fromPct, toPct) =>
@@ -136,7 +156,7 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
   };
 
   const handleFinish = async () => {
-    if (!doJpeg && !doPdf && !doPrint && !doEmail) {
+    if (!doJpeg && !doPdf && !doCsv && !doBackup && !doPrint && !doEmail) {
       toast.error("Pick at least one export option");
       return;
     }
@@ -152,6 +172,8 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
       const phases = [];
       if (doJpeg) phases.push("jpeg");
       if (doPdf) phases.push("pdf");
+      if (doCsv) phases.push("csv");
+      if (doBackup) phases.push("backup");
       if (doPrint) phases.push("print");
       if (doEmail) phases.push("email");
       // Reserve last 5% for the "Finishing trip..." finalization animation
@@ -162,6 +184,8 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
         const to = cursor + slice;
         if (phase === "jpeg") await exportJpegPhase(from, to);
         else if (phase === "pdf") await exportPdfPhase(from, to);
+        else if (phase === "csv") await exportCsvPhase(from, to);
+        else if (phase === "backup") await exportBackupPhase(from, to);
         else if (phase === "print") await printPhase(from, to);
         else if (phase === "email") {
           await runPhase("Opening mail app...", async () => {
@@ -207,12 +231,26 @@ export default function FinishExportDialog({ open, onOpenChange, session, profil
         </DialogHeader>
 
         <div className="space-y-3 mt-2">
+          <div data-testid="export-destination-chip" className="flex items-center justify-between text-[11px] uppercase tracking-wider font-bold bg-[var(--tm-surface)] border border-[var(--tm-border)] rounded-md px-3 py-2">
+            <span className="text-[var(--tm-text-muted)]">Saving to</span>
+            <span className="text-[var(--tm-navy)] truncate ml-2 max-w-[60%]" title={destination.folder_name || "In-app"}>
+              {destination.mode === "app"
+                ? "Browser downloads / in-app"
+                : (destination.folder_name || destination.mode)}
+            </span>
+          </div>
           <Option icon={<Image className="h-5 w-5" />} label="Save as JPEG"
-            description="Downloads the trip sheet image to your device"
+            description="Image of the trip sheet"
             checked={doJpeg} onCheckedChange={setDoJpeg} testId="export-jpeg" disabled={busy} />
           <Option icon={<FileText className="h-5 w-5" />} label="Export as PDF"
             description="Letter-size PDF identical to the paper form"
             checked={doPdf} onCheckedChange={setDoPdf} testId="export-pdf" disabled={busy} />
+          <Option icon={<TableIcon className="h-5 w-5" />} label="Save as CSV"
+            description="Spreadsheet with one row per stop + trip metadata"
+            checked={doCsv} onCheckedChange={setDoCsv} testId="export-csv" disabled={busy} />
+          <Option icon={<Database className="h-5 w-5" />} label="Structured backup (JSON)"
+            description="Full trip + template — re-importable by future versions"
+            checked={doBackup} onCheckedChange={setDoBackup} testId="export-backup" disabled={busy} />
           <Option icon={<Printer className="h-5 w-5" />} label="Print"
             description="Opens your device&apos;s print dialog (network or attached printer)"
             checked={doPrint} onCheckedChange={setDoPrint} testId="export-print" disabled={busy} />

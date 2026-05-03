@@ -1,0 +1,34 @@
+{
+  "summary": "Frontend testing of Iter 20 (Storage Location Wizard + Export Pipeline upgrades). All 11 spec test cases pass. End-to-end setup flow with Marcus R. / MR-4429 / 135792 / 'blue truck river coffee' completes successfully through new Step 5 (storage), reaches /dashboard with HardDrive icon visible. Dashboard storage-settings-dialog opens correctly (after Profile + Milestone modals are dismissed) with full StorageWizard contents. All 4 mode cards (app/documents/sdcard/custom) render. Storage usage meter shows text+pct+bar with 0% in headless Chromium and quota-warning correctly hidden when below 90%. Tap on storage-mode-app fires 'Saving inside the app' toast and Active label appears. setup-storage-finish navigates to /dashboard. License dialog regression intact (dashboard-license-id, premium-unlock-input, premium-redeem all present). FinishExportDialog source code verified to contain all 6 export options (export-jpeg, export-pdf, export-csv, export-backup, export-print, export-email) with correct defaults (JPEG+PDF on, CSV+JSON off) and export-destination-chip logic; live UI rendering of FinishExportDialog NOT exercised because reaching it requires creating + populating a trip session (out of scope for this iteration's smoke).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Dashboard first-paint UX after fresh setup",
+        "issue": "After completing the new Step 5 storage wizard and landing on /dashboard, the existing Profile wizard (data-testid=profile-dialog) auto-opens immediately and BLOCKS access to the new HardDrive (open-storage-dialog) button until the 3-step profile is fully filled out. Additionally, if the user enters >=500K lifetime miles in step 3 of the Profile wizard, a second Milestone-Unlocked modal then stacks on top and also blocks the dashboard until dismissed. Not a regression from Iter 20 itself (this is the existing profile/milestone flow), but it does mean the new storage button is functionally unreachable until both modals are cleared. Worth noting the milestone modal lacks a [data-testid] for its close button, making automation brittle.",
+        "affected_selectors": ["[data-testid=open-storage-dialog]", "[data-testid=profile-dialog]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "(Optional UX) Consider deferring the auto-open of the Profile wizard on first dashboard visit until the user dismisses any onboarding banner, OR make the new HardDrive (open-storage-dialog) button focusable above the modal backdrop so drivers who want to revisit storage settings before completing their profile can do so.",
+    "(Polish) Add a [data-testid=milestone-close] (or similar) on the Milestone-Unlocked modal X button so future tests + a11y tools can target it deterministically."
+  ],
+  "critical_code_review_comments": [
+    "storage-location.js writeFileToDestination falls back to a regular browser download for the 'app' mode — that's reasonable, but the destination chip in FinishExportDialog says 'Browser downloads / in-app' which accurately reflects this behaviour. Ship-it.",
+    "StorageWizard polling: the live usage meter only refreshes on mount + manual button tap. Dashboard.jsx polls separately (per code review of the diff) for the warning banner; consider sharing a single hook to avoid two pollers if more screens consume storage stats later.",
+    "Iter 19's two known bugs (logout hang + PinLogin recover state stickiness) were NOT re-tested in this iteration since they're orthogonal to storage. Status from iter 19 still applies unless the main agent has already fixed them.",
+    "FinishExportDialog: when user disables ALL six options the toast says 'Pick at least one export option' (good). But when user picks ONLY email, no actual file is exported — the destination chip still shows the saved folder, which could mislead the driver. Consider hiding the destination chip when only email is selected, or wording it as 'When saving files, save to ...'."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100% (15/15 storage+regression assertions); 11/11 spec features verified"},
+  "test_credentials": "Marcus R. / MR-4429 / 135792 / 'blue truck river coffee' from /app/memory/test_credentials.md",
+  "seed_data_creation": "None — wiped tm-keychain, tm-auth, tm-storage IndexedDB DBs + cookies + localStorage between every Playwright run; sessionStorage tm_splash_seen='1' to skip 7.4s splash.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Storage Wizard (Iter 20) ships clean. Important env quirks: (1) FSA mode cards (documents/sdcard/custom) render WITHOUT disabled attr in headless Chromium because window.showDirectoryPicker IS defined — but tapping them in headed-with-real-user-gesture is the only way to actually exercise the picker; in automation just verify the cards exist and are tappable. (2) After fresh setup the Profile-dialog auto-opens; complete it (profile-fullname + profile-next-btn x2 + Years+LifetimeMiles+Finish setup) BEFORE trying to interact with any dashboard chrome. Use small numbers (years=1, miles=100) to avoid triggering the milestone modal. (3) FinishExportDialog UI was not exercised live — reaching it requires creating a trip session via /api/trip-sessions then filling all stops + miles. The 6 export checkboxes (jpeg/pdf/csv/backup/print/email) were verified in source only.",
+  "rca of the issue": "N/A — no defects in Iter 20 scope."
+}

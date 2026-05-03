@@ -12,7 +12,7 @@ import WeeklyTrend from "../components/app/WeeklyTrend";
 import InstallPrompt from "../components/app/InstallPrompt";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
-import { LogOut, UserCog, CheckCircle2, Save, Eye, History, Truck, Gauge, Route, ListChecks, ArrowRight, Plus, FileText, Fingerprint, IdCard } from "lucide-react";
+import { LogOut, UserCog, CheckCircle2, Save, Eye, History, Truck, Gauge, Route, ListChecks, ArrowRight, Plus, FileText, Fingerprint, IdCard, HardDrive, AlertTriangle } from "lucide-react";
 import PaperSheet from "../components/app/PaperSheet";
 import DynamicPaperSheet from "../components/app/DynamicPaperSheet";
 import { ensureDefaultTemplate, getActiveTemplate } from "../lib/template-store";
@@ -22,6 +22,8 @@ import {
   enrollFingerprint, disableFingerprint, isFingerprintEnrolled, isFingerprintSupported,
 } from "../lib/local-auth";
 import LicensePremiumDialog from "../components/app/LicensePremiumDialog";
+import StorageSettingsDialog from "../components/app/StorageSettingsDialog";
+import { getStorageUsage, isAboveQuotaWarning, QUOTA_WARNING_PCT } from "../lib/storage-location";
 import { toast } from "sonner";
 
 export default function Dashboard() {
@@ -36,6 +38,8 @@ export default function Dashboard() {
   const [template, setTemplate] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
   const [showLicense, setShowLicense] = useState(false);
+  const [showStorage, setShowStorage] = useState(false);
+  const [storageUsage, setStorageUsage] = useState({ usage: 0, quota: 0, percent: 0, supported: false });
   const [showWizard, setShowWizard] = useState(false);
   const [showContinue, setShowContinue] = useState(false);
   const [showFinish, setShowFinish] = useState(false);
@@ -55,9 +59,11 @@ export default function Dashboard() {
       await ensureDefaultTemplate();
       const active = await getActiveTemplate();
       if (!cancelled) setTemplate(active);
+      const u = await getStorageUsage();
+      if (!cancelled) setStorageUsage(u);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [showStorage]);
 
   const refreshStats = async () => {
     try {
@@ -170,6 +176,19 @@ export default function Dashboard() {
             >
               <IdCard className="h-4 w-4" />
             </Button>
+            <Button
+              data-testid="open-storage-dialog"
+              variant="outline" size="sm"
+              onClick={() => setShowStorage(true)}
+              title="Storage location"
+              className={`h-9 border-[var(--tm-border)] hover:bg-[var(--tm-surface)] rounded-md ${
+                isAboveQuotaWarning(storageUsage.percent)
+                  ? "bg-[var(--tm-orange)] text-white border-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] hover:text-white"
+                  : "bg-white text-[var(--tm-navy)]"
+              }`}
+            >
+              <HardDrive className="h-4 w-4" />
+            </Button>
             <FingerprintToggle />
             <Button data-testid="logout-btn" variant="outline" size="sm"
               onClick={logout}
@@ -198,6 +217,24 @@ export default function Dashboard() {
             {session ? "You have an active trip in progress." : "Ready to roll? Start a new trip below."}
           </p>
         </div>
+
+        {isAboveQuotaWarning(storageUsage.percent) && (
+          <div
+            data-testid="dashboard-storage-warning"
+            onClick={() => setShowStorage(true)}
+            className="mb-4 cursor-pointer flex items-start gap-3 p-3 rounded-md bg-[var(--tm-orange)] bg-opacity-10 border-2 border-[var(--tm-orange)] hover:bg-opacity-20 transition"
+          >
+            <AlertTriangle className="h-4 w-4 text-[var(--tm-orange)] shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-bold text-[var(--tm-orange)] uppercase tracking-wider">
+                Storage at {storageUsage.percent}% — past {QUOTA_WARNING_PCT}% threshold
+              </div>
+              <div className="text-[11px] text-[var(--tm-text-soft)] mt-0.5">
+                Tap to pick a folder or SD card destination so old templates don&apos;t get evicted.
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Stat cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6" data-testid="stats-grid">
@@ -363,6 +400,8 @@ export default function Dashboard() {
         }} />
 
       <LicensePremiumDialog open={showLicense} onClose={() => setShowLicense(false)} />
+
+      <StorageSettingsDialog open={showStorage} onClose={() => setShowStorage(false)} />
 
       {profile && (
         <SessionWizard open={showWizard} profile={profile}

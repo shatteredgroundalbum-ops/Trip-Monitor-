@@ -13,6 +13,7 @@ import {
   isValidDriverId, isValidDisplayUsername, formatMasterCode, AUTH_CONSTANTS,
 } from "../lib/local-auth";
 import { useAuth } from "../lib/auth";
+import StorageWizard from "../components/app/StorageWizard";
 
 /**
  * Onboarding wizard for first-run device setup.
@@ -22,7 +23,7 @@ import { useAuth } from "../lib/auth";
  *   2. PIN              — 6 digits (twice)
  *   3. Recovery phrase  — >=4 words, entered twice, NEVER shown after save
  *   4. Emergency code   — app-generated 24-char master code, shown ONCE
- *   5. (defer)          — storage location wizard (next iteration)
+ *   5. Storage location — pick where exports + backups land
  */
 export default function SetupAccessCode() {
   const navigate = useNavigate();
@@ -98,6 +99,9 @@ export default function SetupAccessCode() {
   };
   const onFinish = async () => {
     if (!masterAcked) { toast.error("Tick the box to confirm you've saved the code"); return; }
+    setStep("storage");
+  };
+  const onCompleteSetup = async () => {
     await unlockDevice();
     toast.success("Device setup complete");
     navigate("/dashboard", { replace: true });
@@ -135,7 +139,7 @@ export default function SetupAccessCode() {
 
       <main className="flex-1 flex flex-col p-7 md:p-12 max-w-md w-full mx-auto">
         {step === "identity" && (
-          <Section testid="setup-step-identity" icon={<UserIcon className="h-5 w-5" />} overline="Step 1 of 4" title="Who are you?" blurb="This is how you'll show up on your trip sheets. Pick names you'll remember.">
+          <Section testid="setup-step-identity" icon={<UserIcon className="h-5 w-5" />} overline="Step 1 of 5" title="Who are you?" blurb="This is how you'll show up on your trip sheets. Pick names you'll remember.">
             <Field label="Display name" testid="setup-username-input"
               value={displayUsername} onChange={setDisplayUsername}
               placeholder="e.g. Marcus R." maxLength={40} />
@@ -148,13 +152,13 @@ export default function SetupAccessCode() {
         )}
 
         {step === "pin" && (
-          <Section testid="setup-step-pin" icon={<KeyRound className="h-5 w-5" />} overline="Step 2 of 4" title="Set your 6-digit PIN." blurb="You'll tap this every time you open the app.">
+          <Section testid="setup-step-pin" icon={<KeyRound className="h-5 w-5" />} overline="Step 2 of 5" title="Set your 6-digit PIN." blurb="You'll tap this every time you open the app.">
             <PinField value={pin} onChange={setPin} autoFocus testid="setup-pin" />
             <Primary testid="setup-pin-continue" disabled={pin.length !== 6} onClick={onPinNext}>Continue</Primary>
           </Section>
         )}
         {step === "pin-confirm" && (
-          <Section testid="setup-step-pin-confirm" icon={<KeyRound className="h-5 w-5" />} overline="Step 2 of 4" title="Type your PIN again." blurb="Just to be sure.">
+          <Section testid="setup-step-pin-confirm" icon={<KeyRound className="h-5 w-5" />} overline="Step 2 of 5" title="Type your PIN again." blurb="Just to be sure.">
             <PinField value={pinConfirm} onChange={setPinConfirm} autoFocus testid="setup-pin-confirm" />
             <TwoButtons
               leftTestid="setup-pin-back" leftLabel="Back" onLeft={() => { setPinConfirm(""); setStep("pin"); }}
@@ -165,7 +169,7 @@ export default function SetupAccessCode() {
         )}
 
         {step === "phrase" && (
-          <Section testid="setup-step-phrase" icon={<MessageSquareQuote className="h-5 w-5" />} overline="Step 3 of 4" title="Pick a secret recovery phrase." blurb={`At least ${AUTH_CONSTANTS.MIN_PHRASE_WORDS} words. You'll use it if you forget your PIN. We will NEVER show it back to you after you set it — write it somewhere safe.`}>
+          <Section testid="setup-step-phrase" icon={<MessageSquareQuote className="h-5 w-5" />} overline="Step 3 of 5" title="Pick a secret recovery phrase." blurb={`At least ${AUTH_CONSTANTS.MIN_PHRASE_WORDS} words. You'll use it if you forget your PIN. We will NEVER show it back to you after you set it — write it somewhere safe.`}>
             <PhraseField value={phrase} onChange={setPhrase} testid="setup-phrase-input"
               placeholder="e.g. blue truck river coffee" />
             <PhraseMeter value={phrase} />
@@ -173,7 +177,7 @@ export default function SetupAccessCode() {
           </Section>
         )}
         {step === "phrase-confirm" && (
-          <Section testid="setup-step-phrase-confirm" icon={<MessageSquareQuote className="h-5 w-5" />} overline="Step 3 of 4" title="Type your phrase again." blurb="Must match exactly (case and extra spaces don't count).">
+          <Section testid="setup-step-phrase-confirm" icon={<MessageSquareQuote className="h-5 w-5" />} overline="Step 3 of 5" title="Type your phrase again." blurb="Must match exactly (case and extra spaces don't count).">
             <PhraseField value={phraseConfirm} onChange={setPhraseConfirm} testid="setup-phrase-confirm-input"
               placeholder="Type the same phrase" />
             <TwoButtons
@@ -188,7 +192,7 @@ export default function SetupAccessCode() {
           <section data-testid="setup-step-master" className="space-y-4">
             <div className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.32em] font-bold">
               <span className="h-px w-8 bg-[var(--tm-blue)]" aria-hidden />
-              <span className="text-[var(--tm-orange)]">Step 4 of 4</span>
+              <span className="text-[var(--tm-orange)]">Step 4 of 5</span>
               <span className="text-[var(--tm-text-muted)]">·</span>
               <span className="text-[var(--tm-blue)]">Your codes</span>
             </div>
@@ -263,6 +267,21 @@ export default function SetupAccessCode() {
               </label>
             </div>
             <Primary testid="setup-finalise" disabled={!masterAcked} onClick={onFinish}>
+              Continue
+            </Primary>
+          </section>
+        )}
+
+        {step === "storage" && (
+          <section data-testid="setup-step-storage" className="space-y-4">
+            <div className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.32em] font-bold">
+              <span className="h-px w-8 bg-[var(--tm-blue)]" aria-hidden />
+              <span className="text-[var(--tm-orange)]">Step 5 of 5</span>
+              <span className="text-[var(--tm-text-muted)]">·</span>
+              <span className="text-[var(--tm-blue)]">Storage</span>
+            </div>
+            <StorageWizard />
+            <Primary testid="setup-storage-finish" disabled={false} onClick={onCompleteSetup}>
               <Lock className="h-4 w-4 mr-1" /> Finish setup
             </Primary>
           </section>
@@ -286,16 +305,17 @@ function handleBack({ step, setStep, navigate }) {
     identity: null, pin: "identity", "pin-confirm": "pin",
     phrase: "pin-confirm", "phrase-confirm": "phrase",
     master: null, // no back from master — setup already committed
+    storage: "master",
   }[step];
   if (prev === null) navigate("/");
   else if (prev) setStep(prev);
 }
 
 function StepBar({ step }) {
-  const order = ["identity", "pin", "phrase", "master"];
+  const order = ["identity", "pin", "phrase", "master", "storage"];
   const idx = order.findIndex((o) => step.startsWith(o));
   return (
-    <div className="flex gap-1.5" data-testid="setup-step-bar" aria-label={`Step ${idx + 1} of 4`}>
+    <div className="flex gap-1.5" data-testid="setup-step-bar" aria-label={`Step ${idx + 1} of 5`}>
       {order.map((o, i) => (
         <div key={o} className={`h-1.5 w-6 rounded-full transition ${i <= idx ? "bg-[var(--tm-blue)]" : "bg-[var(--tm-border)]"}`} />
       ))}
