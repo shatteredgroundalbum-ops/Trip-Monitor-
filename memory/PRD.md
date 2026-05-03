@@ -497,6 +497,7 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
   - **`Dashboard.jsx`**: header `[data-testid=open-license-dialog]` (IdCard icon) is hidden when flag is off; `<LicensePremiumDialog />` is not mounted at all.
   - **`SetupAccessCode.jsx`** (Step 4): the Website License ID card + copy button + "log into the website" copy is hidden behind the flag. The page heading switches from "Two codes, two jobs." to "Save this code." and the overline reads "Emergency code" instead of "Your codes". The master-code warning copy switches from "Never enter this into the website or send it to support" to "Never share it with anyone — not even support".
   - License IDs are still generated + persisted in `tm-keychain` so re-enabling the flag reveals existing drivers' IDs without forcing a fresh setup.
+  - **`getFeatureTier()` pre-release override** — while `WEBSITE_FEATURES_ENABLED = false`, returns `"STU"` unconditionally. Because there's no way to legitimately purchase premium without the website, drivers would otherwise be stranded on FREE and locked out of Quick Map AND Pro Mapping Studio. Flipping the flag back to `true` reverts to honest tier accounting (FREE → must buy QCK/STU). All three gating sites (`handlePickScan`, `onEnterQuickMap`, `onEnterProStudio`) and `proLocked`/`scanLocked` UI flags consequently resolve to unlocked.
   - Live-verified: `open-license-dialog` count = 0, `setup-license-id` count = 0, `setup-master-code` still renders, all other flows intact.
 
 ## Prioritized Backlog

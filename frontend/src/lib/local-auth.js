@@ -25,6 +25,8 @@
  *                       (hash-only vault)
  */
 
+import { WEBSITE_FEATURES_ENABLED } from "./feature-flags";
+
 const KEYCHAIN_DB = "tm-keychain";
 const AUTH_DB = "tm-auth";
 const KEYCHAIN_STORE = "secrets";
@@ -609,8 +611,16 @@ export async function getPremiumState() {
  * Returns the user's current FEATURE tier ("FREE" | "QCK" | "STU"),
  * collapsing expired premium back to FREE. Use this — not the raw
  * premium state — for UI gating.
+ *
+ * Pre-release override: while the public website + premium signing
+ * infra is disabled (`WEBSITE_FEATURES_ENABLED = false`), there is no
+ * way for a driver to legitimately purchase premium, so we promote
+ * everyone to "STU" (full unlock) to avoid leaving Quick Map and Pro
+ * Mapping Studio locked behind a paywall that doesn't exist yet.
+ * Flipping the flag to true reverts to honest tier accounting.
  */
 export async function getFeatureTier() {
+  if (!WEBSITE_FEATURES_ENABLED) return "STU";
   const s = await getPremiumState();
   return s.active ? (s.tier || "STU") : "FREE";
 }
