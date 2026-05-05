@@ -418,13 +418,17 @@ function TwoButtons({ leftTestid, leftLabel, onLeft, rightTestid, rightLabel, on
 }
 
 export function PinField({ value, onChange, autoFocus, testid }) {
+  const inputRef = React.useRef(null);
   const handle = (e) => {
     const v = e.target.value.replace(/\D/g, "").slice(0, 6);
     onChange(v);
   };
   return (
-    <div className="flex flex-col items-center gap-4">
-      <div className="flex gap-2" aria-hidden>
+    <div className="flex justify-center">
+      <div
+        className="relative flex gap-2 cursor-text"
+        onClick={() => inputRef.current?.focus()}
+      >
         {Array.from({ length: 6 }).map((_, i) => (
           <div
             key={i}
@@ -432,26 +436,29 @@ export function PinField({ value, onChange, autoFocus, testid }) {
             className={`h-12 w-10 rounded-md border-2 flex items-center justify-center font-black text-xl transition ${
               i < value.length
                 ? "bg-[var(--tm-navy)] text-white border-[var(--tm-navy)]"
-                : "bg-white text-[var(--tm-text-muted)] border-[var(--tm-border)]"
+                : i === value.length
+                ? "bg-white border-[var(--tm-blue)]"
+                : "bg-white border-[var(--tm-border)]"
             }`}
           >
             {i < value.length ? "•" : ""}
           </div>
         ))}
+        <input
+          ref={inputRef}
+          type="tel"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          pattern="\d{6}"
+          maxLength={6}
+          autoFocus={autoFocus}
+          value={value}
+          onChange={handle}
+          data-testid={`${testid}-input`}
+          className="absolute inset-0 opacity-0 cursor-text"
+          style={{ caretColor: "transparent" }}
+        />
       </div>
-      <input
-        type="tel"
-        inputMode="numeric"
-        autoComplete="one-time-code"
-        pattern="\d{6}"
-        maxLength={6}
-        autoFocus={autoFocus}
-        value={value}
-        onChange={handle}
-        data-testid={`${testid}-input`}
-        className="text-center text-2xl font-mono tracking-[0.35em] bg-white border-2 border-[var(--tm-border)] rounded-md h-12 w-64 focus:border-[var(--tm-blue)] outline-none"
-        placeholder="••••••"
-      />
     </div>
   );
 }
