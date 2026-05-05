@@ -784,7 +784,7 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
               tool,
               fontWeight,
               snapToGrid: false,
-              hasSelection: !!(selected || activeIdx >= 0),
+              hasSelection: !!selectedEl,
             },
             handlers: {
               setTool: (id) => { setTool(id); setDraft(null); setSelectedId(null); setGridDraft(null); },
