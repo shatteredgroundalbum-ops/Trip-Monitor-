@@ -16,6 +16,7 @@ import {
 import { saveTemplate, setActiveTemplateId } from "../../lib/template-store";
 import ProMappingEditor from "./ProMappingEditor";
 import CustomFontBuilder, { CustomFontText } from "./CustomFontBuilder";
+import StudioRibbon from "./StudioRibbon";
 
 const TOOL_ICON = {
   select: MousePointer2,
@@ -772,31 +773,26 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
             Continue
           </Button>
         </div>
-        <div className="px-3 pb-2 flex items-center gap-1 overflow-x-auto" data-testid="studio-toolbar">
-          {STUDIO_TOOLS.map((t) => {
-            const Icon = TOOL_ICON[t.id] || Square;
-            const active = tool === t.id;
-            // 'select' and 'pan' always available. All other tools
-            // require 4 boundary anchors (set in the pre-Studio
-            // Boundary phase, so this guard is normally a no-op).
-            const disabled = !["select", "pan"].includes(t.id) && boundaryCount < 4;
-            return (
-              <button
-                key={t.id} type="button"
-                data-testid={`studio-tool-${t.id}`}
-                onClick={() => { setTool(t.id); setDraft(null); setSelectedId(null); setGridDraft(null); }}
-                disabled={disabled}
-                title={t.blurb + (disabled ? " · place all 4 anchors first" : "")}
-                className={`shrink-0 h-9 px-2.5 rounded-md text-[11px] font-bold uppercase tracking-wider inline-flex items-center gap-1 border ${
-                  active ? "bg-[var(--tm-orange)] text-white border-[var(--tm-orange)]"
-                  : disabled ? "bg-[var(--tm-surface)] text-[var(--tm-text-muted)] border-[var(--tm-border)] opacity-40"
-                  : "bg-white text-[var(--tm-navy)] border-[var(--tm-border)] hover:bg-[var(--tm-surface)]"}`}
-              >
-                <Icon className="h-3 w-3" /> {t.label}
-              </button>
-            );
-          })}
-        </div>
+        {/* Secondary toolbar — per-tab tool groups (HOME / GRID / TEXT /
+            ASSETS / INSPECTOR / CUSTOM TRACE). Replaces the legacy flat
+            tool palette. Many advanced tools are scaffolded; wiring is
+            incremental. */}
+        <StudioRibbon
+          activeTab={activeRibbonTab}
+          ctx={{
+            state: {
+              tool,
+              fontWeight,
+              snapToGrid: false,
+              hasSelection: !!(selected || activeIdx >= 0),
+            },
+            handlers: {
+              setTool: (id) => { setTool(id); setDraft(null); setSelectedId(null); setGridDraft(null); },
+              setFontWeight,
+              removeSelected: deleteSelected,
+            },
+          }}
+        />
         <div className="px-3 pb-2 flex items-center gap-2 flex-wrap">
           <input
             data-testid="studio-field-input"
