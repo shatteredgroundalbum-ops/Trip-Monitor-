@@ -4,8 +4,8 @@ import { toast } from "sonner";
 import {
   Crosshair, Minus, Square, Circle as CircleIcon, Triangle, Spline, Grid3x3,
   AlignLeft, Dot as DotIcon, Image as ImageIcon, QrCode as QrIcon, PenTool,
-  Undo2, Trash2, Save, Lock, Unlock, X, Eye, SlidersHorizontal, Layers,
-  ArrowLeftRight, Target, Maximize2, MousePointer2, RotateCw, Pen, Hand,
+  Undo2, Trash2, Save, Lock, Unlock, X, Eye, SlidersHorizontal,
+  Target, MousePointer2, RotateCw, Pen, Hand,
 } from "lucide-react";
 import {
   STUDIO_TOOLS, FONT_PRESETS, FONT_PRESETS_BY_ID, STUDIO_FIELD_PRESETS,
@@ -139,6 +139,10 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
   // Validation report — shown when Lock detects issues.
   const [validationReport, setValidationReport] = useState(null);
   const [fontBuilderOpen, setFontBuilderOpen] = useState(false);
+  // Ribbon tab system — one active tab at a time. Drives the secondary
+  // toolbar (handled separately in a future iteration). No state-coupling
+  // to the existing tool palette/field controls yet.
+  const [activeRibbonTab, setActiveRibbonTab] = useState("HOME");
   // history (past + future) lives inside the editorReducer above.
   const canvasRef = useRef(null);
   const logoInputRef = useRef(null);
@@ -721,96 +725,47 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
     <div className="flex flex-col min-h-[calc(100vh-96px)]" data-testid="pro-studio">
       {/* Toolbar */}
       <div className="border-b border-[var(--tm-border)] bg-white sticky top-0 z-10">
-        <div className="px-3 py-2 flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-[var(--tm-orange)] mr-1">Studio</span>
-          <Button variant="outline" size="sm" onClick={() => setLegacy(true)}
-            data-testid="studio-toggle-legacy"
-            className="h-7 text-[10px] bg-white border-[var(--tm-border)] text-[var(--tm-navy)]">
-            <Layers className="h-3 w-3 mr-1" /> Use Legacy Editor
+        {/* Top header — STUDIO label (left) + Continue button (right). All
+            previous controls (Legacy, Handedness, Zoom, Ghost Overlay,
+            Stylus, Placement Mode, Freehand, Grid editor) have been
+            removed from this row; they will live in the per-tab secondary
+            toolbar (handled separately). */}
+        <div className="px-3 py-2 flex items-center justify-between gap-2" data-testid="studio-top-header">
+          <span className="text-[11px] uppercase tracking-[0.25em] font-bold text-[var(--tm-orange)]"
+            data-testid="studio-top-label">
+            Studio
+          </span>
+          <Button onClick={() => commitSave(false)}
+            disabled={saving || !schema.elements.length}
+            data-testid="studio-continue"
+            className="h-9 px-4 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold text-[11px] uppercase tracking-wider">
+            Continue
           </Button>
-          <Button variant="outline" size="sm"
-            data-testid="studio-handedness"
-            onClick={() => setHandedness((h) => h === "right" ? "left" : "right")}
-            title={handedness === "right" ? "Switch to left-handed (mapping on left)" : "Switch to right-handed (mapping on right)"}
-            className="h-7 text-[10px] bg-white border-[var(--tm-border)] text-[var(--tm-navy)]">
-            <ArrowLeftRight className="h-3 w-3 mr-1" />
-            {handedness === "right" ? "Right-handed" : "Left-handed"}
-          </Button>
-          <div className="inline-flex rounded-md border border-[var(--tm-border)] overflow-hidden" data-testid="studio-zoom">
-            <button type="button" data-testid="studio-zoom-out"
-              onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
-              className="h-7 px-2 text-[11px] font-bold bg-white text-[var(--tm-navy)] hover:bg-[var(--tm-surface)]"
-              aria-label="Zoom out">−</button>
-            <span className="h-7 px-2 text-[10px] font-bold bg-[var(--tm-surface)] text-[var(--tm-navy)] flex items-center min-w-[42px] justify-center"
-              data-testid="studio-zoom-level">{Math.round(zoom * 100)}%</span>
-            <button type="button" data-testid="studio-zoom-in"
-              onClick={() => setZoom((z) => Math.min(1.5, +(z + 0.25).toFixed(2)))}
-              className="h-7 px-2 text-[11px] font-bold bg-white text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] border-l border-[var(--tm-border)]"
-              aria-label="Zoom in">+</button>
-          </div>
-          <Button variant="outline" size="sm"
-            data-testid="studio-ghost-overlay"
-            onClick={() => setGhostOverlay((g) => !g)}
-            title="Overlay preview faintly on top of mapping canvas to verify alignment"
-            className={`h-7 text-[10px] border-[var(--tm-border)] ${
-              ghostOverlay ? "bg-[var(--tm-blue)] text-white" : "bg-white text-[var(--tm-navy)]"}`}>
-            <Eye className="h-3 w-3 mr-1" /> Ghost Overlay
-          </Button>
-          {(tool === "logo" || tool === "qr") && (
-            <div className="inline-flex rounded-md border border-[var(--tm-border)] overflow-hidden" data-testid="studio-placement-mode">
-              <button type="button"
-                data-testid="studio-placement-fast"
-                onClick={() => { setPlacementMode("fast"); setDraft(null); }}
-                className={`h-7 px-2 text-[10px] uppercase tracking-wider font-bold inline-flex items-center gap-1 ${
-                  placementMode === "fast" ? "bg-[var(--tm-blue)] text-white" : "bg-white text-[var(--tm-navy)]"}`}>
-                <Target className="h-3 w-3" /> Fast · 1 tap
+        </div>
+        {/* Ribbon tab bar — primary navigation between tool groups. Only
+            one tab can be active at a time. The secondary toolbar that
+            renders below is implemented separately. */}
+        <div className="px-3 border-t border-[var(--tm-border)] flex items-stretch overflow-x-auto"
+          role="tablist" aria-label="Studio ribbon tabs" data-testid="studio-ribbon-tabs">
+          {["HOME", "GRID", "TEXT", "ASSETS", "INSPECTOR", "CUSTOM TRACE"].map((tab) => {
+            const active = activeRibbonTab === tab;
+            return (
+              <button
+                key={tab} type="button"
+                role="tab"
+                aria-selected={active}
+                data-testid={`studio-ribbon-${tab.toLowerCase().replace(/\s+/g, "-")}`}
+                onClick={() => setActiveRibbonTab(tab)}
+                className={`shrink-0 px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider border-b-2 transition-colors ${
+                  active
+                    ? "text-[var(--tm-orange)] border-[var(--tm-orange)] bg-white"
+                    : "text-[var(--tm-text-muted)] border-transparent hover:text-[var(--tm-navy)] hover:bg-[var(--tm-surface)]"
+                }`}
+              >
+                {tab}
               </button>
-              <button type="button"
-                data-testid="studio-placement-precise"
-                onClick={() => { setPlacementMode("precise"); setDraft(null); }}
-                className={`h-7 px-2 text-[10px] uppercase tracking-wider font-bold inline-flex items-center gap-1 border-l border-[var(--tm-border)] ${
-                  placementMode === "precise" ? "bg-[var(--tm-blue)] text-white" : "bg-white text-[var(--tm-navy)]"}`}>
-                <Maximize2 className="h-3 w-3" /> Precise · 4 corners
-              </button>
-            </div>
-          )}
-          {tool === "trace" && (
-            <Button variant="outline" size="sm"
-              data-testid="studio-freehand-toggle"
-              onClick={() => setFreehandMode((f) => !f)}
-              title="Freehand mode preserves your raw stroke (skip auto-straighten)"
-              className={`h-7 text-[10px] border-[var(--tm-border)] ${
-                freehandMode ? "bg-[var(--tm-blue)] text-white" : "bg-white text-[var(--tm-navy)]"}`}>
-              <Pen className="h-3 w-3 mr-1" /> {freehandMode ? "Freehand" : "Auto-straighten"}
-            </Button>
-          )}
-          <Button variant="outline" size="sm"
-            data-testid="studio-stylus-only"
-            onClick={() => setStylusOnly((s) => !s)}
-            title="Block finger touches — only stylus nib draws"
-            className={`h-7 text-[10px] border-[var(--tm-border)] ${
-              stylusOnly ? "bg-[var(--tm-blue)] text-white" : "bg-white text-[var(--tm-navy)]"}`}>
-            <Pen className="h-3 w-3 mr-1" /> Stylus only
-          </Button>
-          {gridDraft?.step === "edit" && (
-            <div className="inline-flex items-center gap-1" data-testid="studio-grid-editor">
-              <span className="text-[10px] uppercase tracking-wider font-bold text-[var(--tm-blue)]">
-                Grid: {gridDraft.cols.length} cols · {gridDraft.rows.length} rows
-              </span>
-              <Button size="sm"
-                data-testid="studio-grid-done"
-                onClick={commitGridEdit}
-                className="h-7 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white text-[10px] font-bold">
-                Done
-              </Button>
-              <Button variant="outline" size="sm"
-                data-testid="studio-grid-cancel"
-                onClick={cancelGridEdit}
-                className="h-7 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] text-[10px]">
-                Cancel
-              </Button>
-            </div>
-          )}
+            );
+          })}
         </div>
         <div className="px-3 pb-2 flex items-center gap-1 overflow-x-auto" data-testid="studio-toolbar">
           {STUDIO_TOOLS.map((t) => {
