@@ -738,10 +738,10 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
             Studio
           </span>
 
-          {/* CENTER — Ribbon tab bar (between Studio and Continue). Only
-              one tab can be active at a time. The secondary toolbar that
-              renders below is implemented separately. */}
-          <div className="flex-1 min-w-0 flex items-stretch gap-1 overflow-x-auto"
+          {/* CENTER — Ribbon tabs (folder/ribbon-style: orange top bar +
+              orange text + subtle orange halo on active; vertical separator
+              lines between tabs; square edges). */}
+          <div className="flex-1 min-w-0 flex items-stretch h-9 overflow-x-auto"
             role="tablist" aria-label="Studio ribbon tabs" data-testid="studio-ribbon-tabs">
             {["HOME", "GRID", "TEXT", "ASSETS", "INSPECTOR", "CUSTOM TRACE"].map((tab) => {
               const active = activeRibbonTab === tab;
@@ -752,10 +752,10 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
                   aria-selected={active}
                   data-testid={`studio-ribbon-${tab.toLowerCase().replace(/\s+/g, "-")}`}
                   onClick={() => setActiveRibbonTab(tab)}
-                  className={`shrink-0 h-9 px-3 rounded-md text-[11px] font-bold uppercase tracking-wider border transition-colors ${
+                  className={`shrink-0 h-9 px-4 text-[11px] font-bold uppercase tracking-wider transition-colors border-l border-l-[var(--tm-border)] last:border-r last:border-r-[var(--tm-border)] ${
                     active
-                      ? "bg-[var(--tm-orange-soft,rgba(255,140,0,0.12))] text-[var(--tm-orange)] border-[var(--tm-orange)] ring-1 ring-[var(--tm-orange)]/40 shadow-[0_0_0_2px_rgba(255,140,0,0.15)]"
-                      : "bg-white text-[var(--tm-text-muted)] border-[var(--tm-border)] hover:text-[var(--tm-navy)] hover:bg-[var(--tm-surface)]"
+                      ? "relative z-10 bg-white text-[var(--tm-orange)] border-t-[3px] border-t-[var(--tm-orange)] shadow-[inset_0_0_0_1px_rgba(255,95,21,0.45),0_0_0_2px_rgba(255,95,21,0.18)]"
+                      : "bg-white text-[var(--tm-navy)] border-t-[3px] border-t-transparent hover:bg-[var(--tm-surface)]"
                   }`}
                 >
                   {tab}
