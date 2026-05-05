@@ -725,47 +725,52 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
     <div className="flex flex-col min-h-[calc(100vh-96px)]" data-testid="pro-studio">
       {/* Toolbar */}
       <div className="border-b border-[var(--tm-border)] bg-white sticky top-0 z-10">
-        {/* Top header — STUDIO label (left) + Continue button (right). All
-            previous controls (Legacy, Handedness, Zoom, Ghost Overlay,
+        {/* Top header — single row layout:
+              [ STUDIO ] [ HOME | GRID | TEXT | ASSETS | INSPECTOR | CUSTOM TRACE ] [ Continue ]
+            All previous controls (Legacy, Handedness, Zoom, Ghost Overlay,
             Stylus, Placement Mode, Freehand, Grid editor) have been
             removed from this row; they will live in the per-tab secondary
             toolbar (handled separately). */}
-        <div className="px-3 py-2 flex items-center justify-between gap-2" data-testid="studio-top-header">
-          <span className="text-[11px] uppercase tracking-[0.25em] font-bold text-[var(--tm-orange)]"
+        <div className="px-3 py-2 flex items-center gap-3" data-testid="studio-top-header">
+          {/* LEFT — Studio label */}
+          <span className="shrink-0 text-[11px] uppercase tracking-[0.25em] font-bold text-[var(--tm-orange)]"
             data-testid="studio-top-label">
             Studio
           </span>
+
+          {/* CENTER — Ribbon tab bar (between Studio and Continue). Only
+              one tab can be active at a time. The secondary toolbar that
+              renders below is implemented separately. */}
+          <div className="flex-1 min-w-0 flex items-stretch gap-1 overflow-x-auto"
+            role="tablist" aria-label="Studio ribbon tabs" data-testid="studio-ribbon-tabs">
+            {["HOME", "GRID", "TEXT", "ASSETS", "INSPECTOR", "CUSTOM TRACE"].map((tab) => {
+              const active = activeRibbonTab === tab;
+              return (
+                <button
+                  key={tab} type="button"
+                  role="tab"
+                  aria-selected={active}
+                  data-testid={`studio-ribbon-${tab.toLowerCase().replace(/\s+/g, "-")}`}
+                  onClick={() => setActiveRibbonTab(tab)}
+                  className={`shrink-0 h-9 px-3 rounded-md text-[11px] font-bold uppercase tracking-wider border transition-colors ${
+                    active
+                      ? "bg-[var(--tm-orange-soft,rgba(255,140,0,0.12))] text-[var(--tm-orange)] border-[var(--tm-orange)] ring-1 ring-[var(--tm-orange)]/40 shadow-[0_0_0_2px_rgba(255,140,0,0.15)]"
+                      : "bg-white text-[var(--tm-text-muted)] border-[var(--tm-border)] hover:text-[var(--tm-navy)] hover:bg-[var(--tm-surface)]"
+                  }`}
+                >
+                  {tab}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* RIGHT — Continue button */}
           <Button onClick={() => commitSave(false)}
             disabled={saving || !schema.elements.length}
             data-testid="studio-continue"
-            className="h-9 px-4 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold text-[11px] uppercase tracking-wider">
+            className="shrink-0 h-9 px-4 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold text-[11px] uppercase tracking-wider">
             Continue
           </Button>
-        </div>
-        {/* Ribbon tab bar — primary navigation between tool groups. Only
-            one tab can be active at a time. The secondary toolbar that
-            renders below is implemented separately. */}
-        <div className="px-3 border-t border-[var(--tm-border)] flex items-stretch overflow-x-auto"
-          role="tablist" aria-label="Studio ribbon tabs" data-testid="studio-ribbon-tabs">
-          {["HOME", "GRID", "TEXT", "ASSETS", "INSPECTOR", "CUSTOM TRACE"].map((tab) => {
-            const active = activeRibbonTab === tab;
-            return (
-              <button
-                key={tab} type="button"
-                role="tab"
-                aria-selected={active}
-                data-testid={`studio-ribbon-${tab.toLowerCase().replace(/\s+/g, "-")}`}
-                onClick={() => setActiveRibbonTab(tab)}
-                className={`shrink-0 px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider border-b-2 transition-colors ${
-                  active
-                    ? "text-[var(--tm-orange)] border-[var(--tm-orange)] bg-white"
-                    : "text-[var(--tm-text-muted)] border-transparent hover:text-[var(--tm-navy)] hover:bg-[var(--tm-surface)]"
-                }`}
-              >
-                {tab}
-              </button>
-            );
-          })}
         </div>
         <div className="px-3 pb-2 flex items-center gap-1 overflow-x-auto" data-testid="studio-toolbar">
           {STUDIO_TOOLS.map((t) => {
