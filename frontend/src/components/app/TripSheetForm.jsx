@@ -29,6 +29,7 @@ export default function TripSheetForm({ session, onChange, mileageMode = "workfl
   useEffect(() => {
     setLocal(session);
     setActiveIdx(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.session_id]);
 
   useEffect(() => {

@@ -1,6 +1,6 @@
 import React, { forwardRef } from "react";
 import PaperSheet from "./PaperSheet";
-import { CleanReconstructionCanvas } from "./ProMappingStudio";
+import { CleanReconstructionCanvas } from "./CleanReconstructionCanvas";
 import { PRESET_FIELDS_BY_ID } from "../../lib/template-types";
 
 /**
