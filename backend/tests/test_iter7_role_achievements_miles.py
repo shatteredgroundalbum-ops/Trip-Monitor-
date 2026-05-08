@@ -178,21 +178,42 @@ class TestStatsMiles:
 
 # -------- /api/achievements --------
 class TestAchievements:
-    def test_achievements_shape(self, client):
+    """Originally complexity-11 god-test. Split per behavior."""
+
+    REQUIRED_BADGE_KEYS = {"id", "category", "label", "threshold", "progress", "earned"}
+
+    @pytest.fixture
+    def achievements_doc(self, client):
         # set profile 12 yrs / 850k miles
         client.post(f"{BASE_URL}/api/profile", json={
             "full_name": "Ach Driver", "years_experience": 12, "lifetime_miles": 850_000,
         })
         r = client.get(f"{BASE_URL}/api/achievements")
         assert r.status_code == 200
-        d = r.json()
-        assert "badges" in d and isinstance(d["badges"], list)
-        assert d["total_count"] == len(d["badges"])
-        assert d["total_count"] >= 20
-        # earned >= 6 with 12 yrs (1,5,10 = 3) + 850k miles (100k,250k,500k = 3) = 6
-        assert d["earned_count"] >= 6, f"expected >=6 earned, got {d['earned_count']}"
-        # locked entries have progress < threshold
-        for b in d["badges"]:
+        return r.json()
+
+    def test_badges_is_a_list(self, achievements_doc):
+        assert "badges" in achievements_doc
+        assert isinstance(achievements_doc["badges"], list)
+
+    def test_total_count_matches_badges_length(self, achievements_doc):
+        assert achievements_doc["total_count"] == len(achievements_doc["badges"])
+
+    def test_total_count_floor(self, achievements_doc):
+        assert achievements_doc["total_count"] >= 20
+
+    def test_earned_count_min_for_seeded_profile(self, achievements_doc):
+        # 12 yrs (1,5,10 = 3) + 850k miles (100k,250k,500k = 3) = 6
+        assert achievements_doc["earned_count"] >= 6, \
+            f"expected >=6 earned, got {achievements_doc['earned_count']}"
+
+    def test_locked_badges_progress_below_threshold(self, achievements_doc):
+        for b in achievements_doc["badges"]:
             if not b["earned"]:
-                assert b["progress"] < b["threshold"]
-            assert {"id", "category", "label", "threshold", "progress", "earned"} <= set(b.keys())
+                assert b["progress"] < b["threshold"], \
+                    f"locked badge {b['id']} has progress >= threshold"
+
+    def test_every_badge_has_required_keys(self, achievements_doc):
+        for b in achievements_doc["badges"]:
+            assert self.REQUIRED_BADGE_KEYS <= set(b.keys()), \
+                f"badge {b.get('id')} missing keys"

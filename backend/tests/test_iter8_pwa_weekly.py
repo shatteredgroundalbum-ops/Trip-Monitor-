@@ -64,53 +64,80 @@ def _seed_finished_trip(db, user_id, finished_dt_utc, miles, idx):
     })
 
 
+def _assert_bucket_shape(bucket):
+    """One bucket per local day must have well-formed label/miles/trips/date."""
+    valid_labels = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+    assert bucket["label"] in valid_labels
+    assert isinstance(bucket["miles"], int)
+    assert isinstance(bucket["trips"], int)
+    # date format YYYY-MM-DD
+    datetime.strptime(bucket["date"], "%Y-%m-%d")
+
+
 # ---------- /api/stats/week ----------
 class TestStatsWeekShape:
-    def test_unauth_401(self):
-        r = requests.get(f"{BASE_URL}/api/stats/week")
-        assert r.status_code == 401, r.text
+    """Originally a single complexity-22 god-test. Split into focused
+    one-assertion-per-behavior cases sharing a small `empty_week` fixture."""
 
-    def test_empty_user_returns_7_buckets(self, client, auth):
+    @pytest.fixture
+    def empty_week(self, client, auth):
         # ensure no trips
         auth["db"].trip_sessions.delete_many({"user_id": auth["user_id"]})
         r = client.get(f"{BASE_URL}/api/stats/week")
         assert r.status_code == 200, r.text
-        data = r.json()
-        assert "time_zone" in data
-        assert "miles_total_7d" in data
-        assert "trips_total_7d" in data
-        assert "miles_max" in data
-        assert isinstance(data["days"], list)
-        assert len(data["days"]) == 7
+        return r.json()
 
-        # exactly one is_today, last entry
-        today_flags = [d["is_today"] for d in data["days"]]
+    def test_unauth_401(self):
+        r = requests.get(f"{BASE_URL}/api/stats/week")
+        assert r.status_code == 401, r.text
+
+    @pytest.mark.parametrize("key", [
+        "time_zone", "miles_total_7d", "trips_total_7d", "miles_max",
+    ])
+    def test_top_level_key_present(self, empty_week, key):
+        assert key in empty_week
+
+    def test_returns_exactly_7_buckets(self, empty_week):
+        assert isinstance(empty_week["days"], list)
+        assert len(empty_week["days"]) == 7
+
+    def test_today_flag_only_on_last_bucket(self, empty_week):
+        today_flags = [d["is_today"] for d in empty_week["days"]]
         assert today_flags.count(True) == 1
-        assert data["days"][-1]["is_today"] is True
+        assert empty_week["days"][-1]["is_today"] is True
 
-        # ordering: oldest -> newest
-        dates = [d["date"] for d in data["days"]]
+    def test_dates_chronological(self, empty_week):
+        dates = [d["date"] for d in empty_week["days"]]
         assert dates == sorted(dates)
 
-        # field shape per bucket
-        valid_labels = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
-        for d in data["days"]:
-            assert d["label"] in valid_labels
-            assert isinstance(d["miles"], int)
-            assert isinstance(d["trips"], int)
-            assert d["miles"] == 0
-            assert d["trips"] == 0
-            # date format YYYY-MM-DD
-            datetime.strptime(d["date"], "%Y-%m-%d")
+    def test_each_bucket_has_valid_shape(self, empty_week):
+        for d in empty_week["days"]:
+            _assert_bucket_shape(d)
 
-        # totals on empty
-        assert data["miles_total_7d"] == 0
-        assert data["trips_total_7d"] == 0
-        assert data["miles_max"] == 0
+    def test_empty_buckets_have_zero_metrics(self, empty_week):
+        assert all(d["miles"] == 0 for d in empty_week["days"])
+        assert all(d["trips"] == 0 for d in empty_week["days"])
+
+    def test_empty_totals_zero(self, empty_week):
+        assert empty_week["miles_total_7d"] == 0
+        assert empty_week["trips_total_7d"] == 0
+        assert empty_week["miles_max"] == 0
 
 
 class TestStatsWeekSeeded:
-    def test_seeded_distribution(self, client, auth):
+    """Originally complexity-19 / 52-line god-test. Split into focused
+    cases sharing a class-scoped fixture that seeds the trips once."""
+
+    # Maps day-offset → expected (miles, day_index_in_response)
+    SEED_PLAN = [
+        (0, 320, 6),  # today      -> idx 6
+        (1, 415, 5),
+        (3, 180, 3),
+        (5, 540, 1),
+    ]
+
+    @pytest.fixture
+    def seeded_week(self, client, auth):
         db = auth["db"]
         user_id = auth["user_id"]
         # clear & set time zone to UTC for deterministic bucketing
@@ -120,68 +147,71 @@ class TestStatsWeekSeeded:
             {"$set": {"user_id": user_id, "time_zone": "UTC"}},
             upsert=True,
         )
-
         # Use noon UTC on each target day to avoid edge cases.
-        now_utc = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
-        plan = [
-            (0, 320),   # today
-            (1, 415),   # day-1
-            (3, 180),   # day-3
-            (5, 540),   # day-5
-        ]
-        for i, (offset, miles) in enumerate(plan):
+        now_utc = datetime.now(timezone.utc).replace(
+            hour=12, minute=0, second=0, microsecond=0
+        )
+        for i, (offset, miles, _idx) in enumerate(self.SEED_PLAN):
             _seed_finished_trip(db, user_id, now_utc - timedelta(days=offset), miles, i)
-
         r = client.get(f"{BASE_URL}/api/stats/week")
         assert r.status_code == 200, r.text
-        data = r.json()
-
-        assert data["miles_total_7d"] == 1455
-        assert data["trips_total_7d"] == 4
-        assert data["miles_max"] == 540
-        assert len(data["days"]) == 7
-
-        # Last bucket (today) should have 320 miles, 1 trip
-        today_bucket = data["days"][-1]
-        assert today_bucket["is_today"] is True
-        assert today_bucket["miles"] == 320
-        assert today_bucket["trips"] == 1
-
-        # Map by offset from today (today index = 6)
-        # day-1 -> idx 5, day-3 -> idx 3, day-5 -> idx 1
-        assert data["days"][5]["miles"] == 415
-        assert data["days"][5]["trips"] == 1
-        assert data["days"][3]["miles"] == 180
-        assert data["days"][3]["trips"] == 1
-        assert data["days"][1]["miles"] == 540
-        assert data["days"][1]["trips"] == 1
-
-        # Other days (idx 0,2,4) should be 0
-        for idx in (0, 2, 4):
-            assert data["days"][idx]["miles"] == 0
-            assert data["days"][idx]["trips"] == 0
-
-        # cleanup trips
+        yield r.json()
         db.trip_sessions.delete_many({"user_id": user_id})
+
+    def test_seeded_miles_total(self, seeded_week):
+        assert seeded_week["miles_total_7d"] == 1455
+
+    def test_seeded_trip_count(self, seeded_week):
+        assert seeded_week["trips_total_7d"] == 4
+
+    def test_seeded_miles_max(self, seeded_week):
+        assert seeded_week["miles_max"] == 540
+
+    def test_seeded_returns_7_buckets(self, seeded_week):
+        assert len(seeded_week["days"]) == 7
+
+    def test_today_bucket_marked(self, seeded_week):
+        assert seeded_week["days"][-1]["is_today"] is True
+
+    @pytest.mark.parametrize("offset,miles,idx", SEED_PLAN)
+    def test_seeded_miles_at_index(self, seeded_week, offset, miles, idx):
+        assert seeded_week["days"][idx]["miles"] == miles
+        assert seeded_week["days"][idx]["trips"] == 1
+
+    @pytest.mark.parametrize("idx", [0, 2, 4])
+    def test_unseeded_days_zero(self, seeded_week, idx):
+        assert seeded_week["days"][idx]["miles"] == 0
+        assert seeded_week["days"][idx]["trips"] == 0
 
 
 # ---------- Static PWA assets ----------
 class TestPwaAssets:
-    def test_manifest_reachable_and_valid(self):
+    """Originally complexity-14 god-test. Split per spec field."""
+
+    @pytest.fixture(scope="class")
+    def manifest(self):
         r = requests.get(f"{BASE_URL}/manifest.json")
         assert r.status_code == 200, r.text
-        data = r.json()
-        assert data["name"]
-        assert data["short_name"]
-        assert data["start_url"]
-        assert data["display"] == "standalone"
-        assert data["theme_color"]
-        icons = data["icons"]
+        return r.json()
+
+    @pytest.mark.parametrize("key", ["name", "short_name", "start_url", "theme_color"])
+    def test_manifest_required_field_present(self, manifest, key):
+        assert manifest.get(key)
+
+    def test_manifest_display_standalone(self, manifest):
+        assert manifest["display"] == "standalone"
+
+    def test_manifest_has_icons_list(self, manifest):
+        icons = manifest["icons"]
         assert isinstance(icons, list) and len(icons) >= 2
-        sizes = {i["sizes"] for i in icons}
-        assert "192x192" in sizes
-        assert "512x512" in sizes
-        shortcuts = data.get("shortcuts", [])
+
+    @pytest.mark.parametrize("required_size", ["192x192", "512x512"])
+    def test_manifest_icon_size_present(self, manifest, required_size):
+        sizes = {i["sizes"] for i in manifest["icons"]}
+        assert required_size in sizes
+
+    def test_manifest_has_shortcuts(self, manifest):
+        shortcuts = manifest.get("shortcuts", [])
         assert isinstance(shortcuts, list) and len(shortcuts) >= 1
 
     def test_service_worker_versioned(self):

@@ -75,8 +75,7 @@ class TestProfileMileageMode:
             "time_zone": "UTC",
         })
         assert r.status_code == 200, r.text
-        data = r.json()
-        assert data["mileage_mode"] == mode
+        assert r.json()["mileage_mode"] == mode
 
         # GET back, persisted
         r2 = client.get(f"{BASE_URL}/api/profile")
@@ -103,15 +102,16 @@ class TestFinishSegmentAutoSum:
         assert r.status_code == 200, r.text
         return r.json()["session_id"]
 
-    def test_segment_mode_auto_sums_when_total_missing(self, client):
-        # Set mode=segment
+    def _set_mode(self, client, mode):
         r = client.post(f"{BASE_URL}/api/profile", json={
             "full_name": "Iter9 Pytest",
-            "mileage_mode": "segment",
+            "mileage_mode": mode,
             "time_zone": "UTC",
         })
         assert r.status_code == 200
 
+    def test_segment_mode_auto_sums_when_total_missing(self, client):
+        self._set_mode(client, "segment")
         rows = [
             {"seq": 1, "segment_miles": 142},
             {"seq": 2, "segment_miles": 87},
@@ -125,17 +125,11 @@ class TestFinishSegmentAutoSum:
         assert r.status_code == 200, r.text
         doc = r.json()
         assert doc["status"] == "finished"
-        assert doc["total_trip_miles"] == 351, f"expected 351, got {doc['total_trip_miles']}"
+        assert doc["total_trip_miles"] == 351
         assert doc.get("mileage_mode_at_finish") == "segment"
 
     def test_segment_mode_422_when_no_segments_and_no_total(self, client):
-        r = client.post(f"{BASE_URL}/api/profile", json={
-            "full_name": "Iter9 Pytest",
-            "mileage_mode": "segment",
-            "time_zone": "UTC",
-        })
-        assert r.status_code == 200
-
+        self._set_mode(client, "segment")
         # All rows empty (no segment_miles, no total)
         rows = [{"seq": i + 1} for i in range(8)]
         sid = self._make_trip(client, rows)
@@ -144,14 +138,9 @@ class TestFinishSegmentAutoSum:
         assert r.status_code == 422, r.text
 
     def test_workflow_mode_still_needs_total_trip_miles(self, client):
-        r = client.post(f"{BASE_URL}/api/profile", json={
-            "full_name": "Iter9 Pytest",
-            "mileage_mode": "workflow",
-            "time_zone": "UTC",
-        })
-        assert r.status_code == 200
-
-        rows = [{"seq": 1, "segment_miles": 100}]  # segments set but mode=workflow -> must ignore
+        self._set_mode(client, "workflow")
+        # segments set but mode=workflow → must ignore them
+        rows = [{"seq": 1, "segment_miles": 100}]
         sid = self._make_trip(client, rows)
 
         r = client.post(f"{BASE_URL}/api/trip-sessions/{sid}/finish")
@@ -159,12 +148,15 @@ class TestFinishSegmentAutoSum:
 
 
 # ---------------- /recap shape ----------------
+# A single 60-line / complexity-24 god-test was split into a small fixture
+# (`recap_doc`) plus one focused assertion per behavior. Each test has 2-4
+# asserts, single-purpose names, and fails with a clear signal.
 class TestTripRecap:
-    def test_recap_shape_with_milestone_and_badge(self, client, auth):
-        """With baseline lifetime_miles=999700 + a 351mi trip:
-            career_before=999700, career_after=1000051,
-            new_badges contains miles_1000000, next_milestone.label='2M Miles'.
-        """
+    @pytest.fixture
+    def recap_doc(self, client, auth):
+        """Build a finished trip such that a milestone (1M miles) is crossed
+        AND a 351-mile segment trip is recorded. Returns the parsed recap
+        JSON for downstream tests to assert against."""
         db = auth["db"]
         # clean prior trips/profile to isolate
         db.trip_sessions.delete_many({"user_id": auth["user_id"]})
@@ -194,32 +186,39 @@ class TestTripRecap:
 
         recap_r = client.get(f"{BASE_URL}/api/trip-sessions/{sid}/recap")
         assert recap_r.status_code == 200, recap_r.text
-        recap = recap_r.json()
+        return recap_r.json()
 
-        # Required keys
-        for key in ["trip_miles", "career_before", "career_after", "miles_today",
-                    "miles_week", "next_milestone", "new_badges", "mileage_mode",
-                    "trips_total", "finished_at"]:
-            assert key in recap, f"missing {key}"
+    @pytest.mark.parametrize("key", [
+        "trip_miles", "career_before", "career_after",
+        "miles_today", "miles_week", "next_milestone",
+        "new_badges", "mileage_mode", "trips_total", "finished_at",
+    ])
+    def test_recap_has_required_key(self, recap_doc, key):
+        assert key in recap_doc, f"missing {key}"
 
-        assert recap["trip_miles"] == 351
-        assert recap["career_before"] == 999700
-        assert recap["career_after"] == 1000051
-        assert recap["mileage_mode"] == "segment"
-        assert recap["trips_total"] >= 1
-        assert recap["miles_today"] >= 351
-        assert recap["miles_week"] >= 351
+    def test_recap_career_math(self, recap_doc):
+        assert recap_doc["trip_miles"] == 351
+        assert recap_doc["career_before"] == 999700
+        assert recap_doc["career_after"] == 1000051
+        assert recap_doc["mileage_mode"] == "segment"
+        assert recap_doc["trips_total"] >= 1
 
-        nm = recap["next_milestone"]
+    def test_recap_today_and_week_miles(self, recap_doc):
+        assert recap_doc["miles_today"] >= 351
+        assert recap_doc["miles_week"] >= 351
+
+    def test_recap_next_milestone_is_2m(self, recap_doc):
+        nm = recap_doc["next_milestone"]
         assert nm is not None
-        assert nm["label"] == "2M Miles", f"got {nm}"
+        assert nm["label"] == "2M Miles"
         assert nm["threshold"] == 2_000_000
         assert nm["remaining"] == 2_000_000 - 1_000_051
         assert 0 <= nm["progress_pct"] <= 100
 
-        new_ids = [b["id"] for b in recap["new_badges"]]
+    def test_recap_new_badges_includes_million(self, recap_doc):
+        new_ids = [b["id"] for b in recap_doc["new_badges"]]
         assert "miles_1000000" in new_ids, f"got {new_ids}"
-        mb = next(b for b in recap["new_badges"] if b["id"] == "miles_1000000")
+        mb = next(b for b in recap_doc["new_badges"] if b["id"] == "miles_1000000")
         assert mb["label"] == "1M Miles"
 
     def test_recap_missing_session_404(self, client):

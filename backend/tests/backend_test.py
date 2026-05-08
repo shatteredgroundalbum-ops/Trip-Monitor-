@@ -91,15 +91,13 @@ def test_active_session(auth, session_id):
     assert "_id" not in j
 
 
-def test_update_session(auth, session_id):
-    # get current updated_at
+def test_update_session_persists_whitelist_fields(auth, session_id):
+    """Whitelisted fields on PUT /api/trip-sessions/{id} must be persisted."""
     r0 = requests.get(f"{BASE}/api/trip-sessions/{session_id}", headers=auth)
     orig = r0.json()
     orig_updated = orig["updated_at"]
-    orig_user_id = orig["user_id"]
     import time
     time.sleep(1.1)
-    # send whitelist + non-whitelist fields
     r = requests.put(
         f"{BASE}/api/trip-sessions/{session_id}",
         headers=auth,
@@ -109,11 +107,6 @@ def test_update_session(auth, session_id):
             "order_number": "ORD-XYZ",
             "bol_number": "BOL-XYZ",
             "truck_number": "T999",
-            "user_id": "HACKED",
-            "finished_at": "2099-01-01T00:00:00+00:00",
-            "_id": "HACK_ID",
-            "session_id": "HACK_SID",
-            "created_at": "1999-01-01T00:00:00+00:00",
         },
     )
     assert r.status_code == 200
@@ -123,11 +116,58 @@ def test_update_session(auth, session_id):
     assert j["bol_number"] == "BOL-XYZ"
     assert j["truck_number"] == "T999"
     assert j["updated_at"] != orig_updated
-    # whitelisting: forbidden fields must be ignored
-    assert j["user_id"] == orig_user_id, "user_id must NOT be settable by client"
-    assert j["finished_at"] is None, "finished_at must NOT be settable by client"
-    assert j["session_id"] == session_id, "session_id must NOT be overwritten"
     assert "_id" not in j
+
+
+def _blacklist_assert_user_id(j, orig, _sid):
+    assert j["user_id"] == orig["user_id"], "user_id must NOT be settable by client"
+
+
+def _blacklist_assert_finished_at(j, _orig, _sid):
+    assert j["finished_at"] is None, "finished_at must NOT be settable by client"
+
+
+def _blacklist_assert_session_id(j, _orig, sid):
+    assert j["session_id"] == sid, "session_id must NOT be overwritten"
+
+
+def _blacklist_assert_created_at(j, orig, _sid):
+    assert j["created_at"] == orig["created_at"], "created_at must NOT be overwritten"
+
+
+def _blacklist_assert_internal_id(j, _orig, _sid):
+    assert "_id" not in j
+
+
+# Dispatch table: field name → assertion function. Keeps the parametrized
+# test body branch-free, so radon sees a simple linear function.
+_BLACKLIST_ASSERTIONS = {
+    "user_id":     _blacklist_assert_user_id,
+    "finished_at": _blacklist_assert_finished_at,
+    "session_id":  _blacklist_assert_session_id,
+    "created_at":  _blacklist_assert_created_at,
+    "_id":         _blacklist_assert_internal_id,
+}
+
+
+@pytest.mark.parametrize("field,value", [
+    ("user_id",      "HACKED"),
+    ("finished_at",  "2099-01-01T00:00:00+00:00"),
+    ("_id",          "HACK_ID"),
+    ("session_id",   "HACK_SID"),
+    ("created_at",   "1999-01-01T00:00:00+00:00"),
+])
+def test_update_session_ignores_blacklist_field(auth, session_id, field, value):
+    """Non-whitelisted fields must be silently ignored on PUT (not error)."""
+    r0 = requests.get(f"{BASE}/api/trip-sessions/{session_id}", headers=auth)
+    orig = r0.json()
+    r = requests.put(
+        f"{BASE}/api/trip-sessions/{session_id}",
+        headers=auth,
+        json={field: value, "notes": "blacklist-check"},
+    )
+    assert r.status_code == 200
+    _BLACKLIST_ASSERTIONS[field](r.json(), orig, session_id)
 
 
 def test_finish_not_found(auth):
@@ -182,18 +222,32 @@ def test_reopen_not_found(auth):
 
 
 # learning
-def test_locations_bump_and_list(auth):
+def _bump_locations(auth):
+    """Helper: 2× bump 'TEST_LocA', 1× bump 'TEST_LocB'. Returns list response."""
     for _ in range(2):
         r = requests.post(f"{BASE}/api/locations/bump", headers=auth, json={"name": "TEST_LocA"})
         assert r.status_code == 200
     r = requests.post(f"{BASE}/api/locations/bump", headers=auth, json={"name": "TEST_LocB"})
     assert r.status_code == 200
     lst = requests.get(f"{BASE}/api/locations", headers=auth).json()
+    return lst
+
+
+def test_locations_bump_records_both_names(auth):
+    lst = _bump_locations(auth)
     names = [d["name"] for d in lst]
     assert "TEST_LocA" in names and "TEST_LocB" in names
+
+
+def test_locations_count_reflects_bump_frequency(auth):
+    lst = _bump_locations(auth)
     a = next(d for d in lst if d["name"] == "TEST_LocA")
     b = next(d for d in lst if d["name"] == "TEST_LocB")
     assert a["count"] >= b["count"]
+
+
+def test_locations_list_excludes_internal_id(auth):
+    lst = _bump_locations(auth)
     assert all("_id" not in d for d in lst)
 
 

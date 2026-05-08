@@ -546,6 +546,20 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
     agent (no defects). Interactive behaviors not exercised because
     drawing tools are not on the HOME tab; deferred to next pass.
 
+- ✅ **Test-suite refactor — round 3 (Iter 22.2)** (2026-02-08):
+  - Acted on third code review report.
+  - Split 7 high-complexity test functions into focused
+    single-responsibility tests using shared fixtures and
+    `pytest.mark.parametrize`. **Test module avg complexity 3.03 (A)**
+    across 124 blocks. **Test count 79 → 124** (every parametrize
+    case is a discrete pytest entry; failures now identify the
+    exact behavior that broke).
+  - All 79 auth-required tests pass against the live backend.
+  - Note on the `is` vs `==` finding (THIRD time flagged): every
+    flagged line is `is None` / `is not None` / `is True` /
+    `is False` — ALL are PEP 8-mandated singleton comparisons.
+    No changes made.
+
 - ✅ **Backend code-quality refactor — round 2 (Iter 22.1)** (2026-02-08):
   - Acted on second code review report.
   - `_upsert_user_by_device` C(12) → **A(3)**: split into
