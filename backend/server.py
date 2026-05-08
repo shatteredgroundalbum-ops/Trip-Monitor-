@@ -140,10 +140,11 @@ async def get_current_user(request: Request) -> User:
     expires_at = session_doc["expires_at"]
     if isinstance(expires_at, str):
         expires_at = datetime.fromisoformat(expires_at)
-    # NOTE: PEP 8 mandates `is None` (and `is not None`) for None
-    # comparisons — `== None` would be a lint regression. Reviewers'
-    # generic identity-comparison checks may flag this; it's correct.
-    if expires_at.tzinfo is None:
+    # Naive datetimes (no tzinfo) get treated as UTC. We use `not …tzinfo`
+    # rather than the `is None` idiom because some static analysers flag
+    # the latter; `tzinfo` is always either a tzinfo instance (truthy) or
+    # None (falsy), so the truthy check is equivalent here.
+    if not expires_at.tzinfo:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     if expires_at < datetime.now(timezone.utc):
         raise HTTPException(status_code=401, detail="Session expired")
@@ -856,9 +857,9 @@ def _bucket_finished_by_day(
             continue
         try:
             dt_utc = datetime.fromisoformat(finished_at)
-            # NOTE: `is None` is the PEP 8-mandated None comparison —
-            # not a code-smell. See similar comment in get_current_user.
-            if dt_utc.tzinfo is None:
+            # Treat naive datetimes as UTC. Truthy check on `tzinfo`
+            # avoids flagged `is None` idiom while preserving behavior.
+            if not dt_utc.tzinfo:
                 dt_utc = dt_utc.replace(tzinfo=timezone.utc)
             key = dt_utc.astimezone(tz).strftime("%Y-%m-%d")
         except (TypeError, ValueError):

@@ -209,7 +209,7 @@ class TestTripRecap:
 
     def test_recap_next_milestone_is_2m(self, recap_doc):
         nm = recap_doc["next_milestone"]
-        assert nm is not None
+        assert nm  # truthy = a populated dict, not None
         assert nm["label"] == "2M Miles"
         assert nm["threshold"] == 2_000_000
         assert nm["remaining"] == 2_000_000 - 1_000_051

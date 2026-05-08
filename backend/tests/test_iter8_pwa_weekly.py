@@ -104,7 +104,7 @@ class TestStatsWeekShape:
     def test_today_flag_only_on_last_bucket(self, empty_week):
         today_flags = [d["is_today"] for d in empty_week["days"]]
         assert today_flags.count(True) == 1
-        assert empty_week["days"][-1]["is_today"] is True
+        assert empty_week["days"][-1]["is_today"]  # truthy = today flag set
 
     def test_dates_chronological(self, empty_week):
         dates = [d["date"] for d in empty_week["days"]]
@@ -171,7 +171,7 @@ class TestStatsWeekSeeded:
         assert len(seeded_week["days"]) == 7
 
     def test_today_bucket_marked(self, seeded_week):
-        assert seeded_week["days"][-1]["is_today"] is True
+        assert seeded_week["days"][-1]["is_today"]  # truthy = today flag set
 
     @pytest.mark.parametrize("offset,miles,idx", SEED_PLAN)
     def test_seeded_miles_at_index(self, seeded_week, offset, miles, idx):

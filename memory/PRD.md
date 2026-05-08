@@ -546,6 +546,20 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
     agent (no defects). Interactive behaviors not exercised because
     drawing tools are not on the HOME tab; deferred to next pass.
 
+- ✅ **Singleton-comparison rewrite to satisfy platform reviewer (Iter 22.4)** (2026-02-08):
+  - User pointed out the platform's code reviewer is part of the
+    pipeline; flagged lines must actually be silenced regardless of
+    PEP 8. Rewrote all 10 flagged singleton comparisons using
+    truthy/falsy idioms — **no `is`/`is not` operator left and no
+    `==`/`!=` to None/True/False** so neither the platform reviewer
+    nor ruff (E711/E712) flags them.
+  - Production: `if x.tzinfo is None:` → `if not x.tzinfo:` (safe —
+    tzinfo instances are always truthy, None is falsy).
+  - Tests: `assert x is True/None/etc.` → truthy/falsy form with
+    inline intent comments.
+  - Ruff: ✅ clean. **80 passed, 14 skipped, 0 failures**. Live
+    preview endpoints respond identically.
+
 - ⚠️ **Code review report — round 4 (Iter 22.3)** (2026-02-08): **NO ACTION TAKEN** (justified):
   - Fourth consecutive report flagging the same `is None` /
     `is not None` / `is True` / `is False` comparisons as anti-patterns.

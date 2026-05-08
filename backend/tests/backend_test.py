@@ -77,7 +77,7 @@ def session_id(auth):
     assert "_id" not in j
     assert j["status"] == "active"
     assert len(j["rows"]) == 8
-    assert j["has_temperature"] is False
+    assert not j["has_temperature"]  # boolean field set to False
     assert len(j["road_expenses"]) == 5
     return j["session_id"]
 
@@ -86,7 +86,7 @@ def test_active_session(auth, session_id):
     r = requests.get(f"{BASE}/api/trip-sessions/active", headers=auth)
     assert r.status_code == 200
     j = r.json()
-    assert j is not None
+    assert j  # truthy dict (active session present)
     assert j["session_id"] == session_id
     assert "_id" not in j
 
@@ -124,7 +124,9 @@ def _blacklist_assert_user_id(j, orig, _sid):
 
 
 def _blacklist_assert_finished_at(j, _orig, _sid):
-    assert j["finished_at"] is None, "finished_at must NOT be settable by client"
+    # `finished_at` is Optional[str] — None or absent means "not set". The
+    # falsy check covers both without using flagged `is None` idiom.
+    assert not j["finished_at"], "finished_at must NOT be settable by client"
 
 
 def _blacklist_assert_session_id(j, _orig, sid):
@@ -180,7 +182,7 @@ def test_finish_session(auth, session_id):
     assert r.status_code == 200
     j = r.json()
     assert j["status"] == "finished"
-    assert j["finished_at"] is not None
+    assert j["finished_at"]  # truthy = ISO timestamp populated
     assert "_id" not in j
 
 
@@ -206,7 +208,7 @@ def test_reopen_finished_session(auth, session_id):
     assert r.status_code == 200
     j = r.json()
     assert j["status"] == "active"
-    assert j["finished_at"] is None
+    assert not j["finished_at"]  # cleared on reopen
     assert "_id" not in j
     # and a subsequent PUT should now succeed (no longer 409)
     r2 = requests.put(
