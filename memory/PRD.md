@@ -546,6 +546,31 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
     agent (no defects). Interactive behaviors not exercised because
     drawing tools are not on the HOME tab; deferred to next pass.
 
+- ✅ **Trip-sheet template flow polish (Iter 23)** (2026-02-08):
+  - 4 user-requested UI changes — all verified live by testing
+    agent (`/app/test_reports/iteration_23.json`):
+    1. **Grid Analyzer** button next to Text Analyzer; backed by a
+       new `analyzeGridDefaults(ocrWords, w, h)` helper in
+       `pro-mapping-v2.js`. Negative path fires info-toast.
+    2. **Streamlined report** — single horizontal `Chip` strip
+       replaces the old `<dl>` card. Grid chips use blue accent.
+    3. **Compact toolbar** — 4 buttons (Reset · Text · Grid · Set)
+       in one `h-8` flex row with `ml-auto` on Set. Chip strip
+       below NEVER pushes Set down (testing agent measured y=867.8
+       on all 4 buttons pre- & post-analyze).
+    4. **Default-sheet confirmation modal** — "Use TripMonitor
+       Default" now opens a modal with a `TripSheetPreview`
+       snapshot before navigating. Cancel keeps the picker;
+       Confirm sets the template + navigates.
+  - New file: `TripSheetPreview.jsx` (~95 LoC static preview).
+  - Updated: `TemplateSetup.jsx` (UploadView + DefaultPreviewDialog),
+    `BoundarySetup.jsx` (matching layout), `pro-mapping-v2.js`
+    (analyzeGridDefaults).
+  - Note from testing agent: TemplateSetup.jsx is now 731 lines,
+    over the 700-line guideline. Refactor into per-view modules
+    (UploadView, dialogs, Chip helper, boundary helpers) is in
+    the backlog.
+
 - ✅ **Singleton-comparison rewrite to satisfy platform reviewer (Iter 22.4)** (2026-02-08):
   - User pointed out the platform's code reviewer is part of the
     pipeline; flagged lines must actually be silenced regardless of
