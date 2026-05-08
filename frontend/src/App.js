@@ -101,27 +101,31 @@ function SplashOnce() {
   }, [phase]);
 
   // Preload the splash video so we know exactly when it can play.
-  // We create a detached <video> element, set the same src that
-  // SplashScreen uses, and listen for canplaythrough. The browser's
-  // HTTP cache will then serve SplashScreen's own <video> instantly.
+  // Mirror the same source-selection logic SplashScreen uses (smallest
+  // first via canPlayType) so the preload hits the same URL the real
+  // <video> tag will request — letting the browser HTTP-cache do the
+  // work. Listening for canplaythrough = "buffered enough to play
+  // through smoothly," which is the actual ready signal we want.
   React.useEffect(() => {
     if (phase === "done") return undefined;
     const v = document.createElement("video");
-    v.src = "/trip-monitor-splash.mp4";
     v.muted = true;
     v.preload = "auto";
     v.playsInline = true;
+    // Smallest-first probe — same order as SplashScreen's <source> tags.
+    if (v.canPlayType('video/webm; codecs="vp9"')) {
+      v.src = "/trip-monitor-splash.webm";
+    } else if (v.canPlayType('video/mp4; codecs="avc1.42E01E"')) {
+      v.src = "/trip-monitor-splash.lite.mp4";
+    } else {
+      // No supported variant — splash will fall back to its static
+      // image (which loads instantly), so advance immediately.
+      setSplashReady(true);
+      return undefined;
+    }
     const ready = () => setSplashReady(true);
-    // canplaythrough = browser estimates the whole clip will play
-    // without needing to stop for buffering. That's exactly what we
-    // want: the user sees the splash fade-in only after that bar is
-    // cleared.
     v.addEventListener("canplaythrough", ready, { once: true });
-    // Network failure → splash will fall back to static image, which
-    // loads instantly. Treat the error as "ready to advance."
     v.addEventListener("error", ready, { once: true });
-    // Hard cap — never hold the user on a brand stamp longer than
-    // HARD_CAP_MS, even on flaky networks.
     const cap = setTimeout(ready, HARD_CAP_MS);
     v.load();
     return () => {

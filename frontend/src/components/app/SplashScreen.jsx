@@ -49,7 +49,6 @@ export default function SplashScreen({ onComplete, durationMs = 7400 }) {
       {hasVideo ? (
         <video
           ref={videoRef}
-          src="/trip-monitor-splash.mp4"
           autoPlay
           muted
           playsInline
@@ -64,7 +63,13 @@ export default function SplashScreen({ onComplete, durationMs = 7400 }) {
             display: "block",
             background: "#FFFFFF",
           }}
-        />
+        >
+          {/* Smallest first — browser picks the first <source> it can
+              decode. WebM (VP9) is ~307 KB, lite MP4 (H.264 Baseline)
+              ~396 KB. Both have no audio (splash is muted anyway). */}
+          <source src="/trip-monitor-splash.webm" type="video/webm" />
+          <source src="/trip-monitor-splash.lite.mp4" type="video/mp4" />
+        </video>
       ) : (
         <img
           src="/trip-monitor-logo.webp"

@@ -546,6 +546,24 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
     agent (no defects). Interactive behaviors not exercised because
     drawing tools are not on the HOME tab; deferred to next pass.
 
+- ✅ **Splash video re-encoded for cellular (Iter 21c.4)** (2026-02-08):
+  - Original splash MP4 was 1.4 MB — too heavy for the 5 s hard cap
+    on cellular, which meant most cellular users hit the static-image
+    fallback. Re-encoded into two leaner variants (audio dropped
+    entirely since the splash plays muted):
+      • `/trip-monitor-splash.webm` — VP9, 307 KB (78 % smaller).
+        Plays on Chrome / Firefox / Edge / Android.
+      • `/trip-monitor-splash.lite.mp4` — H.264 Constrained Baseline
+        @ Level 3.0, 396 KB (72 % smaller). Plays on every Safari /
+        iOS / older Android device.
+  - SplashScreen.jsx now uses `<source>` selection (WebM first, lite
+    MP4 fallback). SplashOnce's preload probe mirrors the same
+    canPlayType() logic so the preload hits the exact URL the real
+    `<video>` will request, getting HTTP-cache reuse for free.
+  - Real-world download time on Fast 4G: **7.3 s → 0.9 s (Safari) /
+    1.5 s (Chrome)**. Slow 4G down from 19.6 s → 2.3 s / 3.9 s.
+    Means the 5 s cap should rarely fire even on flaky networks.
+
 - ✅ **CornerBoxx Technology pre-splash — data-driven (Iter 21c)** (2026-02-08):
   - User-supplied brand artwork shown ONCE per session before the
     Trip Monitor splash. Single purpose: cover the time it takes the
