@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Camera, Upload, ScanLine, ArrowLeft, Loader2, FileText, Sparkles,
-  Lock, Crown, RotateCcw, Check, X, RefreshCw,
+  Lock, Crown, RotateCcw, Check, X, RefreshCw, Grid3x3,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
@@ -16,7 +16,7 @@ import {
 } from "../lib/template-store";
 import { emptyTemplate } from "../lib/template-types";
 import {
-  DEFAULT_BOUNDARIES, analyzeFontDefaults, FONT_PRESETS_BY_ID,
+  DEFAULT_BOUNDARIES, analyzeFontDefaults, analyzeGridDefaults, FONT_PRESETS_BY_ID,
 } from "../lib/pro-mapping-v2";
 import { hasFeatureTier, getFeatureTier, TIER_LABEL } from "../lib/local-auth";
 
@@ -43,7 +43,8 @@ export default function TemplateSetup() {
   const [boundaries, setBoundaries] = useState({ ...DEFAULT_BOUNDARIES });
   const [boundaryDrag, setBoundaryDrag] = useState(null);
   const [analysis, setAnalysis] = useState(null);
-  const [analyzing, setAnalyzing] = useState(false);
+  const [gridAnalysis, setGridAnalysis] = useState(null);
+  const [analyzing, setAnalyzing] = useState(null); // null | "text" | "grid"
   const [analyzeProgress, setAnalyzeProgress] = useState(0);
 
   const [draftTemplate, setDraftTemplate] = useState(null);
@@ -66,8 +67,13 @@ export default function TemplateSetup() {
     })();
   }, []);
 
-  const handlePickDefault = async () => {
+  // Default-sheet pick: open a preview modal first so the driver can see
+  // what they're agreeing to before committing. Actual selection +
+  // navigation only happens after they confirm.
+  const handlePickDefault = () => setShowDefaultPreview(true);
+  const handleConfirmDefault = async () => {
     await setActiveTemplateId(DEFAULT_TEMPLATE_ID);
+    setShowDefaultPreview(false);
     toast.success("Using TripMonitor default sheet");
     navigate("/dashboard");
   };
@@ -84,6 +90,7 @@ export default function TemplateSetup() {
       setScan(normalized);
       setBoundaries({ ...DEFAULT_BOUNDARIES });
       setAnalysis(null);
+      setGridAnalysis(null);
       toast.success(`Scan ready · ${normalized.width}×${normalized.height}`);
     } catch (e) {
       toast.error(`Capture failed: ${e?.message || e}`);
@@ -93,21 +100,36 @@ export default function TemplateSetup() {
   const onResetBoundary = () => {
     setBoundaries({ ...DEFAULT_BOUNDARIES });
     setAnalysis(null);
+    setGridAnalysis(null);
     toast.success("Boundary reset to 1″ margin");
   };
-  const onAnalyze = async () => {
+  const onAnalyze = async (kind = "text") => {
     if (!scan) return;
-    setAnalyzing(true);
+    setAnalyzing(kind);
     setAnalyzeProgress(0);
     try {
       const words = await runOcr(scan, { onProgress: (p) => setAnalyzeProgress(Math.round(p * 100)) });
-      const a = analyzeFontDefaults(words, scan.width, scan.height);
-      setAnalysis(a);
-      toast.success(`Detected: ${FONT_PRESETS_BY_ID[a.fontFamily]?.label || "font"} · ${a.fontSizePt}pt · ${a.weight}`);
+      if (kind === "text") {
+        const a = analyzeFontDefaults(words, scan.width, scan.height);
+        setAnalysis(a);
+        toast.success(`Text · ${FONT_PRESETS_BY_ID[a.fontFamily]?.label || "font"} · ${a.fontSizePt}pt · ${a.weight}`);
+      } else {
+        const g = analyzeGridDefaults(words, scan.width, scan.height);
+        setGridAnalysis(g);
+        // Use info (blue) toast for the negative path so the colour
+        // matches the outcome — only the success path (cols+rows
+        // both detected) flashes a green toast.
+        if (g.cols > 0 && g.rows > 0) {
+          toast.success(`Grid · ${g.cols} cols × ${g.rows} rows`);
+        } else {
+          toast.info("No grid pattern detected");
+        }
+      }
     } catch (e) {
       toast.error(`Analyze failed: ${e?.message || e}`);
-    } finally { setAnalyzing(false); }
+    } finally { setAnalyzing(null); }
   };
+  const onAnalyzeGrid = () => onAnalyze("grid");
 
   const buildDraftWithBoundary = () => {
     const tpl = emptyTemplate({ source: "scanned", name: "New scan" });
@@ -197,8 +219,11 @@ export default function TemplateSetup() {
             scan={scan} busy={busy} fileRef={fileRef} onFile={handleFile}
             boundaries={boundaries} setBoundaries={setBoundaries}
             boundaryDrag={boundaryDrag} setBoundaryDrag={setBoundaryDrag}
-            analysis={analysis} analyzing={analyzing} analyzeProgress={analyzeProgress}
-            onReset={onResetBoundary} onAnalyze={onAnalyze}
+            analysis={analysis} gridAnalysis={gridAnalysis}
+            analyzing={analyzing} analyzeProgress={analyzeProgress}
+            onReset={onResetBoundary}
+            onAnalyze={() => onAnalyze("text")}
+            onAnalyzeGrid={onAnalyzeGrid}
             tier={tier} onQuick={onEnterQuickMap} onPro={onEnterProStudio}
           />
         )}
@@ -346,7 +371,7 @@ function PickView({ tier, onDefault, onScan }) {
 function UploadView({
   scan, busy, fileRef, onFile,
   boundaries, setBoundaries, boundaryDrag, setBoundaryDrag,
-  analysis, analyzing, analyzeProgress, onReset, onAnalyze,
+  analysis, gridAnalysis, analyzing, analyzeProgress, onReset, onAnalyze, onAnalyzeGrid,
   tier, onQuick, onPro,
 }) {
   const proLocked = tier !== "STU";
@@ -424,46 +449,76 @@ function UploadView({
             </svg>
           </div>
 
-          <div className="grid grid-cols-3 gap-3" data-testid="upload-controls">
+          {/* Compact 4-button toolbar — Reset · Text · Grid · Set & continue.
+              All on one row at h-8 so the analysis report below does NOT
+              push the Set button down. */}
+          <div className="flex items-center gap-1.5 flex-wrap" data-testid="upload-controls">
             <Button
               variant="outline" data-testid="upload-reset" onClick={onReset}
-              className="h-10 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] text-xs font-bold"
+              className="h-8 px-2.5 text-xs bg-white border-[var(--tm-border)] text-[var(--tm-navy)]"
             >
-              <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset
+              <RotateCcw className="h-3 w-3 mr-1" /> Reset
             </Button>
             <Button
-              variant="outline" data-testid="upload-analyze" onClick={onAnalyze} disabled={analyzing}
-              className="h-10 bg-white border-[var(--tm-blue)] text-[var(--tm-navy)] text-xs font-bold"
+              variant="outline" data-testid="upload-analyze"
+              onClick={onAnalyze} disabled={!!analyzing}
+              className="h-8 px-2.5 text-xs bg-white border-[var(--tm-blue)] text-[var(--tm-navy)] disabled:opacity-60"
+              title="Run OCR to detect font size, weight and line spacing"
             >
-              {analyzing ? (
+              {analyzing === "text" ? (
                 <span className="inline-flex items-center gap-1">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> {analyzeProgress}%
+                  <Loader2 className="h-3 w-3 animate-spin" /> {analyzeProgress}%
                 </span>
               ) : (
-                <>
-                  <Sparkles className="h-3.5 w-3.5 mr-1" /> {analysis ? "Re-analyze" : "Text Analyzer"}
-                </>
+                <><Sparkles className="h-3 w-3 mr-1" />{analysis ? "Re-text" : "Text"}</>
               )}
             </Button>
             <Button
-              variant="outline" data-testid="upload-set"
-              onClick={() => toast.success("Boundary saved — pick a mapping mode below to lock & continue")}
-              className="h-10 bg-white border-[var(--tm-orange)] text-[var(--tm-navy)] text-xs font-bold"
+              variant="outline" data-testid="upload-analyze-grid"
+              onClick={onAnalyzeGrid} disabled={!!analyzing}
+              className="h-8 px-2.5 text-xs bg-white border-[var(--tm-blue)] text-[var(--tm-navy)] disabled:opacity-60"
+              title="Detect grid lines (rows × columns) on the scan"
             >
-              <Check className="h-3.5 w-3.5 mr-1" /> Set
+              {analyzing === "grid" ? (
+                <span className="inline-flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" /> {analyzeProgress}%
+                </span>
+              ) : (
+                <><Grid3x3 className="h-3 w-3 mr-1" />{gridAnalysis?.cols ? "Re-grid" : "Grid"}</>
+              )}
+            </Button>
+            <Button
+              data-testid="upload-set"
+              onClick={() => toast.success("Boundary saved — pick a mapping mode below to lock & continue")}
+              className="h-8 px-3 text-xs bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold ml-auto"
+            >
+              <Check className="h-3 w-3 mr-1" /> Set
             </Button>
           </div>
 
-          {analysis && (
-            <div data-testid="upload-analysis-card" className="bg-[var(--tm-surface)] border border-[var(--tm-border)] rounded-md p-3">
-              <div className="text-[10px] uppercase tracking-[0.25em] font-bold text-[var(--tm-orange)] mb-2">
-                Detected text · used as Studio defaults
-              </div>
-              <dl className="grid grid-cols-3 gap-x-3 gap-y-1.5 text-xs">
-                <Stat k="Font" v={FONT_PRESETS_BY_ID[analysis.fontFamily]?.label || analysis.fontFamily} testid="analysis-font" />
-                <Stat k="Size" v={`${analysis.fontSizePt}pt`} testid="analysis-size" />
-                <Stat k="Thickness" v={analysis.weight} testid="analysis-weight" />
-              </dl>
+          {/* Single condensed chip strip for ALL analysis stats (text + grid).
+              Replaces the old <dl>-based card. */}
+          {(analysis || (gridAnalysis && (gridAnalysis.cols > 0 || gridAnalysis.rows > 0))) && (
+            <div data-testid="upload-analysis-card"
+              className="flex items-center gap-1.5 flex-wrap text-[10px] bg-[var(--tm-surface)] border border-[var(--tm-border)] rounded-md px-2 py-1.5">
+              {analysis && (
+                <>
+                  <Chip testid="analysis-font"    k="Font" v={FONT_PRESETS_BY_ID[analysis.fontFamily]?.label || analysis.fontFamily} />
+                  <Chip testid="analysis-size"    k="Size" v={`${analysis.fontSizePt}pt`} />
+                  <Chip testid="analysis-weight"  k="Wt"   v={analysis.weight} />
+                  <Chip testid="analysis-spacing" k="LH"   v={`${(analysis.lineSpacingNorm * 100).toFixed(1)}%`} />
+                  <Chip testid="analysis-count"   k="N"    v={analysis.wordsAnalyzed} />
+                </>
+              )}
+              {gridAnalysis && gridAnalysis.cols > 0 && (
+                <>
+                  <Chip testid="grid-cols" k="Cols" v={gridAnalysis.cols} accent />
+                  <Chip testid="grid-rows" k="Rows" v={gridAnalysis.rows} accent />
+                  <Chip testid="grid-cell" k="Cell"
+                    v={`${(gridAnalysis.avgCellW * 100).toFixed(1)}×${(gridAnalysis.avgCellH * 100).toFixed(1)}%`}
+                    accent />
+                </>
+              )}
             </div>
           )}
 
@@ -502,12 +557,21 @@ function UploadView({
   );
 }
 
-function Stat({ k, v, testid }) {
+function Chip({ k, v, testid, accent }) {
+  // Compact key·value pill used in the analysis report strip.
+  // `accent` colours grid stats blue so text vs grid info is glanceable.
   return (
-    <>
-      <dt className="text-[10px] uppercase tracking-wider font-bold text-[var(--tm-text-muted)]">{k}</dt>
-      <dd data-testid={testid} className="col-span-2 text-xs font-bold text-[var(--tm-navy)]">{v}</dd>
-    </>
+    <span
+      data-testid={testid}
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm border font-bold ${
+        accent
+          ? "bg-[var(--tm-blue)]/8 border-[var(--tm-blue)]/30 text-[var(--tm-blue)]"
+          : "bg-white border-[var(--tm-border)] text-[var(--tm-navy)]"
+      }`}
+    >
+      <span className="text-[8px] uppercase tracking-wider opacity-70">{k}</span>
+      {v}
+    </span>
   );
 }
 

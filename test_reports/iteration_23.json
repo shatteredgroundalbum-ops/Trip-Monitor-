@@ -1,0 +1,25 @@
+{
+  "summary": "Iter 23 — Re-test of all 4 spec changes from iter 22 after fixes. ALL PASS in live UI. Walked the full 5-step setup wizard live (Tester / TS-0001 / 135790 / 'alpha bravo charlie delta'), then drove /templates → pick-default modal flow + /templates → pick-scan → file upload → 4-button toolbar → text analyze → grid analyze → reset → set. Every required testid is present and behaving per spec. The default-preview-modal (highest-priority change in iter 22) opens correctly, cancel keeps the picker visible, confirm navigates to /dashboard. The new compact 4-button toolbar (upload-reset / upload-analyze / upload-analyze-grid / upload-set) renders in a single flex row at h=32, the upload-set button stays in the toolbar row even after the analysis chip strip mounts below (verified y-coordinates pre/post analyze: all four buttons share y=867.8). The chip-strip is a <div> (not a <dl>) and contains analysis-font/size/weight/spacing/count after text analyze. Reset clears both analyses (chip strip disappears). Set button toasts 'Boundary saved'. Mapping mode cards (Quick + Pro Studio) still render below.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "TemplateSetup.jsx is now 731 lines — over the 700-line guideline. Recommend splitting UploadView, the four dialog subcomponents (DefaultPreviewDialog, ResumeDialog, StudioLockDialog, UpgradePrompt), the Chip helper, and the boundary-helpers (BoundaryPolygon/BoundaryHandlesSvg/clamp01/dist/hitHandle/applyHandle) into separate modules. Boundary helpers in particular are pure utilities that belong in pro-mapping-v2.js.",
+    "Grid-analyze negative-path UX is correct: when analyzeGridDefaults returns cols=0/rows=0 the parent skips rendering grid-cols/grid-rows/grid-cell chips AND fires toast.info (blue, not green) — visually consistent with the no-detection outcome. Verified in source at TemplateSetup.jsx ~line 122-126.",
+    "TripSheetPreview.jsx column headers ['#','Code','Location','City','ST','Trailer','Dep','Notes'] are correct in source but render as ALL-CAPS in the live DOM due to a Tailwind `uppercase` class. innerText therefore returns 'CODE/LOCATION/...'. Not a bug — just worth noting for future automated tests (use case-insensitive matching).",
+    "FREE/QCK/STU tier gating: in this test run the freshly-set-up identity reached the upload screen without an upgrade prompt — implies pick-scan is reachable on default tier (or the feature-tier logic treats a fresh setup as ≥QCK). Worth documenting which tier the local-auth scaffold defaults to so test scripts know whether they need to bump tier."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only request)", "frontend": "100% — 4/4 spec changes verified live"},
+  "test_credentials": "Tester / TS-0001 / 135790 / 'alpha bravo charlie delta' — wizard now walks fully when using locator(...).fill on the hidden setup-pin-input rather than keyboard.type",
+  "seed_data_creation": "Created /tmp/test_scan.png (850×1100 synthetic PNG with horizontal black stripes) used as the upload payload for the upload-canvas test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Setup wizard reliably walks with locator('[data-testid=setup-pin-input]').fill('135790') (NOT keyboard.type — the hidden numeric input loses focus between digits). After /templates → pick-scan, FREE-tier upgrade prompt did NOT appear in this run; pick-scan led directly to upload view. To exercise the upload toolbar, set_input_files on [data-testid=template-setup-file-input] with a real image (e.g. 850×1100 PNG); the 1×1 minimal PNG used previously is too small for normalizeCapture and silently fails to set the scan. Default-preview-modal flow + 4-button toolbar + text/grid analyze + reset/set + chip-strip are all wired correctly as of this iteration.",
+  "rca of the issue": "All 3 critical issues from iter 22 are fixed in this build: (1) handlePickDefault now correctly sets showDefaultPreview(true) (TemplateSetup.jsx line 73), (2) handleConfirmDefault is defined (lines 74-79) and runs setActiveTemplateId → toast → navigate, (3) the inline UploadView (lines 371-558) was rewritten to use the new compact 4-button h-8 toolbar with ml-auto on upload-set, plus the new Chip-based combined chip strip replaces the old <dl> Stat report. analyzeGridDefaults from pro-mapping-v2 is called on the grid path and its result (cols/rows/avgCellW/avgCellH) drives the grid chips. No new defects observed."
+}
