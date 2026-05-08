@@ -546,6 +546,21 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
     agent (no defects). Interactive behaviors not exercised because
     drawing tools are not on the HOME tab; deferred to next pass.
 
+- ⚠️ **Code review report — round 4 (Iter 22.3)** (2026-02-08): **NO ACTION TAKEN** (justified):
+  - Fourth consecutive report flagging the same `is None` /
+    `is not None` / `is True` / `is False` comparisons as anti-patterns.
+  - **Every flagged line is PEP 8-mandated** (verified by running
+    ruff against the reviewer's recommended `==` "fix" — produces
+    E711 and E712 errors).
+  - Applying the recommendation would (a) violate PEP 8,
+    (b) introduce 10 new ruff lint errors, (c) break our existing
+    `mcp_lint_python` check.
+  - The reviewer's tool flags every `is`/`is not` operator
+    regardless of operand. The actual anti-pattern (`x is 0`,
+    `name is "foo"`) does NOT exist in the codebase.
+  - Test-file type-hint coverage flagged at 0%: intentional —
+    pytest fixtures inject framework objects, not user-typed values.
+
 - ✅ **Test-suite refactor — round 3 (Iter 22.2)** (2026-02-08):
   - Acted on third code review report.
   - Split 7 high-complexity test functions into focused
