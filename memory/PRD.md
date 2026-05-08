@@ -550,26 +550,21 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
   - User-supplied brand artwork (`/cornerboxx-logo.png`) shown ONCE
     per session before the existing Trip Monitor splash, then
     Welcome/role-selection.
-  - **Bridging fix (Iter 21c.1)**: initial implementation faded the
-    pre-splash via `opacity → 0`, which caused the Welcome page
-    sitting in <Routes> to flash through during the fade-out before
-    the Trip Monitor splash mounted (user-reported "four or five
-    different images flickering"). Fixed by:
-      1. PreSplashScreen no longer has a fade-IN — mounts at opacity
-         1 instantly so the boot is fully covered.
-      2. PreSplashScreen now signals `onFadeStart` when its 700ms
-         fade-out begins.
-      3. App.js `SplashOnce` rewritten as a 4-state machine
-         (`pre` → `crossfade` → `main` → `done`). On `crossfade`,
-         the Trip Monitor SplashScreen is mounted UNDERNEATH the
-         still-fading pre-splash (z-100 vs z-120) so the dissolve
-         goes pre-splash → splash directly, never revealing the
-         Welcome route.
-  - Live-verified at three checkpoints: instant cover (no Welcome
-    bleed), mid-crossfade (both splashes mounted, Trip Monitor logo
-    visible through the fading CornerBoxx layer), main-only (pre
-    unmounted, splash playing). Welcome / role-selection only
-    appears at the very end after Trip Monitor splash slides up.
+  - **Sequential cinematic spec (Iter 21c.2 — final)**:
+    `pre → gap → main → done`. Pre-splash mounts at full opacity
+    instantly (instant cover for app boot), holds 1.7 s, fades out
+    to white over 700 ms. 800 ms plain-white "gap" follows (no
+    logo). Trip Monitor splash mounts and fades IN over 800 ms,
+    plays the existing video, then slides up + fades out at the
+    very end. A persistent white shield (z-90, opacity 1 → 0 in
+    sync with the splash's slide-up at 6.3 s) blocks the Welcome
+    page underneath through the entire intro so it never bleeds
+    through during transitions.
+  - User feedback corrected from earlier crossfade attempt: "no
+    double exposure — fade out, then fade in." Implementation now
+    matches: zero overlap between the two splashes.
+  - Live-verified across 5 frames: solid pre, fading pre, white
+    gap, fading-in main, full main → Welcome.
 
 - ✅ **Website features disabled until release (Iter 20.1)** (2026-02-??):
   - User instruction: hide every UI surface that touches the public Website License ID, Premium unlock codes, or external Trip Monitor website — but DO NOT delete the underlying logic. Flip-on-launch.

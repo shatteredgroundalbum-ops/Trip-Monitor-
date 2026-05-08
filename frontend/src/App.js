@@ -62,42 +62,91 @@ function App() {
 }
 
 function SplashOnce() {
-  // 3-stage cinematic intro, run once per session:
-  //   1. CornerBoxx Technology pre-splash (instant cover, holds while
-  //      the app finishes booting, then fades out).
-  //   2. Trip Monitor splash (~7.4s) — MOUNTED THE MOMENT the pre-splash
-  //      starts fading, so the cross-dissolve goes pre-splash → splash
-  //      directly. The Welcome page sitting in <Routes> never flashes
-  //      through the gap.
-  //   3. → Welcome / landing page.
+  // 4-phase intro, sequential (no overlap, no double-exposure):
+  //   pre  — CornerBoxx pre-splash. Instant on (covers app boot),
+  //          holds, fades out into white (~700 ms).
+  //   gap  — Plain white shield only, no logo (~800 ms breathing
+  //          beat between the two brand stamps).
+  //   main — Trip Monitor splash fades IN from white (800 ms),
+  //          plays its full video, then slides up + fades out at
+  //          the end. The white shield underneath fades in sync
+  //          so Welcome is revealed cinematically.
+  //   done — everything unmounted, Welcome visible.
   //
-  // Phases: "pre" (only pre-splash) → "crossfade" (both mounted, pre on
-  // top fading out, main visible underneath) → "main" (pre unmounted,
-  // main only) → "done" (both unmounted, sessionStorage flag set).
+  // sessionStorage gate ensures the entire intro plays once per tab.
   const [phase, setPhase] = React.useState(() => {
     try { return sessionStorage.getItem("tm_splash_seen") ? "done" : "pre"; }
     catch { return "pre"; }
   });
+  const [shieldOpacity, setShieldOpacity] = React.useState(1);
+  const [mainOpacity, setMainOpacity]     = React.useState(0);
+
+  // Gap → main hand-off: 800 ms of plain white, then the Trip Monitor
+  // splash mounts and starts its fade-in.
+  React.useEffect(() => {
+    if (phase === "gap") {
+      const t = setTimeout(() => setPhase("main"), 800);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [phase]);
+
+  // Main fade-in: as soon as the SplashScreen mounts, request a frame
+  // and animate its wrapper opacity 0 → 1 over 800 ms.
+  React.useEffect(() => {
+    if (phase === "main") {
+      const id = requestAnimationFrame(() => setMainOpacity(1));
+      return () => cancelAnimationFrame(id);
+    }
+    setMainOpacity(0);
+    return undefined;
+  }, [phase]);
+
+  // Final reveal: SplashScreen begins its built-in slide-up + fade-out
+  // at `durationMs - 1100` = 6300 ms after mount. Drop the white
+  // shield in sync so Welcome dissolves in cleanly underneath.
+  React.useEffect(() => {
+    if (phase === "main") {
+      const t = setTimeout(() => setShieldOpacity(0), 6300);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [phase]);
+
+  if (phase === "done") return null;
+
   const finish = () => {
     try { sessionStorage.setItem("tm_splash_seen", "1"); } catch { /* ignore */ }
     setPhase("done");
   };
-  if (phase === "done") return null;
 
-  // SplashScreen mounts as soon as we leave the "pre" phase. While
-  // phase === "crossfade" it sits at z-100 underneath the still-fading
-  // pre-splash (z-120), so by the time pre-splash hits opacity 0 the
-  // main splash is already at full opacity 1 with the video playing.
-  const mainMounted = phase === "crossfade" || phase === "main";
-  const preMounted  = phase === "pre" || phase === "crossfade";
   return (
     <>
-      {mainMounted && <SplashScreen onComplete={finish} />}
-      {preMounted && (
-        <PreSplashScreen
-          onFadeStart={() => setPhase("crossfade")}
-          onComplete={() => setPhase("main")}
-        />
+      {/* White shield — covers <Routes> through the entire intro so
+          Welcome never flashes through. Lower z than both splashes. */}
+      <div
+        aria-hidden
+        data-testid="splash-shield"
+        style={{
+          position: "fixed", inset: 0, backgroundColor: "#FFFFFF",
+          zIndex: 90, pointerEvents: "none",
+          opacity: shieldOpacity,
+          transition: "opacity 1100ms cubic-bezier(0.4, 0, 0.2, 1)",
+        }}
+      />
+      {phase === "pre" && (
+        <PreSplashScreen onComplete={() => setPhase("gap")} />
+      )}
+      {phase === "main" && (
+        <div
+          aria-hidden={mainOpacity === 0}
+          style={{
+            opacity: mainOpacity,
+            transition: "opacity 800ms cubic-bezier(0.4, 0, 0.2, 1)",
+          }}
+        >
+          <SplashScreen onComplete={finish} />
+        </div>
       )}
     </>
   );

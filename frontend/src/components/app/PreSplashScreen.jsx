@@ -2,39 +2,27 @@ import React, { useEffect, useState } from "react";
 
 /**
  * Pre-splash — CornerBoxx Technology brand stamp shown ONCE per session
- * before the main Trip Monitor splash. Acts as a load-cover so the
- * Welcome / Routes underneath never flashes through.
- *
- * Two phases:
- *   "hold"  — full opacity, full coverage. Mounts INSTANTLY at opacity 1
- *             (no fade-in) so the app boot is never visible.
- *   "out"   — fade out. The parent listens to `onFadeStart` here and
- *             mounts the main SplashScreen underneath BEFORE this
- *             component begins reducing its own opacity, so the fade
- *             dissolves into the next splash, never into the route
- *             page underneath.
+ * before the main Trip Monitor splash. Sequential intro (no overlap):
+ * mounts INSTANTLY at full opacity (covers app boot), holds, then
+ * fades OUT into the white shield managed by the parent SplashOnce.
  *
  * Total visible time = `holdMs` + `fadeMs`.
  */
 export default function PreSplashScreen({
   onComplete,
-  onFadeStart,
   holdMs = 1700,
   fadeMs = 700,
 }) {
   const [phase, setPhase] = useState("hold");
 
   useEffect(() => {
-    const outT = setTimeout(() => {
-      setPhase("out");
-      onFadeStart?.();
-    }, holdMs);
+    const outT = setTimeout(() => setPhase("out"), holdMs);
     const doneT = setTimeout(() => onComplete?.(), holdMs + fadeMs);
     return () => {
       clearTimeout(outT);
       clearTimeout(doneT);
     };
-  }, [holdMs, fadeMs, onComplete, onFadeStart]);
+  }, [holdMs, fadeMs, onComplete]);
 
   return (
     <div
