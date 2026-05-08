@@ -14,7 +14,8 @@ import React from "react";
 import { toast } from "sonner";
 import {
   // Selection & cursor
-  MousePointer2, Crosshair,
+  MousePointer2, Crosshair, BoxSelect, Layers, Grid as GridFilter, Globe,
+  ListPlus, ListX,
   // Move
   Move, Move3D,
   // Scale / resize
@@ -110,9 +111,47 @@ function buildGroups(activeTab, ctx) {
   switch (activeTab) {
     case "HOME":
       return [
+        // Selection — ALL sub-tools fully wired to the canvas (no stubs).
+        // • Select: arrow tool (default). Click element to select; drag
+        //   handles to resize/move.
+        // • Direct Select: vertex/cell-pick mode for paths, polygons,
+        //   traces, and grids.
+        // • Multi-Select Toggle: persistent shift-click mode; while on,
+        //   plain clicks add/remove from the selection.
+        // • Box Select: click-and-drag marquee on empty canvas. Direction
+        //   matters — L→R encloses, R→L intersects.
+        // • Select Mode (Element / Grid / All): filters which elements
+        //   click, marquee, and Select All can target.
+        // • Select All / Deselect All.
         { title: "Selection", tools: [
-          t("select", "Select", MousePointer2, () => handlers.setTool("select"), { active: state.tool === "select" }),
-          t("direct-select", "Direct Select", Crosshair, stub("Direct Select")),
+          t("select", "Select", MousePointer2,
+             () => { handlers.setTool("select"); },
+             { active: state.tool === "select" && !state.directSelectOn }),
+          t("direct-select", "Direct Select (vertex / cell)", Crosshair,
+             () => { handlers.setTool("select"); handlers.toggleDirectSelect(); },
+             { active: !!state.directSelectOn }),
+          t("multi-select", "Multi-Select Toggle (Shift / ⌘+click)", ListPlus,
+             handlers.toggleMultiSelect,
+             { active: !!state.multiSelectOn }),
+          t("box-select", "Box Select (drag on empty canvas)", BoxSelect,
+             () => { handlers.setTool("select"); toast.info("Drag on empty canvas — L→R encloses, R→L intersects"); },
+             { active: state.tool === "select" }),
+        ]},
+        { title: "Select Mode", tools: [
+          t("mode-element", "Mode · Element", Layers,
+             () => handlers.setSelectionMode("element"),
+             { active: state.selectionMode === "element" }),
+          t("mode-grid", "Mode · Grid Lines", GridFilter,
+             () => handlers.setSelectionMode("grid"),
+             { active: state.selectionMode === "grid" }),
+          t("mode-all", "Mode · All", Globe,
+             () => handlers.setSelectionMode("all"),
+             { active: state.selectionMode === "all" }),
+        ]},
+        { title: "Bulk", tools: [
+          t("select-all", "Select All", ListPlus, handlers.selectAll),
+          t("deselect-all", "Deselect All", ListX, handlers.deselectAll,
+             { disabled: !state.selectedCount }),
         ]},
         { title: "Move", tools: [
           t("move-free", "Move (free drag)", Move, () => handlers.setTool("select"), { active: state.tool === "select" }),
@@ -144,11 +183,17 @@ function buildGroups(activeTab, ctx) {
           t("ungroup", "Ungroup", Ungroup, stub("Ungroup")),
         ]},
         { title: "Lock", tools: [
-          t("lock", "Lock selection", Lock, handlers.lockSelected || stub("Lock")),
-          t("unlock", "Unlock selection", Unlock, handlers.unlockSelected || stub("Unlock")),
+          t("lock", "Lock selection", Lock,
+             () => handlers.lockSelected ? handlers.lockSelected() : stub("Lock")(),
+             { disabled: !state.hasSelection }),
+          t("unlock", "Unlock selection", Unlock,
+             () => handlers.unlockSelected ? handlers.unlockSelected() : stub("Unlock")(),
+             { disabled: !state.hasSelection }),
         ]},
         { title: "Actions", tools: [
-          t("duplicate", "Duplicate", Copy, handlers.duplicateSelected || stub("Duplicate")),
+          t("duplicate", "Duplicate", Copy,
+             () => handlers.duplicateSelected ? handlers.duplicateSelected() : stub("Duplicate")(),
+             { disabled: !state.hasSelection }),
           t("delete", "Delete", Trash2, handlers.removeSelected, { disabled: !state.hasSelection }),
         ]},
         { title: "Reset", tools: [

@@ -131,6 +131,22 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
   // Multi-select: array so shift-tap can add/remove from the selection.
   const [selectedIds, setSelectedIds] = useState([]);
   const [transform, setTransform] = useState(null);
+  // HOME-tab Selection toolset state.
+  //   selectionMode   — 'element' | 'grid' | 'all' (filters what box-select
+  //                     and Select All pick up, and what click hit-tests).
+  //   multiSelectOn   — when true, a plain click appends/toggles like shift-click.
+  //   directSelectOn  — when true, clicking a path/polygon enters vertex edit;
+  //                     clicking a grid picks a single cell as sub-selection.
+  //   boxSelect       — live rubber-band state during a marquee drag.
+  //   gridCellSel     — sub-selection for Direct Select on a grid element.
+  //   vertexSel       — { elementId, key } currently highlighted vertex.
+  const [selectionMode, setSelectionMode] = useState("element");
+  const [multiSelectOn, setMultiSelectOn] = useState(false);
+  const [directSelectOn, setDirectSelectOn] = useState(false);
+  const [boxSelect, setBoxSelect] = useState(null); // {start:{x,y}, end:{x,y}}
+  const [gridCellSel, setGridCellSel] = useState(null); // {id, row, col}
+  const [vertexSel, setVertexSel] = useState(null); // {id, key}
+  const [vertexDrag, setVertexDrag] = useState(null); // {id, key, originalGeometry}
   // Stylus-only mode — when on, ignore non-pen pointer input on the canvas.
   const [stylusOnly, setStylusOnly] = useState(false);
   // Trace tool: freehand mode bypasses auto-straighten.
@@ -176,19 +192,30 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
   historyRedoRef.current = historyRedo;
 
   // Keyboard shortcuts: Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z or
-  // Cmd/Ctrl+Y = redo. Bound at the document level; bailouts if a
+  // Cmd/Ctrl+Y = redo, Cmd/Ctrl+A = Select All (filtered by mode),
+  // Esc = Deselect All. Bound at the document level; bailouts if a
   // text input or contenteditable has focus.
   React.useEffect(() => {
     const onKey = (e) => {
       const tag = e.target?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || e.target?.isContentEditable) return;
+      if (e.key === "Escape") {
+        // Esc clears selection + box-select + vertex sub-selection.
+        setSelectedIds([]); setVertexSel(null); setGridCellSel(null); setBoxSelect(null);
+        return;
+      }
       if (!(e.metaKey || e.ctrlKey)) return;
       if (e.key === "z" && !e.shiftKey) { e.preventDefault(); historyUndoRef.current(); }
       else if ((e.key === "z" && e.shiftKey) || e.key === "y") { e.preventDefault(); historyRedoRef.current(); }
+      else if (e.key === "a") {
+        // Select All — filtered by current Selection Mode.
+        e.preventDefault();
+        setSelectedIds((_) => filterByMode(schema.elements, selectionMode).map((el) => el.id));
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, []);
+  }, [schema.elements, selectionMode]);
 
   // selectedEl / selectedId are provided above via selectedEls[0].
 
@@ -278,13 +305,36 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
       return;
     }
 
-    /* SELECT TOOL — tap to select, drag handles to resize/rotate, drag body to move. */
+    /* SELECT TOOL — tap to select, drag handles to resize/rotate, drag body to move.
+       Also powers the HOME-tab Selection sub-toolset:
+         · Direct Select — when `directSelectOn`, first tries to grab a vertex
+           of the currently-selected path/polygon before falling through to
+           object pick. On a grid, picks the cell under the pointer as a
+           sub-selection instead of the whole grid.
+         · Multi-Select Toggle — when `multiSelectOn`, a plain click behaves
+           like shift-click (toggle the element in the selection).
+         · Ctrl/Cmd+click — always toggles.
+         · Box Select — clicking empty canvas starts a marquee drag.
+    */
     if (tool === "select") {
+      // --- DIRECT SELECT: vertex grab -------------------------------------
+      if (directSelectOn && selectedEl && !selectedEl.locked) {
+        const verts = elementVertices(selectedEl);
+        const handleR = 0.018 / zoom;
+        for (const v of verts) {
+          if (Math.abs(pt.x - v.pt.x) < handleR && Math.abs(pt.y - v.pt.y) < handleR) {
+            snapshotHistory();
+            setVertexSel({ id: selectedEl.id, key: v.key });
+            setVertexDrag({ id: selectedEl.id, key: v.key, originalGeometry: selectedEl.geometry });
+            return;
+          }
+        }
+      }
       // Boundary is locked once set in the pre-Studio Boundary phase.
-      // Hit-test handle first if an element is selected.
+      // Hit-test handle first if an element is selected (normal mode only).
       // Hit-area scales inversely with zoom so handles meet WCAG 24px
       // touch-target at any zoom (e.g. at 0.5× the area doubles).
-      if (selectedEl && !selectedEl.locked) {
+      if (!directSelectOn && selectedEl && !selectedEl.locked && selectedEls.length === 1) {
         const bbox = elementBBox(selectedEl);
         const handles = bboxHandles(bbox);
         const handleR = 0.018 / zoom;
@@ -303,12 +353,33 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
           }
         }
       }
+      // Filter candidates by the active Selection Mode before hit-testing.
+      const candidates = filterByMode(schema.elements, selectionMode);
       // Hit-test elements top-down (last drawn = on top).
-      for (let i = schema.elements.length - 1; i >= 0; i--) {
-        const el = schema.elements[i];
+      for (let i = candidates.length - 1; i >= 0; i--) {
+        const el = candidates[i];
         if (hitTest(pt, el)) {
-          if (e.shiftKey) {
-            // Shift-tap: toggle this element in the selection.
+          const additive = e.shiftKey || e.metaKey || e.ctrlKey || multiSelectOn;
+          // Direct Select on a GRID → pick the specific cell (sub-selection).
+          if (directSelectOn && el.kind === "grid") {
+            const g = el.geometry;
+            const colLines = g.colLines || Array.from({ length: (g.cols || 1) - 1 }, (_, k) => (k + 1) / (g.cols || 1));
+            const rowLines = g.rowLines || Array.from({ length: (g.rows || 1) - 1 }, (_, k) => (k + 1) / (g.rows || 1));
+            const relX = (pt.x - g.x) / g.w;
+            const relY = (pt.y - g.y) / g.h;
+            let col = 0;
+            for (const cl of colLines) { if (relX > cl) col++; else break; }
+            let row = 0;
+            for (const rl of rowLines) { if (relY > rl) row++; else break; }
+            setSelectedId(el.id);
+            setGridCellSel({ id: el.id, row, col });
+            setVertexSel(null);
+            return;
+          }
+          setGridCellSel(null);
+          setVertexSel(null);
+          if (additive) {
+            // Toggle this element in the selection.
             setSelectedIds((ids) => ids.includes(el.id)
               ? ids.filter((x) => x !== el.id)
               : [...ids, el.id]);
@@ -323,7 +394,7 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
             }
           } else {
             setSelectedId(el.id);
-            if (!el.locked) {
+            if (!el.locked && !directSelectOn) {
               snapshotHistory();
               setTransform({ kind: "move", start: pt, originalGeometry: el.geometry });
             }
@@ -331,8 +402,14 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
           return;
         }
       }
-      // Tapped empty area: clear selection (unless shift-held).
-      if (!e.shiftKey) setSelectedId(null);
+      // Tapped empty area → start Box Select marquee (unless additive, in
+      // which case the user is extending the selection and shouldn't lose it).
+      setBoxSelect({ start: pt, end: pt });
+      if (!(e.shiftKey || e.metaKey || e.ctrlKey || multiSelectOn)) {
+        setSelectedId(null);
+        setGridCellSel(null);
+        setVertexSel(null);
+      }
       return;
     }
 
@@ -471,6 +548,20 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
     }
     const pt = canvasPt(e);
     if (!pt) return;
+    // Active vertex drag — Direct Select moving a single point.
+    if (vertexDrag) {
+      const verts = elementVertices({ ...selectedEl, geometry: vertexDrag.originalGeometry });
+      const v = verts.find((q) => q.key === vertexDrag.key);
+      if (v) {
+        updateElementGeometry(vertexDrag.id, v.set(pt));
+      }
+      return;
+    }
+    // Active box-select — extend the marquee.
+    if (boxSelect) {
+      setBoxSelect((b) => b ? { ...b, end: pt } : b);
+      return;
+    }
     // Active transform drag — move/resize the selected element live.
     if (transform && selectedEl) {
       // Update sync-cursor so the OTHER canvas can show a matching marker.
@@ -527,6 +618,37 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
     }
     // Finish transform drag.
     if (transform) { setTransform(null); setSyncCursor(null); return; }
+    // Finish vertex drag.
+    if (vertexDrag) { setVertexDrag(null); return; }
+    // Finish box-select marquee — compute enclosed/intersect depending on
+    // drag direction, apply selection-mode filter, and update selectedIds.
+    if (boxSelect) {
+      const { start, end } = boxSelect;
+      setBoxSelect(null);
+      const rect = {
+        x: Math.min(start.x, end.x),
+        y: Math.min(start.y, end.y),
+        w: Math.abs(end.x - start.x),
+        h: Math.abs(end.y - start.y),
+      };
+      // Ignore tiny "clicks" that didn't really drag — treat as a clear tap.
+      if (rect.w < 0.006 && rect.h < 0.006) return;
+      // Direction: L→R = fully-enclose, R→L = intersect (AutoCAD style).
+      const enclosedMode = end.x >= start.x;
+      const candidates = filterByMode(schema.elements, selectionMode);
+      const hits = candidates.filter((el) => {
+        const bb = elementBBox(el);
+        return enclosedMode ? bboxEnclosed(rect, bb) : bboxIntersects(rect, bb);
+      }).map((el) => el.id);
+      const additive = e && (e.shiftKey || e.metaKey || e.ctrlKey || multiSelectOn);
+      setSelectedIds((prev) => {
+        if (!additive) return hits;
+        const set = new Set(prev);
+        hits.forEach((id) => set.add(id));
+        return Array.from(set);
+      });
+      return;
+    }
     if (!draft) return;
     const d = draft;
     if (["triangle", "corners", "bullet", "logo", "qr"].includes(d.tool)) return;
@@ -615,6 +737,64 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
     if (selectedIds.length === 0) return;
     mutateSchema((s) => ({ ...s, elements: s.elements.filter((el) => !selectedIds.includes(el.id)) }));
     setSelectedIds([]);
+  };
+
+  /* ------------------- HOME tab — Selection tool handlers ------------------- */
+  const selectAll = () => {
+    const ids = filterByMode(schema.elements, selectionMode).map((el) => el.id);
+    setSelectedIds(ids);
+    setVertexSel(null);
+    setGridCellSel(null);
+  };
+  const deselectAll = () => {
+    setSelectedIds([]);
+    setVertexSel(null);
+    setGridCellSel(null);
+    setBoxSelect(null);
+  };
+  const toggleMultiSelect = () => setMultiSelectOn((v) => !v);
+  const toggleDirectSelect = () => {
+    setDirectSelectOn((v) => {
+      const next = !v;
+      if (next) {
+        // Entering Direct Select clears any active transform/multi-move.
+        setTransform(null);
+      } else {
+        setVertexSel(null);
+        setGridCellSel(null);
+      }
+      return next;
+    });
+  };
+  const duplicateSelected = () => {
+    if (selectedIds.length === 0) return;
+    mutateSchema((s) => {
+      const clones = s.elements
+        .filter((el) => selectedIds.includes(el.id))
+        .map((el) => ({
+          ...el,
+          id: uid(),
+          geometry: translateGeometry(el.kind, el.geometry, 0.02, 0.02),
+          created_at: Date.now(),
+        }));
+      return { ...s, elements: [...s.elements, ...clones] };
+    });
+  };
+  const lockSelected = () => {
+    if (selectedIds.length === 0) return;
+    mutateSchema((s) => ({
+      ...s,
+      elements: s.elements.map((el) =>
+        selectedIds.includes(el.id) ? { ...el, locked: true } : el),
+    }));
+  };
+  const unlockSelected = () => {
+    if (selectedIds.length === 0) return;
+    mutateSchema((s) => ({
+      ...s,
+      elements: s.elements.map((el) =>
+        selectedIds.includes(el.id) ? { ...el, locked: false } : el),
+    }));
   };
 
   /* ------------------- grid editor commit ------------------- */
@@ -785,11 +965,24 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
               fontWeight,
               snapToGrid: false,
               hasSelection: !!selectedEl,
+              selectionMode,
+              multiSelectOn,
+              directSelectOn,
+              selectedCount: selectedIds.length,
             },
             handlers: {
               setTool: (id) => { setTool(id); setDraft(null); setSelectedId(null); setGridDraft(null); },
               setFontWeight,
               removeSelected: deleteSelected,
+              // HOME → Selection tool
+              toggleMultiSelect,
+              toggleDirectSelect,
+              setSelectionMode,
+              selectAll,
+              deselectAll,
+              duplicateSelected,
+              lockSelected,
+              unlockSelected,
             },
           }}
         />
@@ -912,10 +1105,36 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
                   </g>
                 ))}
                 {/* Selection outline + 8 handles + rotate handle (handles only for primary/single selection) */}
-                {selectedEls.length > 0 && tool === "select" && selectedEls.map((el, idx) => (
+                {selectedEls.length > 0 && tool === "select" && !directSelectOn && selectedEls.map((el, idx) => (
                   <SelectionFrame key={el.id} el={el} zoom={zoom}
                     handlesEnabled={selectedEls.length === 1 && idx === 0} />
                 ))}
+                {/* Direct Select — vertex handles on the primary selection. */}
+                {directSelectOn && selectedEl && tool === "select" && (
+                  <VertexHandles el={selectedEl} zoom={zoom}
+                    activeKey={vertexSel?.id === selectedEl.id ? vertexSel.key : null} />
+                )}
+                {/* Direct Select on a grid — highlight the picked cell. */}
+                {directSelectOn && gridCellSel && (() => {
+                  const gridEl = schema.elements.find((e) => e.id === gridCellSel.id);
+                  if (!gridEl || gridEl.kind !== "grid") return null;
+                  return <GridCellHighlight el={gridEl} row={gridCellSel.row} col={gridCellSel.col} zoom={zoom} />;
+                })()}
+                {/* Box-select marquee overlay — semi-transparent fill + outline.
+                     Colour reflects direction (blue = enclose, orange = intersect). */}
+                {boxSelect && (() => {
+                  const r = normRect(boxSelect.start.x, boxSelect.start.y, boxSelect.end.x, boxSelect.end.y);
+                  const enclose = boxSelect.end.x >= boxSelect.start.x;
+                  const stroke = enclose ? "rgba(12,74,183,0.95)" : "rgba(255,95,21,0.95)";
+                  const fill   = enclose ? "rgba(12,74,183,0.10)" : "rgba(255,95,21,0.10)";
+                  const dash   = enclose ? "0.006 0.003" : "0.003 0.003";
+                  return (
+                    <rect data-testid="studio-box-select"
+                      x={r.x} y={r.y} width={r.w} height={r.h}
+                      fill={fill} stroke={stroke} strokeWidth={0.003 / Math.max(zoom, 1)}
+                      strokeDasharray={dash} pointerEvents="none" />
+                  );
+                })()}
                 {/* Sync cursor — when dragging on the preview canvas, show
                      a faint blue marker here at the matching coordinate. */}
                 {syncCursor && syncCursor.source === "preview" && (
@@ -1012,10 +1231,32 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
                 <>
                   <svg viewBox="0 0 1 1" preserveAspectRatio="none"
                     className="absolute inset-0 w-full h-full pointer-events-none">
-                    {selectedEls.length > 0 && selectedEls.map((el, idx) => (
+                    {selectedEls.length > 0 && !directSelectOn && selectedEls.map((el, idx) => (
                       <SelectionFrame key={el.id} el={el} zoom={zoom}
                         handlesEnabled={selectedEls.length === 1 && idx === 0} />
                     ))}
+                    {directSelectOn && selectedEl && (
+                      <VertexHandles el={selectedEl} zoom={zoom}
+                        activeKey={vertexSel?.id === selectedEl.id ? vertexSel.key : null} />
+                    )}
+                    {directSelectOn && gridCellSel && (() => {
+                      const gridEl = schema.elements.find((e) => e.id === gridCellSel.id);
+                      if (!gridEl || gridEl.kind !== "grid") return null;
+                      return <GridCellHighlight el={gridEl} row={gridCellSel.row} col={gridCellSel.col} zoom={zoom} />;
+                    })()}
+                    {boxSelect && (() => {
+                      const r = normRect(boxSelect.start.x, boxSelect.start.y, boxSelect.end.x, boxSelect.end.y);
+                      const enclose = boxSelect.end.x >= boxSelect.start.x;
+                      const stroke = enclose ? "rgba(12,74,183,0.95)" : "rgba(255,95,21,0.95)";
+                      const fill   = enclose ? "rgba(12,74,183,0.10)" : "rgba(255,95,21,0.10)";
+                      const dash   = enclose ? "0.006 0.003" : "0.003 0.003";
+                      return (
+                        <rect data-testid="studio-preview-box-select"
+                          x={r.x} y={r.y} width={r.w} height={r.h}
+                          fill={fill} stroke={stroke} strokeWidth={0.003 / Math.max(zoom, 1)}
+                          strokeDasharray={dash} pointerEvents="none" />
+                      );
+                    })()}
                     {syncCursor && syncCursor.source === "mapping" && (
                       <g data-testid="studio-preview-synccursor">
                         <circle cx={syncCursor.pt.x} cy={syncCursor.pt.y} r="0.014"
@@ -1165,6 +1406,114 @@ export default function ProMappingStudio({ template, analysis, onDone, onCancel 
 }
 
 function dist(a, b) { return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2); }
+
+/* ====================== Selection helpers (HOME tab) ====================== */
+
+/** True when AABB `a` fully contains AABB `b`. */
+function bboxEnclosed(a, b) {
+  return b.x >= a.x && b.y >= a.y
+      && b.x + b.w <= a.x + a.w
+      && b.y + b.h <= a.y + a.h;
+}
+/** True when AABBs intersect (touch or overlap). */
+function bboxIntersects(a, b) {
+  return !(b.x + b.w < a.x || b.x > a.x + a.w
+        || b.y + b.h < a.y || b.y > a.y + a.h);
+}
+/** Filter a list of elements by the active Selection Mode.
+ *   'element' → non-grid only (fields, boxes, assets)
+ *   'grid'    → grid elements only (rows + cols)
+ *   'all'     → no filter
+ */
+function filterByMode(elements, mode) {
+  if (mode === "all") return elements;
+  if (mode === "grid") return elements.filter((e) => e.kind === "grid");
+  return elements.filter((e) => e.kind !== "grid");
+}
+/** Return the ordered list of editable vertices for an element.
+ *  Each entry is { key, pt, setter } where setter(newPt, el) returns
+ *  a new geometry object with that vertex moved. Elements without
+ *  point-level vertices (circle, rect) fall back to their bbox
+ *  corners so Direct Select still has *something* to drag.
+ */
+function elementVertices(el) {
+  const g = el.geometry || {};
+  switch (el.kind) {
+    case "line":
+    case "text_marker":
+      return [
+        { key: "from", pt: g.from, set: (p) => ({ ...g, from: p }) },
+        { key: "to",   pt: g.to,   set: (p) => ({ ...g, to: p }) },
+      ];
+    case "triangle":
+      return g.points.map((pt, i) => ({
+        key: `v${i}`, pt,
+        set: (p) => ({ ...g, points: g.points.map((q, j) => j === i ? p : q) }),
+      }));
+    case "curve":
+    case "trace":
+      return (g.points || []).map((pt, i) => ({
+        key: `v${i}`, pt,
+        set: (p) => {
+          const next = g.points.map((q, j) => j === i ? p : q);
+          const xs = next.map((x) => x.x), ys = next.map((x) => x.y);
+          const bbox = {
+            x: Math.min(...xs), y: Math.min(...ys),
+            w: Math.max(...xs) - Math.min(...xs),
+            h: Math.max(...ys) - Math.min(...ys),
+          };
+          const d = next.map((p2, j) => `${j === 0 ? "M" : "L"} ${p2.x} ${p2.y}`).join(" ");
+          return el.kind === "trace"
+            ? { ...g, points: next, paths: [d], bbox }
+            : { ...g, points: next, d };
+        },
+      }));
+    case "corner_box":
+      return (g.points || []).map((pt, i) => ({
+        key: `c${i}`, pt,
+        set: (p) => {
+          const next = g.points.map((q, j) => j === i ? p : q);
+          const xs = next.map((x) => x.x), ys = next.map((x) => x.y);
+          return {
+            ...g,
+            points: next,
+            x: Math.min(...xs), y: Math.min(...ys),
+            w: Math.max(...xs) - Math.min(...xs),
+            h: Math.max(...ys) - Math.min(...ys),
+          };
+        },
+      }));
+    case "bullet":
+      return [
+        { key: "dot",       pt: g.dot,       set: (p) => ({ ...g, dot: p }) },
+        { key: "textStart", pt: g.textStart, set: (p) => ({ ...g, textStart: p }) },
+      ];
+    case "rect":
+    case "grid":
+    case "logo":
+    case "qr_box": {
+      const tl = { x: g.x,       y: g.y };
+      const tr = { x: g.x + g.w, y: g.y };
+      const br = { x: g.x + g.w, y: g.y + g.h };
+      const bl = { x: g.x,       y: g.y + g.h };
+      return [
+        { key: "tl", pt: tl, set: (p) => ({ ...g, x: p.x, y: p.y, w: (g.x + g.w) - p.x, h: (g.y + g.h) - p.y }) },
+        { key: "tr", pt: tr, set: (p) => ({ ...g, y: p.y, w: p.x - g.x,                 h: (g.y + g.h) - p.y }) },
+        { key: "br", pt: br, set: (p) => ({ ...g,            w: p.x - g.x,              h: p.y - g.y }) },
+        { key: "bl", pt: bl, set: (p) => ({ ...g, x: p.x,    w: (g.x + g.w) - p.x,      h: p.y - g.y }) },
+      ];
+    }
+    case "circle":
+      return [
+        { key: "e", pt: { x: g.cx + g.r, y: g.cy }, set: (p) => ({ ...g, r: Math.max(0.005, Math.abs(p.x - g.cx)) }) },
+        { key: "w", pt: { x: g.cx - g.r, y: g.cy }, set: (p) => ({ ...g, r: Math.max(0.005, Math.abs(g.cx - p.x)) }) },
+        { key: "n", pt: { x: g.cx, y: g.cy - g.r }, set: (p) => ({ ...g, r: Math.max(0.005, Math.abs(g.cy - p.y)) }) },
+        { key: "s", pt: { x: g.cx, y: g.cy + g.r }, set: (p) => ({ ...g, r: Math.max(0.005, Math.abs(p.y - g.cy)) }) },
+      ];
+    default:
+      return [];
+  }
+}
 
 /**
  * Renders the dotted boundary rectangle + (optionally) 8 grab
@@ -1412,6 +1761,46 @@ function SelectionFrame({ el, zoom = 1, handlesEnabled = true }) {
         );
       })()}
     </g>
+  );
+}
+
+/** Direct-Select vertex handles. Small draggable squares for each
+ *  vertex returned by elementVertices(el). The active vertex (mid-drag)
+ *  is highlighted in orange. */
+function VertexHandles({ el, zoom = 1, activeKey = null }) {
+  const verts = elementVertices(el);
+  if (!verts.length) return null;
+  const r = 0.011 / zoom;
+  const sw = 0.0028 / Math.max(zoom, 1);
+  return (
+    <g data-testid="studio-vertex-handles">
+      {verts.map((v) => (
+        <rect key={v.key}
+          data-testid={`studio-vertex-${v.key}`}
+          x={v.pt.x - r} y={v.pt.y - r} width={r * 2} height={r * 2}
+          fill={activeKey === v.key ? "rgba(255,95,21,0.95)" : "white"}
+          stroke="rgba(255,95,21,0.95)" strokeWidth={sw} />
+      ))}
+    </g>
+  );
+}
+
+/** Direct-Select grid cell highlight. Translucent orange fill on the
+ *  picked cell so the driver can see exactly which child of the grid
+ *  is in sub-selection. */
+function GridCellHighlight({ el, row, col, zoom = 1 }) {
+  const g = el.geometry;
+  const colLines = [0, ...(g.colLines || Array.from({ length: (g.cols || 1) - 1 }, (_, k) => (k + 1) / (g.cols || 1))), 1];
+  const rowLines = [0, ...(g.rowLines || Array.from({ length: (g.rows || 1) - 1 }, (_, k) => (k + 1) / (g.rows || 1))), 1];
+  const x0 = g.x + (colLines[col] || 0) * g.w;
+  const x1 = g.x + (colLines[col + 1] || 1) * g.w;
+  const y0 = g.y + (rowLines[row] || 0) * g.h;
+  const y1 = g.y + (rowLines[row + 1] || 1) * g.h;
+  return (
+    <rect data-testid="studio-grid-cell-highlight"
+      x={x0} y={y0} width={x1 - x0} height={y1 - y0}
+      fill="rgba(255,95,21,0.20)" stroke="rgba(255,95,21,0.95)"
+      strokeWidth={0.0035 / Math.max(zoom, 1)} pointerEvents="none" />
   );
 }
 
