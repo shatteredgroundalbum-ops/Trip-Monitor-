@@ -546,6 +546,24 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
     agent (no defects). Interactive behaviors not exercised because
     drawing tools are not on the HOME tab; deferred to next pass.
 
+- ✅ **Backend code-quality refactor — round 2 (Iter 22.1)** (2026-02-08):
+  - Acted on second code review report.
+  - `_upsert_user_by_device` C(12) → **A(3)**: split into
+    `_diff_user_updates` (B/7, computes only-changed fields) and
+    `_create_local_user` (A/4, the insert path). Main function is now
+    a 7-line dispatcher.
+  - `trip_recap`: extracted `_career_window_iso(profile_doc)` helper
+    that returns `{today, week}` UTC ISO strings. Function now has
+    14 locals (down from 17 originally) and reads as a single column.
+  - `_verify_google_credential`: the reviewer's flow analysis flagged
+    `info` as possibly-unassigned. False positive (the `try` block
+    always assigns or re-raises), but pre-initialised
+    `info: Dict[str, Any] = {}` to silence it cleanly.
+  - **Type-hint coverage: 13.8 % → 100 %** (48 of 48 functions).
+  - Inline notes added next to both `tzinfo is None` checks explaining
+    PEP 8 mandates `is` for None comparisons.
+  - Module average complexity now **A (3.46)** across 56 blocks.
+
 - ✅ **Backend code-quality refactor (Iter 22)** (2026-02-08):
   - Acted on the code review report. Extracted helpers, added type
     hints, dropped average complexity from `B`-tier hotspots into

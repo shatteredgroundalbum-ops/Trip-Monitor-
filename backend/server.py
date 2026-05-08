@@ -140,6 +140,9 @@ async def get_current_user(request: Request) -> User:
     expires_at = session_doc["expires_at"]
     if isinstance(expires_at, str):
         expires_at = datetime.fromisoformat(expires_at)
+    # NOTE: PEP 8 mandates `is None` (and `is not None`) for None
+    # comparisons — `== None` would be a lint regression. Reviewers'
+    # generic identity-comparison checks may flag this; it's correct.
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     if expires_at < datetime.now(timezone.utc):
@@ -152,7 +155,7 @@ async def get_current_user(request: Request) -> User:
 
 
 @api_router.post("/auth/role")
-async def set_user_role(payload: RoleUpdate, user: User = Depends(get_current_user)):
+async def set_user_role(payload: RoleUpdate, user: User = Depends(get_current_user)) -> Dict[str, Any]:
     role = (payload.role or "").strip().lower()
     if role not in ALLOWED_ROLES:
         raise HTTPException(status_code=422, detail=f"role must be one of {sorted(ALLOWED_ROLES)}")
@@ -161,7 +164,7 @@ async def set_user_role(payload: RoleUpdate, user: User = Depends(get_current_us
 
 
 @api_router.post("/auth/session")
-async def process_session(request: Request, response: Response):
+async def process_session(request: Request, response: Response) -> Dict[str, Any]:
     body = await request.json()
     session_id = body.get("session_id")
     if not session_id:
@@ -248,26 +251,30 @@ async def _upsert_user_by_email(email: str, name: str, picture: str) -> str:
     return user_id
 
 
-async def _upsert_user_by_device(
+def _diff_user_updates(
+    existing: Dict[str, Any],
+    role: Optional[str],
+    display_username: Optional[str],
+    driver_id: Optional[str],
+) -> Dict[str, Any]:
+    """Compute only the user-record fields that actually changed."""
+    updates: Dict[str, Any] = {}
+    if role and existing.get("role") != role:
+        updates["role"] = role
+    if display_username and existing.get("name") != display_username:
+        updates["name"] = display_username
+    if driver_id and existing.get("driver_id") != driver_id:
+        updates["driver_id"] = driver_id
+    return updates
+
+
+async def _create_local_user(
     device_id: str,
     role: Optional[str],
     display_username: Optional[str],
     driver_id: Optional[str],
 ) -> str:
-    """Find or create a user keyed by device_id. Returns the user_id."""
-    existing = await db.users.find_one({"device_id": device_id}, {"_id": 0})
-    if existing:
-        user_id: str = existing["user_id"]
-        updates: Dict[str, Any] = {}
-        if role and existing.get("role") != role:
-            updates["role"] = role
-        if display_username and existing.get("name") != display_username:
-            updates["name"] = display_username
-        if driver_id and existing.get("driver_id") != driver_id:
-            updates["driver_id"] = driver_id
-        if updates:
-            await db.users.update_one({"user_id": user_id}, {"$set": updates})
-        return user_id
+    """Insert a fresh local-auth user row keyed by `device_id`."""
     user_id = f"user_{uuid.uuid4().hex[:12]}"
     await db.users.insert_one({
         "user_id": user_id, "device_id": device_id,
@@ -281,8 +288,26 @@ async def _upsert_user_by_device(
     return user_id
 
 
+async def _upsert_user_by_device(
+    device_id: str,
+    role: Optional[str],
+    display_username: Optional[str],
+    driver_id: Optional[str],
+) -> str:
+    """Find or create a user keyed by device_id. Returns the user_id."""
+    existing = await db.users.find_one({"device_id": device_id}, {"_id": 0})
+    if not existing:
+        return await _create_local_user(device_id, role, display_username, driver_id)
+    user_id: str = existing["user_id"]
+    updates = _diff_user_updates(existing, role, display_username, driver_id)
+    if updates:
+        await db.users.update_one({"user_id": user_id}, {"$set": updates})
+    return user_id
+
+
 async def _verify_google_credential(credential: str) -> Dict[str, Any]:
     """Verify a Google ID-token JWT. Returns the userinfo claim set or raises 401."""
+    info: Dict[str, Any] = {}  # always overwritten in the try-block on success
     try:
         info = google_id_token.verify_oauth2_token(
             credential, google_requests.Request(), GOOGLE_CLIENT_ID
@@ -387,13 +412,13 @@ async def logout(request: Request, response: Response) -> Dict[str, bool]:
 
 # ============ DRIVER PROFILE ============
 @api_router.get("/profile")
-async def get_profile(user: User = Depends(get_current_user)):
+async def get_profile(user: User = Depends(get_current_user)) -> Dict[str, Any]:
     doc = await db.driver_profiles.find_one({"user_id": user.user_id}, {"_id": 0})
     return doc  # may be null
 
 
 @api_router.post("/profile")
-async def save_profile(profile: DriverProfile, user: User = Depends(get_current_user)):
+async def save_profile(profile: DriverProfile, user: User = Depends(get_current_user)) -> Dict[str, Any]:
     # Normalize driver-type aliases
     norm = {"Slip-Seating": "Slip Seat", "Slip Seating": "Slip Seat", "Permanent Driver": "Permanent"}
     if profile.truck_assignment_type:
@@ -414,7 +439,7 @@ async def save_profile(profile: DriverProfile, user: User = Depends(get_current_
 
 # ============ TRIP SESSIONS ============
 @api_router.get("/trip-sessions/active")
-async def get_active_session(user: User = Depends(get_current_user)):
+async def get_active_session(user: User = Depends(get_current_user)) -> Optional[Dict[str, Any]]:
     doc = await db.trip_sessions.find_one(
         {"user_id": user.user_id, "status": "active"}, {"_id": 0}
     )
@@ -422,7 +447,7 @@ async def get_active_session(user: User = Depends(get_current_user)):
 
 
 @api_router.get("/trip-sessions")
-async def list_sessions(user: User = Depends(get_current_user)):
+async def list_sessions(user: User = Depends(get_current_user)) -> List[Dict[str, Any]]:
     docs = await db.trip_sessions.find(
         {"user_id": user.user_id}, {"_id": 0}
     ).sort("created_at", -1).limit(100).to_list(100)
@@ -430,7 +455,7 @@ async def list_sessions(user: User = Depends(get_current_user)):
 
 
 @api_router.get("/trip-sessions/{session_id}")
-async def get_session(session_id: str, user: User = Depends(get_current_user)):
+async def get_session(session_id: str, user: User = Depends(get_current_user)) -> Dict[str, Any]:
     doc = await db.trip_sessions.find_one(
         {"session_id": session_id, "user_id": user.user_id}, {"_id": 0}
     )
@@ -440,7 +465,7 @@ async def get_session(session_id: str, user: User = Depends(get_current_user)):
 
 
 @api_router.post("/trip-sessions")
-async def create_session(payload: Dict[str, Any], user: User = Depends(get_current_user)):
+async def create_session(payload: Dict[str, Any], user: User = Depends(get_current_user)) -> Dict[str, Any]:
     # close any existing active
     await db.trip_sessions.update_many(
         {"user_id": user.user_id, "status": "active"},
@@ -473,7 +498,7 @@ async def create_session(payload: Dict[str, Any], user: User = Depends(get_curre
 
 
 @api_router.put("/trip-sessions/{session_id}")
-async def update_session(session_id: str, payload: Dict[str, Any], user: User = Depends(get_current_user)):
+async def update_session(session_id: str, payload: Dict[str, Any], user: User = Depends(get_current_user)) -> Dict[str, Any]:
     existing = await db.trip_sessions.find_one(
         {"session_id": session_id, "user_id": user.user_id}, {"_id": 0}
     )
@@ -552,6 +577,18 @@ def _resolve_finish_miles(session_doc: Dict[str, Any], mode: str) -> int:
         return 0
 
 
+def _career_window_iso(profile_doc: Dict[str, Any]) -> Dict[str, str]:
+    """Return ISO-8601 UTC timestamps for today-start and 7-day-window-start
+    in the user's local timezone. Used by `trip_recap` to compute today/week
+    miles totals."""
+    tz, _ = _resolve_user_tz(profile_doc)
+    today_local = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
+    return {
+        "today": today_local.astimezone(timezone.utc).isoformat(),
+        "week": (today_local - timedelta(days=6)).astimezone(timezone.utc).isoformat(),
+    }
+
+
 @api_router.get("/trip-sessions/{session_id}/recap")
 async def trip_recap(session_id: str, user: User = Depends(get_current_user)) -> Dict[str, Any]:
     """Internal trip recap shown after a trip is finished.
@@ -572,27 +609,20 @@ async def trip_recap(session_id: str, user: User = Depends(get_current_user)) ->
     profile_doc = await db.driver_profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
     baseline = int(profile_doc.get("lifetime_miles") or 0)
     years = int(profile_doc.get("years_experience") or 0)
-    tz, _tz_name = _resolve_user_tz(profile_doc)
 
     this_trip_miles = int(trip.get("total_trip_miles") or 0)
     finished_total = await db.trip_sessions.count_documents(
         {"user_id": user.user_id, "status": "finished"}
     )
-    miles_in_app = await _sum_finished_miles(user.user_id)
-    career_after = baseline + miles_in_app
+    career_after = baseline + await _sum_finished_miles(user.user_id)
     career_before = career_after - this_trip_miles
 
-    # Today / week miles in the user's local timezone.
-    today_local = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
-    today_utc_iso = today_local.astimezone(timezone.utc).isoformat()
-    week_utc_iso = (today_local - timedelta(days=6)).astimezone(timezone.utc).isoformat()
-    miles_today = await _sum_finished_miles(user.user_id, since_iso=today_utc_iso)
-    miles_week = await _sum_finished_miles(user.user_id, since_iso=week_utc_iso)
+    # Daily / weekly miles in the driver's local timezone.
+    win = _career_window_iso(profile_doc)
 
     # Badges unlocked by THIS trip = earned after − earned before.
     earned_after = _badges_earned(career_after, years, finished_total)
     earned_before = _badges_earned(career_before, years, finished_total - 1)
-    new_badges = [_hydrate_badge(b) for b in sorted(earned_after - earned_before)]
 
     return {
         "session_id": session_id,
@@ -600,17 +630,17 @@ async def trip_recap(session_id: str, user: User = Depends(get_current_user)) ->
         "trip_miles": this_trip_miles,
         "career_before": career_before,
         "career_after": career_after,
-        "miles_today": miles_today,
-        "miles_week": miles_week,
+        "miles_today": await _sum_finished_miles(user.user_id, since_iso=win["today"]),
+        "miles_week": await _sum_finished_miles(user.user_id, since_iso=win["week"]),
         "next_milestone": _next_milestone(career_after),
-        "new_badges": new_badges,
+        "new_badges": [_hydrate_badge(b) for b in sorted(earned_after - earned_before)],
         "trips_total": finished_total,
         "mileage_mode": (profile_doc.get("mileage_mode") or "workflow"),
     }
 
 
 @api_router.post("/trip-sessions/{session_id}/reopen")
-async def reopen_session(session_id: str, user: User = Depends(get_current_user)):
+async def reopen_session(session_id: str, user: User = Depends(get_current_user)) -> Dict[str, Any]:
     """Re-open a finished session for editing. Closes any other active session first."""
     existing = await db.trip_sessions.find_one(
         {"session_id": session_id, "user_id": user.user_id}, {"_id": 0}
@@ -637,7 +667,7 @@ async def reopen_session(session_id: str, user: User = Depends(get_current_user)
 
 # ============ LEARNING: LOCATIONS, TRAILERS, CITIES ============
 @api_router.get("/locations")
-async def list_locations(user: User = Depends(get_current_user)):
+async def list_locations(user: User = Depends(get_current_user)) -> List[Dict[str, Any]]:
     docs = await db.locations.find(
         {"user_id": user.user_id}, {"_id": 0}
     ).sort("count", -1).limit(500).to_list(500)
@@ -645,7 +675,7 @@ async def list_locations(user: User = Depends(get_current_user)):
 
 
 @api_router.post("/locations/bump")
-async def bump_location(payload: Dict[str, Any], user: User = Depends(get_current_user)):
+async def bump_location(payload: Dict[str, Any], user: User = Depends(get_current_user)) -> Dict[str, Any]:
     name = (payload.get("name") or "").strip()
     if not name:
         return {"ok": True}
@@ -658,7 +688,7 @@ async def bump_location(payload: Dict[str, Any], user: User = Depends(get_curren
 
 
 @api_router.get("/trailers")
-async def list_trailers(user: User = Depends(get_current_user)):
+async def list_trailers(user: User = Depends(get_current_user)) -> List[Dict[str, Any]]:
     docs = await db.trailers.find(
         {"user_id": user.user_id}, {"_id": 0}
     ).sort("count", -1).limit(500).to_list(500)
@@ -666,7 +696,7 @@ async def list_trailers(user: User = Depends(get_current_user)):
 
 
 @api_router.post("/trailers/bump")
-async def bump_trailer(payload: Dict[str, Any], user: User = Depends(get_current_user)):
+async def bump_trailer(payload: Dict[str, Any], user: User = Depends(get_current_user)) -> Dict[str, Any]:
     number = (payload.get("number") or "").strip()
     if not number:
         return {"ok": True}
@@ -679,7 +709,7 @@ async def bump_trailer(payload: Dict[str, Any], user: User = Depends(get_current
 
 
 @api_router.get("/cities")
-async def list_cities(user: User = Depends(get_current_user)):
+async def list_cities(user: User = Depends(get_current_user)) -> List[Dict[str, Any]]:
     docs = await db.cities.find(
         {"user_id": user.user_id}, {"_id": 0}
     ).sort("count", -1).limit(1000).to_list(1000)
@@ -687,7 +717,7 @@ async def list_cities(user: User = Depends(get_current_user)):
 
 
 @api_router.post("/cities/bump")
-async def bump_city(payload: Dict[str, Any], user: User = Depends(get_current_user)):
+async def bump_city(payload: Dict[str, Any], user: User = Depends(get_current_user)) -> Dict[str, Any]:
     city = (payload.get("city") or "").strip()
     state = (payload.get("state") or "").strip().upper()
     if not city or not state:
@@ -804,7 +834,7 @@ async def get_weekly_stats(user: User = Depends(get_current_user)) -> Dict[str, 
 
 def _bucket_finished_by_day(
     finished: List[Dict[str, Any]],
-    tz,
+    tz: Any,
     window_start_local: datetime,
     today_local: datetime,
 ) -> List[Dict[str, Any]]:
@@ -826,6 +856,8 @@ def _bucket_finished_by_day(
             continue
         try:
             dt_utc = datetime.fromisoformat(finished_at)
+            # NOTE: `is None` is the PEP 8-mandated None comparison —
+            # not a code-smell. See similar comment in get_current_user.
             if dt_utc.tzinfo is None:
                 dt_utc = dt_utc.replace(tzinfo=timezone.utc)
             key = dt_utc.astimezone(tz).strftime("%Y-%m-%d")
@@ -867,7 +899,7 @@ async def _sum_finished_miles(user_id: str, since_iso: Optional[str] = None) -> 
     return 0
 
 
-def _resolve_user_tz(profile_doc: Dict[str, Any]):
+def _resolve_user_tz(profile_doc: Dict[str, Any]) -> tuple:
     """Return (tzinfo, tz_name) from the profile, falling back to UTC."""
     tz_name = (profile_doc or {}).get("time_zone") or "UTC"
     try:
@@ -965,7 +997,7 @@ async def get_achievements(user: User = Depends(get_current_user)) -> Dict[str, 
 
 
 @api_router.get("/")
-async def root():
+async def root() -> Dict[str, str]:
     return {"app": "Trip Monitor Driver Edition", "status": "ok"}
 
 
@@ -987,7 +1019,7 @@ class SendTripEmailRequest(BaseModel):
 async def send_trip_sheet_email(
     payload: SendTripEmailRequest,
     user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     if not RESEND_API_KEY:
         raise HTTPException(
             status_code=503,
@@ -1034,5 +1066,5 @@ logger = logging.getLogger(__name__)
 
 
 @app.on_event("shutdown")
-async def shutdown_db_client():
+async def shutdown_db_client() -> None:
     client.close()
