@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "../components/ui/input-otp";
 import { toast } from "sonner";
 import {
   ArrowLeft, Copy, ShieldCheck, Lock, Eye, EyeOff, AlertTriangle,
@@ -418,40 +419,34 @@ function TwoButtons({ leftTestid, leftLabel, onLeft, rightTestid, rightLabel, on
 }
 
 export function PinField({ value, onChange, autoFocus, testid }) {
-  const handle = (e) => {
-    const v = e.target.value.replace(/\D/g, "").slice(0, 6);
-    onChange(v);
-  };
   return (
-    <div className="flex flex-col items-center gap-4">
-      <div className="flex gap-2" aria-hidden>
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div
-            key={i}
-            data-testid={`${testid}-dot-${i}`}
-            className={`h-12 w-10 rounded-md border-2 flex items-center justify-center font-black text-xl transition ${
-              i < value.length
-                ? "bg-[var(--tm-navy)] text-white border-[var(--tm-navy)]"
-                : "bg-white text-[var(--tm-text-muted)] border-[var(--tm-border)]"
-            }`}
-          >
-            {i < value.length ? "•" : ""}
-          </div>
-        ))}
-      </div>
-      <input
-        type="tel"
-        inputMode="numeric"
-        autoComplete="one-time-code"
-        pattern="\d{6}"
+    <div className="flex flex-col items-center gap-4" data-testid={testid}>
+      <InputOTP
         maxLength={6}
-        autoFocus={autoFocus}
         value={value}
-        onChange={handle}
+        onChange={onChange}
+        autoFocus={autoFocus}
         data-testid={`${testid}-input`}
-        className="text-center text-2xl font-mono tracking-[0.35em] bg-white border-2 border-[var(--tm-border)] rounded-md h-12 w-64 focus:border-[var(--tm-blue)] outline-none"
-        placeholder="••••••"
-      />
+        containerClassName="gap-2"
+        inputMode="numeric"
+        pattern="^\d*$"
+      >
+        <InputOTPGroup className="gap-2">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <InputOTPSlot
+              key={i}
+              index={i}
+              data-testid={`${testid}-slot-${i}`}
+              className="h-14 w-11 rounded-md border-2 bg-white text-center font-black text-xl transition first:rounded-l-md last:rounded-r-md data-[active=true]:border-[var(--tm-blue)] data-[active=true]:ring-1 data-[active=true]:ring-[var(--tm-blue)]"
+              style={{
+                borderColor: i < value.length ? 'var(--tm-navy)' : 'var(--tm-border)',
+                backgroundColor: i < value.length ? 'var(--tm-navy)' : 'white',
+                color: i < value.length ? 'white' : 'var(--tm-text-muted)',
+              }}
+            />
+          ))}
+        </InputOTPGroup>
+      </InputOTP>
     </div>
   );
 }
