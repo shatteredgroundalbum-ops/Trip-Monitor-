@@ -205,13 +205,113 @@ async def process_session(request: Request, response: Response):
 
 
 @api_router.get("/auth/me")
-async def auth_me(user: User = Depends(get_current_user)):
+async def auth_me(user: User = Depends(get_current_user)) -> Dict[str, Any]:
     return user.model_dump()
+
+
+# ============ AUTH HELPERS ============
+def _set_session_cookie(response: Response, token: str, days: int) -> None:
+    """Set the standard `session_token` cookie with a `days`-day lifetime."""
+    response.set_cookie(
+        key="session_token", value=token,
+        httponly=True, secure=True, samesite="none",
+        path="/", max_age=days * 24 * 60 * 60,
+    )
+
+
+async def _create_session_record(user_id: str, prefix: str, days: int) -> str:
+    """Insert a fresh `user_sessions` row and return the generated token."""
+    token = f"{prefix}_{uuid.uuid4().hex}"
+    expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+    await db.user_sessions.insert_one({
+        "user_id": user_id, "session_token": token,
+        "expires_at": expires_at.isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return token
+
+
+async def _upsert_user_by_email(email: str, name: str, picture: str) -> str:
+    """Find or create a user by email. Returns the user_id."""
+    existing = await db.users.find_one({"email": email}, {"_id": 0})
+    if existing:
+        user_id = existing["user_id"]
+        await db.users.update_one(
+            {"user_id": user_id}, {"$set": {"name": name, "picture": picture}}
+        )
+        return user_id
+    user_id = f"user_{uuid.uuid4().hex[:12]}"
+    await db.users.insert_one({
+        "user_id": user_id, "email": email, "name": name, "picture": picture,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return user_id
+
+
+async def _upsert_user_by_device(
+    device_id: str,
+    role: Optional[str],
+    display_username: Optional[str],
+    driver_id: Optional[str],
+) -> str:
+    """Find or create a user keyed by device_id. Returns the user_id."""
+    existing = await db.users.find_one({"device_id": device_id}, {"_id": 0})
+    if existing:
+        user_id: str = existing["user_id"]
+        updates: Dict[str, Any] = {}
+        if role and existing.get("role") != role:
+            updates["role"] = role
+        if display_username and existing.get("name") != display_username:
+            updates["name"] = display_username
+        if driver_id and existing.get("driver_id") != driver_id:
+            updates["driver_id"] = driver_id
+        if updates:
+            await db.users.update_one({"user_id": user_id}, {"$set": updates})
+        return user_id
+    user_id = f"user_{uuid.uuid4().hex[:12]}"
+    await db.users.insert_one({
+        "user_id": user_id, "device_id": device_id,
+        "email": "",
+        "name": display_username or "Driver",
+        "picture": "",
+        "driver_id": driver_id or "",
+        "role": role or "",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return user_id
+
+
+async def _verify_google_credential(credential: str) -> Dict[str, Any]:
+    """Verify a Google ID-token JWT. Returns the userinfo claim set or raises 401."""
+    try:
+        info = google_id_token.verify_oauth2_token(
+            credential, google_requests.Request(), GOOGLE_CLIENT_ID
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=f"Invalid Google ID token: {exc}")
+    if not info.get("email_verified", False):
+        raise HTTPException(status_code=401, detail="Google account email not verified")
+    return info
+
+
+async def _verify_google_access_token(access_token: str) -> Dict[str, Any]:
+    """Verify a Google OAuth2 access token via the userinfo endpoint."""
+    async with httpx.AsyncClient(timeout=10.0) as http_client:
+        r = await http_client.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        if r.status_code != 200:
+            raise HTTPException(status_code=401, detail="Invalid Google access token")
+        info = r.json()
+    if not info.get("email_verified", False):
+        raise HTTPException(status_code=401, detail="Google account email not verified")
+    return info
 
 
 # REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 @api_router.post("/auth/local")
-async def auth_local_device(request: Request, response: Response):
+async def auth_local_device(request: Request, response: Response) -> Dict[str, str]:
     """Local-device authentication bridge.
 
     The frontend performs PIN / fingerprint verification entirely
@@ -226,54 +326,22 @@ async def auth_local_device(request: Request, response: Response):
     """
     body = await request.json()
     device_id = body.get("device_id")
-    role = body.get("role") or None
-    display_username = (body.get("display_username") or "").strip() or None
-    driver_id = (body.get("driver_id") or "").strip() or None
     if not device_id or not isinstance(device_id, str) or len(device_id) < 8:
         raise HTTPException(status_code=400, detail="device_id required")
-
-    existing = await db.users.find_one({"device_id": device_id}, {"_id": 0})
-    if existing:
-        user_id = existing["user_id"]
-        updates = {}
-        if role and existing.get("role") != role:
-            updates["role"] = role
-        if display_username and existing.get("name") != display_username:
-            updates["name"] = display_username
-        if driver_id and existing.get("driver_id") != driver_id:
-            updates["driver_id"] = driver_id
-        if updates:
-            await db.users.update_one({"user_id": user_id}, {"$set": updates})
-    else:
-        user_id = f"user_{uuid.uuid4().hex[:12]}"
-        await db.users.insert_one({
-            "user_id": user_id, "device_id": device_id,
-            "email": "",
-            "name": display_username or "Driver",
-            "picture": "",
-            "driver_id": driver_id or "",
-            "role": role or "",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
-
-    session_token = f"local_{uuid.uuid4().hex}"
-    expires_at = datetime.now(timezone.utc) + timedelta(days=30)
-    await db.user_sessions.insert_one({
-        "user_id": user_id, "session_token": session_token,
-        "expires_at": expires_at.isoformat(),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    })
-    response.set_cookie(
-        key="session_token", value=session_token,
-        httponly=True, secure=True, samesite="none",
-        path="/", max_age=30 * 24 * 60 * 60,
+    user_id = await _upsert_user_by_device(
+        device_id,
+        role=body.get("role") or None,
+        display_username=(body.get("display_username") or "").strip() or None,
+        driver_id=(body.get("driver_id") or "").strip() or None,
     )
-    return {"user_id": user_id, "device_id": device_id, "session_token": session_token}
+    token = await _create_session_record(user_id, prefix="local", days=30)
+    _set_session_cookie(response, token, days=30)
+    return {"user_id": user_id, "device_id": device_id, "session_token": token}
 
 
 # REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 @api_router.post("/auth/google")
-async def auth_google_id_token(request: Request, response: Response):
+async def auth_google_id_token(request: Request, response: Response) -> Dict[str, Any]:
     """Direct Google Sign-In endpoint.
 
     Accepts EITHER:
@@ -282,11 +350,6 @@ async def auth_google_id_token(request: Request, response: Response):
       - {"access_token": "<oauth2 access token>"} from the GIS popup
         oauth2 implicit flow (verified by calling Google's userinfo
         endpoint).
-
-    Provisions or updates the matching user, then issues a session_token
-    cookie. Bypasses the Emergent OAuth proxy entirely so the
-    user-visible flow is: button tap -> Google account picker popup
-    -> dashboard. No redirects, no hosted intermediate UI.
     """
     if not GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=500, detail="GOOGLE_CLIENT_ID not configured")
@@ -296,71 +359,25 @@ async def auth_google_id_token(request: Request, response: Response):
     if not credential and not access_token:
         raise HTTPException(status_code=400, detail="credential or access_token required")
 
-    email = name = picture = None
-    if credential:
-        try:
-            info = google_id_token.verify_oauth2_token(
-                credential, google_requests.Request(), GOOGLE_CLIENT_ID
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=401, detail=f"Invalid Google ID token: {exc}")
-        if not info.get("email_verified", False):
-            raise HTTPException(status_code=401, detail="Google account email not verified")
-        email = info.get("email")
-        name = info.get("name") or (email.split("@")[0] if email else "Driver")
-        picture = info.get("picture", "")
-    else:
-        async with httpx.AsyncClient(timeout=10.0) as http_client:
-            r = await http_client.get(
-                "https://www.googleapis.com/oauth2/v3/userinfo",
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-            if r.status_code != 200:
-                raise HTTPException(status_code=401, detail="Invalid Google access token")
-            info = r.json()
-        if not info.get("email_verified", False):
-            raise HTTPException(status_code=401, detail="Google account email not verified")
-        email = info.get("email")
-        name = info.get("name") or (email.split("@")[0] if email else "Driver")
-        picture = info.get("picture", "")
-
+    info = (await _verify_google_credential(credential)) if credential \
+        else (await _verify_google_access_token(access_token))
+    email = info.get("email")
     if not email:
         raise HTTPException(status_code=401, detail="Google account email missing")
+    name = info.get("name") or email.split("@")[0]
+    picture = info.get("picture", "")
 
-    existing = await db.users.find_one({"email": email}, {"_id": 0})
-    if existing:
-        user_id = existing["user_id"]
-        await db.users.update_one(
-            {"user_id": user_id}, {"$set": {"name": name, "picture": picture}}
-        )
-    else:
-        user_id = f"user_{uuid.uuid4().hex[:12]}"
-        await db.users.insert_one({
-            "user_id": user_id, "email": email, "name": name, "picture": picture,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
-
-    session_token = f"gsi_{uuid.uuid4().hex}"
-    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
-    await db.user_sessions.insert_one({
-        "user_id": user_id, "session_token": session_token,
-        "expires_at": expires_at.isoformat(),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    })
-
-    response.set_cookie(
-        key="session_token", value=session_token,
-        httponly=True, secure=True, samesite="none",
-        path="/", max_age=7 * 24 * 60 * 60,
-    )
+    user_id = await _upsert_user_by_email(email, name, picture)
+    token = await _create_session_record(user_id, prefix="gsi", days=7)
+    _set_session_cookie(response, token, days=7)
     return {
         "user_id": user_id, "email": email, "name": name, "picture": picture,
-        "session_token": session_token,
+        "session_token": token,
     }
 
 
 @api_router.post("/auth/logout")
-async def logout(request: Request, response: Response):
+async def logout(request: Request, response: Response) -> Dict[str, bool]:
     session_token = request.cookies.get("session_token")
     if session_token:
         await db.user_sessions.delete_one({"session_token": session_token})
@@ -484,7 +501,9 @@ async def update_session(session_id: str, payload: Dict[str, Any], user: User = 
 
 
 @api_router.post("/trip-sessions/{session_id}/finish")
-async def finish_session(session_id: str, user: User = Depends(get_current_user)):
+async def finish_session(
+    session_id: str, user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
     existing = await db.trip_sessions.find_one(
         {"session_id": session_id, "user_id": user.user_id}, {"_id": 0}
     )
@@ -493,24 +512,15 @@ async def finish_session(session_id: str, user: User = Depends(get_current_user)
     if existing.get("status") == "finished":
         raise HTTPException(status_code=409, detail="Session already finished")
 
-    # If the driver is on segment mode, prefer the sum of row segments when set
     profile_doc = await db.driver_profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
     mode = (profile_doc.get("mileage_mode") or "workflow").lower()
-    miles = existing.get("total_trip_miles")
-    if mode == "segment":
-        seg_total = sum(int(r.get("segment_miles") or 0) for r in (existing.get("rows") or []))
-        if seg_total > 0:
-            miles = seg_total
-
-    try:
-        miles_int = int(miles) if miles not in (None, "") else 0
-    except (TypeError, ValueError):
-        miles_int = 0
+    miles_int = _resolve_finish_miles(existing, mode)
     if miles_int <= 0:
         raise HTTPException(
             status_code=422,
             detail="total_trip_miles is required (round-trip miles) before a trip can be finished",
         )
+
     now = datetime.now(timezone.utc).isoformat()
     await db.trip_sessions.update_one(
         {"session_id": session_id, "user_id": user.user_id},
@@ -522,14 +532,28 @@ async def finish_session(session_id: str, user: User = Depends(get_current_user)
             "mileage_mode_at_finish": mode,
         }},
     )
-    doc = await db.trip_sessions.find_one(
+    return await db.trip_sessions.find_one(
         {"session_id": session_id, "user_id": user.user_id}, {"_id": 0}
     )
-    return doc
+
+
+def _resolve_finish_miles(session_doc: Dict[str, Any], mode: str) -> int:
+    """Resolve the trip's mileage at finish-time. Segment-mode drivers prefer
+    the row-level sum when any segment_miles are populated; workflow mode
+    requires the explicit `total_trip_miles`. Returns 0 if unresolved."""
+    miles = session_doc.get("total_trip_miles")
+    if mode == "segment":
+        seg_total = sum(int(r.get("segment_miles") or 0) for r in (session_doc.get("rows") or []))
+        if seg_total > 0:
+            miles = seg_total
+    try:
+        return int(miles) if miles not in (None, "") else 0
+    except (TypeError, ValueError):
+        return 0
 
 
 @api_router.get("/trip-sessions/{session_id}/recap")
-async def trip_recap(session_id: str, user: User = Depends(get_current_user)):
+async def trip_recap(session_id: str, user: User = Depends(get_current_user)) -> Dict[str, Any]:
     """Internal trip recap shown after a trip is finished.
     Surfaces this trip's miles + updated career total + daily/weekly totals
     + the next mileage milestone + any badges unlocked by this trip.
@@ -541,112 +565,44 @@ async def trip_recap(session_id: str, user: User = Depends(get_current_user)):
     if not trip:
         raise HTTPException(status_code=404, detail="Not found")
     if trip.get("status") != "finished":
-        # Recap only makes sense after a trip is finished; the math relies on
-        # this trip's miles already being part of the cumulative sum.
+        # Recap only makes sense after a trip is finished; the math relies
+        # on this trip's miles already being part of the cumulative sum.
         raise HTTPException(status_code=404, detail="Recap unavailable for unfinished trips")
 
     profile_doc = await db.driver_profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
     baseline = int(profile_doc.get("lifetime_miles") or 0)
     years = int(profile_doc.get("years_experience") or 0)
-    tz_name = profile_doc.get("time_zone") or "UTC"
-    try:
-        from zoneinfo import ZoneInfo
-        tz = ZoneInfo(tz_name)
-    except Exception:
-        tz = timezone.utc
+    tz, _tz_name = _resolve_user_tz(profile_doc)
 
     this_trip_miles = int(trip.get("total_trip_miles") or 0)
-
-    # Sum of all finished trips ≤ this trip's finished_at (so career_after = baseline + sum_up_to_this)
-    finished_at = trip.get("finished_at")
     finished_total = await db.trip_sessions.count_documents(
         {"user_id": user.user_id, "status": "finished"}
     )
+    miles_in_app = await _sum_finished_miles(user.user_id)
+    career_after = baseline + miles_in_app
+    career_before = career_after - this_trip_miles
 
-    # All-finished miles
-    miles_total_in_app = 0
-    async for d in db.trip_sessions.aggregate([
-        {"$match": {"user_id": user.user_id, "status": "finished"}},
-        {"$group": {"_id": None, "miles": {"$sum": {"$ifNull": ["$total_trip_miles", 0]}}}},
-    ]):
-        miles_total_in_app = int(d.get("miles") or 0)
+    # Today / week miles in the user's local timezone.
+    today_local = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_utc_iso = today_local.astimezone(timezone.utc).isoformat()
+    week_utc_iso = (today_local - timedelta(days=6)).astimezone(timezone.utc).isoformat()
+    miles_today = await _sum_finished_miles(user.user_id, since_iso=today_utc_iso)
+    miles_week = await _sum_finished_miles(user.user_id, since_iso=week_utc_iso)
 
-    # Miles before this trip (career snapshot prior to recap)
-    miles_before = miles_total_in_app - this_trip_miles
-    career_before = baseline + miles_before
-    career_after = baseline + miles_total_in_app
-
-    # Today / week miles (local tz)
-    now_local = datetime.now(tz)
-    today_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-    week_start_local = today_start_local - timedelta(days=6)
-    today_start_utc = today_start_local.astimezone(timezone.utc).isoformat()
-    week_start_utc = week_start_local.astimezone(timezone.utc).isoformat()
-
-    miles_today = 0
-    async for d in db.trip_sessions.aggregate([
-        {"$match": {"user_id": user.user_id, "status": "finished", "finished_at": {"$gte": today_start_utc}}},
-        {"$group": {"_id": None, "miles": {"$sum": {"$ifNull": ["$total_trip_miles", 0]}}}},
-    ]):
-        miles_today = int(d.get("miles") or 0)
-
-    miles_week = 0
-    async for d in db.trip_sessions.aggregate([
-        {"$match": {"user_id": user.user_id, "status": "finished", "finished_at": {"$gte": week_start_utc}}},
-        {"$group": {"_id": None, "miles": {"$sum": {"$ifNull": ["$total_trip_miles", 0]}}}},
-    ]):
-        miles_week = int(d.get("miles") or 0)
-
-    # Next milestone (smallest miles tier above career_after)
-    next_milestone = None
-    for tier in MILES_TIERS:
-        if career_after < tier:
-            next_milestone = {
-                "label": _miles_label(tier),
-                "threshold": tier,
-                "remaining": tier - career_after,
-                "progress_pct": round(career_after / tier * 100),
-            }
-            break
-
-    # Badges unlocked by THIS trip = earned_now AND NOT earned_before
-    def badges_at(miles_val, year_val, trips_val):
-        out = set()
-        for t in MILES_TIERS:
-            if miles_val >= t:
-                out.add(f"miles_{t}")
-        for t in YEARS_TIERS:
-            if year_val >= t:
-                out.add(f"years_{t}")
-        for t in TRIPS_TIERS:
-            if trips_val >= t:
-                out.add(f"trips_{t}")
-        return out
-
-    earned_after = badges_at(career_after, years, finished_total)
-    earned_before = badges_at(career_before, years, finished_total - 1)
-    new_ids = earned_after - earned_before
-    new_badges = []
-    for nid in sorted(new_ids):
-        if nid.startswith("miles_"):
-            n = int(nid.split("_")[1])
-            new_badges.append({"id": nid, "category": "miles", "label": _miles_label(n)})
-        elif nid.startswith("trips_"):
-            n = int(nid.split("_")[1])
-            new_badges.append({"id": nid, "category": "trips", "label": f"{n} Trips"})
-        elif nid.startswith("years_"):
-            n = int(nid.split("_")[1])
-            new_badges.append({"id": nid, "category": "years", "label": f"{n} Year{'s' if n != 1 else ''} of Service"})
+    # Badges unlocked by THIS trip = earned after − earned before.
+    earned_after = _badges_earned(career_after, years, finished_total)
+    earned_before = _badges_earned(career_before, years, finished_total - 1)
+    new_badges = [_hydrate_badge(b) for b in sorted(earned_after - earned_before)]
 
     return {
         "session_id": session_id,
-        "finished_at": finished_at,
+        "finished_at": trip.get("finished_at"),
         "trip_miles": this_trip_miles,
         "career_before": career_before,
         "career_after": career_after,
         "miles_today": miles_today,
         "miles_week": miles_week,
-        "next_milestone": next_milestone,
+        "next_milestone": _next_milestone(career_after),
         "new_badges": new_badges,
         "trips_total": finished_total,
         "mileage_mode": (profile_doc.get("mileage_mode") or "workflow"),
@@ -745,7 +701,7 @@ async def bump_city(payload: Dict[str, Any], user: User = Depends(get_current_us
 
 
 @api_router.get("/stats")
-async def get_stats(user: User = Depends(get_current_user)):
+async def get_stats(user: User = Depends(get_current_user)) -> Dict[str, Any]:
     """Aggregate driver stats for the dashboard tiles."""
     now = datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
@@ -758,61 +714,16 @@ async def get_stats(user: User = Depends(get_current_user)):
         {"user_id": user.user_id, "status": "finished", "finished_at": {"$gte": month_start}}
     )
 
-    # Total stops across all finished trips
-    total_stops_pipeline = [
-        {"$match": {"user_id": user.user_id, "status": "finished"}},
-        {"$unwind": "$rows"},
-        {"$match": {"$or": [
-            {"rows.event_code": {"$nin": [None, ""]}},
-            {"rows.location_name": {"$nin": [None, ""]}},
-            {"rows.stop_city": {"$nin": [None, ""]}},
-        ]}},
-        {"$count": "n"},
-    ]
-    cursor = db.trip_sessions.aggregate(total_stops_pipeline)
-    total_stops = 0
-    async for doc in cursor:
-        total_stops = doc.get("n", 0)
+    total_stops = await _count_total_stops(user.user_id)
+    miles_total_in_app = await _sum_finished_miles(user.user_id)
+    miles_today = await _sum_finished_miles(user.user_id, since_iso=today_start)
+    top_location = await _top_location(user.user_id)
 
-    # Miles aggregation (sum of total_trip_miles on finished trips)
-    miles_pipeline_total = [
-        {"$match": {"user_id": user.user_id, "status": "finished"}},
-        {"$group": {"_id": None, "miles": {"$sum": {"$ifNull": ["$total_trip_miles", 0]}}}},
-    ]
-    miles_total_in_app = 0
-    async for doc in db.trip_sessions.aggregate(miles_pipeline_total):
-        miles_total_in_app = int(doc.get("miles") or 0)
-
-    miles_pipeline_today = [
-        {"$match": {"user_id": user.user_id, "status": "finished", "finished_at": {"$gte": today_start}}},
-        {"$group": {"_id": None, "miles": {"$sum": {"$ifNull": ["$total_trip_miles", 0]}}}},
-    ]
-    miles_today = 0
-    async for doc in db.trip_sessions.aggregate(miles_pipeline_today):
-        miles_today = int(doc.get("miles") or 0)
-
-    # Most-used location across all rows
-    top_loc_pipeline = [
-        {"$match": {"user_id": user.user_id}},
-        {"$unwind": "$rows"},
-        {"$match": {"rows.location_name": {"$nin": [None, ""]}}},
-        {"$group": {"_id": "$rows.location_name", "count": {"$sum": 1}}},
-        {"$sort": {"count": -1}},
-        {"$limit": 1},
-    ]
-    cursor = db.trip_sessions.aggregate(top_loc_pipeline)
-    top_location = None
-    async for doc in cursor:
-        top_location = doc.get("_id")
-
-    # Last finished trip
     last_finished = await db.trip_sessions.find_one(
         {"user_id": user.user_id, "status": "finished"},
         {"_id": 0},
         sort=[("finished_at", -1)],
     )
-
-    # Profile baseline miles
     profile_doc = await db.driver_profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
     baseline_miles = int(profile_doc.get("lifetime_miles") or 0)
 
@@ -828,25 +739,47 @@ async def get_stats(user: User = Depends(get_current_user)):
     }
 
 
+async def _count_total_stops(user_id: str) -> int:
+    """Count rows with at least one of event_code / location_name / stop_city set,
+    across this user's finished trips."""
+    pipeline = [
+        {"$match": {"user_id": user_id, "status": "finished"}},
+        {"$unwind": "$rows"},
+        {"$match": {"$or": [
+            {"rows.event_code": {"$nin": [None, ""]}},
+            {"rows.location_name": {"$nin": [None, ""]}},
+            {"rows.stop_city": {"$nin": [None, ""]}},
+        ]}},
+        {"$count": "n"},
+    ]
+    async for doc in db.trip_sessions.aggregate(pipeline):
+        return int(doc.get("n", 0))
+    return 0
+
+
+async def _top_location(user_id: str) -> Optional[str]:
+    """Most-used `location_name` across all this user's trip rows (any status)."""
+    pipeline = [
+        {"$match": {"user_id": user_id}},
+        {"$unwind": "$rows"},
+        {"$match": {"rows.location_name": {"$nin": [None, ""]}}},
+        {"$group": {"_id": "$rows.location_name", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 1},
+    ]
+    async for doc in db.trip_sessions.aggregate(pipeline):
+        return doc.get("_id")
+    return None
+
+
 @api_router.get("/stats/week")
-async def get_weekly_stats(user: User = Depends(get_current_user)):
-    """Last-7-days bar chart data: one bucket per local day,
-    each with miles + finished trip count.
-
-    Days are bucketed by the user's profile time_zone (falls back to UTC).
-    Returns 7 entries oldest → newest (today is last).
-    """
+async def get_weekly_stats(user: User = Depends(get_current_user)) -> Dict[str, Any]:
+    """Last-7-days bar-chart data: one bucket per local day with miles + trip count.
+    Days are bucketed by the user's profile time zone (UTC fallback)."""
     profile_doc = await db.driver_profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
-    tz_name = profile_doc.get("time_zone") or "UTC"
-    try:
-        from zoneinfo import ZoneInfo
-        tz = ZoneInfo(tz_name)
-    except Exception:
-        tz = timezone.utc
+    tz, tz_name = _resolve_user_tz(profile_doc)
 
-    now_local = datetime.now(tz)
-    today_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-    # Window: 7 days starting at midnight 6 days ago (local)
+    today_local = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
     window_start_local = today_local - timedelta(days=6)
     window_start_utc_iso = window_start_local.astimezone(timezone.utc).isoformat()
 
@@ -859,18 +792,34 @@ async def get_weekly_stats(user: User = Depends(get_current_user)):
         {"_id": 0, "finished_at": 1, "total_trip_miles": 1, "session_id": 1},
     ).to_list(1000)
 
-    # Pre-create 7 buckets keyed by YYYY-MM-DD (local)
-    buckets = {}
+    days = _bucket_finished_by_day(finished, tz, window_start_local, today_local)
+    return {
+        "time_zone": tz_name,
+        "miles_total_7d": sum(d["miles"] for d in days),
+        "trips_total_7d": sum(d["trips"] for d in days),
+        "miles_max": max((d["miles"] for d in days), default=0),
+        "days": days,
+    }
+
+
+def _bucket_finished_by_day(
+    finished: List[Dict[str, Any]],
+    tz,
+    window_start_local: datetime,
+    today_local: datetime,
+) -> List[Dict[str, Any]]:
+    """Build 7 ordered day buckets (oldest→newest) and assign each finished
+    trip's miles + count to the matching local-day bucket."""
+    buckets: Dict[str, Dict[str, Any]] = {}
     for i in range(7):
         day = window_start_local + timedelta(days=i)
         buckets[day.strftime("%Y-%m-%d")] = {
             "date": day.strftime("%Y-%m-%d"),
-            "label": day.strftime("%a"),  # Mon/Tue/...
+            "label": day.strftime("%a"),
             "is_today": day.date() == today_local.date(),
             "miles": 0,
             "trips": 0,
         }
-
     for trip in finished:
         finished_at = trip.get("finished_at")
         if not finished_at:
@@ -879,25 +828,13 @@ async def get_weekly_stats(user: User = Depends(get_current_user)):
             dt_utc = datetime.fromisoformat(finished_at)
             if dt_utc.tzinfo is None:
                 dt_utc = dt_utc.replace(tzinfo=timezone.utc)
-            dt_local = dt_utc.astimezone(tz)
-            key = dt_local.strftime("%Y-%m-%d")
+            key = dt_utc.astimezone(tz).strftime("%Y-%m-%d")
         except (TypeError, ValueError):
             continue
         if key in buckets:
             buckets[key]["miles"] += int(trip.get("total_trip_miles") or 0)
             buckets[key]["trips"] += 1
-
-    days = list(buckets.values())
-    miles_total = sum(d["miles"] for d in days)
-    trips_total = sum(d["trips"] for d in days)
-    miles_max = max((d["miles"] for d in days), default=0)
-    return {
-        "time_zone": tz_name,
-        "miles_total_7d": miles_total,
-        "trips_total_7d": trips_total,
-        "miles_max": miles_max,
-        "days": days,
-    }
+    return list(buckets.values())
 
 
 # ============ ACHIEVEMENTS ============
@@ -913,8 +850,80 @@ def _miles_label(n: int) -> str:
     return f"{n // 1000}K Miles"
 
 
+# ============ STATS / BADGE HELPERS ============
+async def _sum_finished_miles(user_id: str, since_iso: Optional[str] = None) -> int:
+    """Sum `total_trip_miles` across this user's finished trips.
+    Optional `since_iso` filter (ISO-8601 UTC) bounds the aggregation
+    to trips finished on or after that timestamp."""
+    match: Dict[str, Any] = {"user_id": user_id, "status": "finished"}
+    if since_iso:
+        match["finished_at"] = {"$gte": since_iso}
+    pipeline = [
+        {"$match": match},
+        {"$group": {"_id": None, "miles": {"$sum": {"$ifNull": ["$total_trip_miles", 0]}}}},
+    ]
+    async for doc in db.trip_sessions.aggregate(pipeline):
+        return int(doc.get("miles") or 0)
+    return 0
+
+
+def _resolve_user_tz(profile_doc: Dict[str, Any]):
+    """Return (tzinfo, tz_name) from the profile, falling back to UTC."""
+    tz_name = (profile_doc or {}).get("time_zone") or "UTC"
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(tz_name), tz_name
+    except Exception:
+        return timezone.utc, tz_name
+
+
+def _next_milestone(career_after: int) -> Optional[Dict[str, Any]]:
+    """Smallest miles tier strictly above `career_after`, or None if all reached."""
+    for tier in MILES_TIERS:
+        if career_after < tier:
+            return {
+                "label": _miles_label(tier),
+                "threshold": tier,
+                "remaining": tier - career_after,
+                "progress_pct": round(career_after / tier * 100),
+            }
+    return None
+
+
+def _badges_earned(miles: int, years: int, trips: int) -> set:
+    """Return the set of badge ids earned at the given career totals."""
+    earned: set = set()
+    for t in MILES_TIERS:
+        if miles >= t:
+            earned.add(f"miles_{t}")
+    for t in YEARS_TIERS:
+        if years >= t:
+            earned.add(f"years_{t}")
+    for t in TRIPS_TIERS:
+        if trips >= t:
+            earned.add(f"trips_{t}")
+    return earned
+
+
+def _hydrate_badge(badge_id: str) -> Dict[str, Any]:
+    """Convert a raw badge id (e.g. `miles_250000`) into a UI-ready dict."""
+    if badge_id.startswith("miles_"):
+        n = int(badge_id.split("_")[1])
+        return {"id": badge_id, "category": "miles", "label": _miles_label(n)}
+    if badge_id.startswith("trips_"):
+        n = int(badge_id.split("_")[1])
+        return {"id": badge_id, "category": "trips", "label": f"{n} Trips"}
+    if badge_id.startswith("years_"):
+        n = int(badge_id.split("_")[1])
+        return {
+            "id": badge_id, "category": "years",
+            "label": f"{n} Year{'s' if n != 1 else ''} of Service",
+        }
+    return {"id": badge_id, "category": "unknown", "label": badge_id}
+
+
 @api_router.get("/achievements")
-async def get_achievements(user: User = Depends(get_current_user)):
+async def get_achievements(user: User = Depends(get_current_user)) -> Dict[str, Any]:
     """Compute earned + locked badges from profile baseline + finished trips."""
     profile_doc = await db.driver_profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
     years = int(profile_doc.get("years_experience") or 0)
@@ -922,49 +931,34 @@ async def get_achievements(user: User = Depends(get_current_user)):
     finished_total = await db.trip_sessions.count_documents(
         {"user_id": user.user_id, "status": "finished"}
     )
-    miles_in_app = 0
-    async for doc in db.trip_sessions.aggregate([
-        {"$match": {"user_id": user.user_id, "status": "finished"}},
-        {"$group": {"_id": None, "miles": {"$sum": {"$ifNull": ["$total_trip_miles", 0]}}}},
-    ]):
-        miles_in_app = int(doc.get("miles") or 0)
-    total_miles = baseline + miles_in_app
+    total_miles = baseline + await _sum_finished_miles(user.user_id)
 
-    badges = []
+    badges: List[Dict[str, Any]] = []
     for tier in MILES_TIERS:
         badges.append({
-            "id": f"miles_{tier}",
-            "category": "miles",
-            "label": _miles_label(tier),
-            "threshold": tier,
-            "progress": min(total_miles, tier),
-            "earned": total_miles >= tier,
+            "id": f"miles_{tier}", "category": "miles",
+            "label": _miles_label(tier), "threshold": tier,
+            "progress": min(total_miles, tier), "earned": total_miles >= tier,
         })
     for tier in YEARS_TIERS:
         badges.append({
-            "id": f"years_{tier}",
-            "category": "years",
+            "id": f"years_{tier}", "category": "years",
             "label": f"{tier} Year{'s' if tier != 1 else ''} of Service",
-            "threshold": tier,
-            "progress": min(years, tier),
+            "threshold": tier, "progress": min(years, tier),
             "earned": years >= tier,
         })
     for tier in TRIPS_TIERS:
         badges.append({
-            "id": f"trips_{tier}",
-            "category": "trips",
-            "label": f"{tier} Trips",
-            "threshold": tier,
-            "progress": min(finished_total, tier),
-            "earned": finished_total >= tier,
+            "id": f"trips_{tier}", "category": "trips",
+            "label": f"{tier} Trips", "threshold": tier,
+            "progress": min(finished_total, tier), "earned": finished_total >= tier,
         })
 
-    earned_count = sum(1 for b in badges if b["earned"])
     return {
         "years_experience": years,
         "lifetime_miles": total_miles,
         "trips_total": finished_total,
-        "earned_count": earned_count,
+        "earned_count": sum(1 for b in badges if b["earned"]),
         "total_count": len(badges),
         "badges": badges,
     }

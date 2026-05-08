@@ -546,6 +546,33 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
     agent (no defects). Interactive behaviors not exercised because
     drawing tools are not on the HOME tab; deferred to next pass.
 
+- ✅ **Backend code-quality refactor (Iter 22)** (2026-02-08):
+  - Acted on the code review report. Extracted helpers, added type
+    hints, dropped average complexity from `B`-tier hotspots into
+    `A`-tier helpers across `/app/backend/server.py`.
+  - Helpers added:
+    • Auth: `_set_session_cookie`, `_create_session_record`,
+      `_upsert_user_by_email`, `_upsert_user_by_device`,
+      `_verify_google_credential`, `_verify_google_access_token`.
+    • Stats / badges: `_sum_finished_miles`, `_resolve_user_tz`,
+      `_next_milestone`, `_badges_earned`, `_hydrate_badge`,
+      `_count_total_stops`, `_top_location`, `_bucket_finished_by_day`,
+      `_resolve_finish_miles`.
+  - Refactored complexity drops:
+    • `trip_recap` 26 (E) → 9 (B).
+    • `auth_local_device` 20 (D) → 9 (B).
+    • `auth_google_id_token` 16 (C) → 8 (B).
+    • `get_weekly_stats` 14 (C) → bucket helper 8 (B).
+    • `finish_session` 13 (C) → resolver helper 8 (B).
+    • `get_stats` 80 lines / 17 locals → 28 lines / 9 locals.
+    • Module average complexity now **A (3.6)** across 53 blocks.
+  - Type hints added to every refactored public endpoint and helper.
+  - Note on the `is` vs `==` finding: lines 143 and 880 are both
+    `if x.tzinfo is None:`. Per PEP 8, comparison to `None` MUST use
+    `is`. Verified no `is 0`, `is "string"`, `is True/False`
+    patterns exist anywhere in the file.
+  - Verified live: all 8 affected endpoints return original shapes.
+
 - ✅ **Splash plays under the cover (Iter 21c.5)** (2026-02-08):
   - User reported the splash showed a frozen frame after the
     pre-splash exited, then snapped to the animation late. Reverted
