@@ -546,6 +546,12 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
     agent (no defects). Interactive behaviors not exercised because
     drawing tools are not on the HOME tab; deferred to next pass.
 
+- ✅ **Upload-screen polish — round 2 (Iter 24)** (2026-02-08):
+  - **Toolbar order swap** (per user): Reset · **Grid** · **Text** · Set.
+  - **Mapping-mode buttons streamlined**: removed marketing copy.
+    Now just two solid buttons — Quick Map (blue) + Pro Studio (orange).
+  - All testids preserved.
+
 - ✅ **Trip-sheet template flow polish (Iter 23)** (2026-02-08):
   - 4 user-requested UI changes — all verified live by testing
     agent (`/app/test_reports/iteration_23.json`):

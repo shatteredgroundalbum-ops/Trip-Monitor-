@@ -449,7 +449,7 @@ function UploadView({
             </svg>
           </div>
 
-          {/* Compact 4-button toolbar — Reset · Text · Grid · Set & continue.
+          {/* Compact 4-button toolbar — Reset · Grid · Text · Set & continue.
               All on one row at h-8 so the analysis report below does NOT
               push the Set button down. */}
           <div className="flex items-center gap-1.5 flex-wrap" data-testid="upload-controls">
@@ -458,20 +458,6 @@ function UploadView({
               className="h-8 px-2.5 text-xs bg-white border-[var(--tm-border)] text-[var(--tm-navy)]"
             >
               <RotateCcw className="h-3 w-3 mr-1" /> Reset
-            </Button>
-            <Button
-              variant="outline" data-testid="upload-analyze"
-              onClick={onAnalyze} disabled={!!analyzing}
-              className="h-8 px-2.5 text-xs bg-white border-[var(--tm-blue)] text-[var(--tm-navy)] disabled:opacity-60"
-              title="Run OCR to detect font size, weight and line spacing"
-            >
-              {analyzing === "text" ? (
-                <span className="inline-flex items-center gap-1">
-                  <Loader2 className="h-3 w-3 animate-spin" /> {analyzeProgress}%
-                </span>
-              ) : (
-                <><Sparkles className="h-3 w-3 mr-1" />{analysis ? "Re-text" : "Text"}</>
-              )}
             </Button>
             <Button
               variant="outline" data-testid="upload-analyze-grid"
@@ -485,6 +471,20 @@ function UploadView({
                 </span>
               ) : (
                 <><Grid3x3 className="h-3 w-3 mr-1" />{gridAnalysis?.cols ? "Re-grid" : "Grid"}</>
+              )}
+            </Button>
+            <Button
+              variant="outline" data-testid="upload-analyze"
+              onClick={onAnalyze} disabled={!!analyzing}
+              className="h-8 px-2.5 text-xs bg-white border-[var(--tm-blue)] text-[var(--tm-navy)] disabled:opacity-60"
+              title="Run OCR to detect font size, weight and line spacing"
+            >
+              {analyzing === "text" ? (
+                <span className="inline-flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" /> {analyzeProgress}%
+                </span>
+              ) : (
+                <><Sparkles className="h-3 w-3 mr-1" />{analysis ? "Re-text" : "Text"}</>
               )}
             </Button>
             <Button
@@ -522,34 +522,28 @@ function UploadView({
             </div>
           )}
 
+          {/* Mapping mode buttons — streamlined to just label + colour.
+              Quick Map = blue, Pro Studio = orange. No description copy,
+              no chips, no border-only "card" look — just two buttons. */}
           <div className="grid grid-cols-2 gap-2 pt-2" data-testid="map-mode-cards">
-            <button
-              type="button" data-testid="enter-quick-map" onClick={onQuick}
-              className="text-left bg-white border-2 border-[var(--tm-border)] hover:border-[var(--tm-orange)] rounded-md p-3 transition shadow-sm"
+            <Button
+              data-testid="enter-quick-map" onClick={onQuick}
+              className="h-10 bg-[var(--tm-blue)] hover:bg-[var(--tm-blue-deep)] text-white font-black text-sm rounded-md"
             >
-              <div className="text-[10px] uppercase tracking-wider text-[var(--tm-blue)] font-bold">Quick</div>
-              <div className="text-sm font-bold">Quick Map</div>
-              <div className="text-[10px] text-[var(--tm-text-soft)] mt-0.5">
-                13 taps · ~90 sec · drops typed values over the scan.
-              </div>
-            </button>
-            <button
-              type="button" data-testid="enter-pro-studio" onClick={onPro}
-              className="relative text-left bg-white border-2 border-[var(--tm-border)] hover:border-[var(--tm-orange)] rounded-md p-3 transition shadow-sm"
+              Quick Map
+            </Button>
+            <Button
+              data-testid="enter-pro-studio" onClick={onPro}
+              className="relative h-10 bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-black text-sm rounded-md"
             >
-              <div className="text-[10px] uppercase tracking-wider text-[var(--tm-orange)] font-bold flex items-center gap-1.5">
-                Pro · Studio
-                {proLocked && (
-                  <span data-testid="pro-locked-chip" className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-[var(--tm-orange)] text-white text-[9px]">
-                    <Lock className="h-2.5 w-2.5" /> Studio
-                  </span>
-                )}
-              </div>
-              <div className="text-sm font-bold">Pro Mapping Studio</div>
-              <div className="text-[10px] text-[var(--tm-text-soft)] mt-0.5">
-                Draw left · clean reconstruct right · text controls + grid + logo.
-              </div>
-            </button>
+              Pro Studio
+              {proLocked && (
+                <span data-testid="pro-locked-chip"
+                  className="absolute -top-1.5 -right-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[var(--tm-navy)] text-white text-[8px] font-bold">
+                  <Lock className="h-2 w-2" />
+                </span>
+              )}
+            </Button>
           </div>
         </>
       )}
