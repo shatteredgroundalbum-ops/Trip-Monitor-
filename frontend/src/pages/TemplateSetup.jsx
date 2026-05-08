@@ -8,6 +8,7 @@ import { Button } from "../components/ui/button";
 import { toast } from "sonner";
 import TemplateMappingWizard from "../components/app/TemplateMappingWizard";
 import ProMappingStudio from "../components/app/ProMappingStudio";
+import TripSheetPreview from "../components/app/TripSheetPreview";
 import { normalizeCapture, runOcr, formatBytes } from "../lib/scan-pipeline";
 import {
   setActiveTemplateId, ensureDefaultTemplate, DEFAULT_TEMPLATE_ID,
@@ -50,6 +51,7 @@ export default function TemplateSetup() {
 
   const [resumeDraft, setResumeDraft] = useState(null);
   const [showStudioConfirm, setShowStudioConfirm] = useState(false);
+  const [showDefaultPreview, setShowDefaultPreview] = useState(false);
   const [upgradePrompt, setUpgradePrompt] = useState(null);
 
   const [tier, setTier] = useState("FREE");
@@ -222,6 +224,68 @@ export default function TemplateSetup() {
       {upgradePrompt && (
         <UpgradePrompt required={upgradePrompt.required} onClose={() => setUpgradePrompt(null)} />
       )}
+      {showDefaultPreview && (
+        <DefaultPreviewDialog
+          onCancel={() => setShowDefaultPreview(false)}
+          onConfirm={handleConfirmDefault}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Confirmation modal shown when the driver picks "Use TripMonitor
+ * Default". Renders a static preview of the sheet so they can see
+ * what they're agreeing to *before* it becomes active.
+ */
+function DefaultPreviewDialog({ onCancel, onConfirm }) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      data-testid="default-preview-modal"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white border-2 border-[var(--tm-orange)] rounded-md shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+      >
+        <div className="px-5 py-4 border-b border-[var(--tm-border)] sticky top-0 bg-white">
+          <div className="text-[10px] uppercase tracking-[0.3em] font-bold text-[var(--tm-orange)] mb-0.5 inline-flex items-center gap-1">
+            <FileText className="h-3 w-3" /> Preview · TripMonitor Default
+          </div>
+          <div className="text-base font-black text-[var(--tm-navy)]">
+            Confirm you want to use this sheet
+          </div>
+          <p className="text-[11px] text-[var(--tm-text-soft)] mt-0.5">
+            This is the built-in trip sheet shipped with the app. It can't be edited.
+          </p>
+        </div>
+        <div className="p-4">
+          <TripSheetPreview />
+        </div>
+        <div className="px-5 py-3 border-t border-[var(--tm-border)] sticky bottom-0 bg-white flex items-center justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onCancel}
+            data-testid="default-preview-cancel"
+            className="h-8 px-3 text-xs"
+          >
+            <X className="h-3 w-3 mr-1" /> Not now
+          </Button>
+          <Button
+            size="sm"
+            onClick={onConfirm}
+            data-testid="default-preview-confirm"
+            className="h-8 px-3 text-xs bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold"
+          >
+            <Check className="h-3 w-3 mr-1" /> Yes, use this sheet
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

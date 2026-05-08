@@ -1,0 +1,67 @@
+{
+  "summary": "Iter 22 — Frontend-only review of Default-Sheet preview modal + BoundarySetup compact toolbar. Setup wizard partially walked (Identity OK, PIN entry on step 3 of 5 stuck due to focus/hidden-input handling; could not reach /templates live). Findings derived from source-level review of /app/frontend/src/pages/TemplateSetup.jsx, /app/frontend/src/components/app/BoundarySetup.jsx, /app/frontend/src/components/app/TripSheetPreview.jsx + 2 confirmed live navigation runs. CRITICAL: the default-preview modal flow is broken — `handlePickDefault` still navigates straight to /dashboard and never opens the modal; AND `handleConfirmDefault` (referenced at line 230 in TemplateSetup.jsx) is undefined which would throw a ReferenceError if the modal ever opened. SECONDARY ISSUE: the BoundarySetup component (with the new compact toolbar + grid analyzer) is fully implemented but NOT wired into the upload flow — TemplateSetup.jsx renders its own inline UploadView (lines 346-503) which still has the OLD layout (upload-reset/upload-analyze/upload-set on a 3-col grid + the old <dl> Stat report) and BoundarySetup is not imported. So all 4 spec changes (3 BoundarySetup-toolbar items + 1 default-preview modal) regress at runtime even though BoundarySetup.jsx itself is correct.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "TemplateSetup.jsx → handlePickDefault",
+        "issue": "Clicking [data-testid=pick-default] navigates straight to /dashboard. It must call setShowDefaultPreview(true) so [data-testid=default-preview-modal] opens. Modal flow #4 in spec is completely broken at runtime.",
+        "selector": "[data-testid=pick-default]",
+        "priority": "CRITICAL"
+      },
+      {
+        "component": "TemplateSetup.jsx → DefaultPreviewDialog onConfirm wiring",
+        "issue": "handleConfirmDefault is referenced at line 230 (`<DefaultPreviewDialog onCancel={...} onConfirm={handleConfirmDefault} />`) but is never declared anywhere in the file. If/when handlePickDefault is fixed to open the modal, clicking Confirm will throw 'ReferenceError: handleConfirmDefault is not defined'. The expected impl: setActiveTemplateId(DEFAULT_TEMPLATE_ID) → setShowDefaultPreview(false) → toast.success → navigate('/dashboard').",
+        "selector": "[data-testid=default-preview-confirm]",
+        "priority": "CRITICAL"
+      },
+      {
+        "component": "TemplateSetup.jsx → UploadView (lines 346-503)",
+        "issue": "The 3-button [data-testid=upload-controls] toolbar with upload-reset / upload-analyze / upload-set in a 3-col grid is still the active rendered toolbar for view==='upload'. The spec change #1-#3 (compact h-8 4-button toolbar with boundary-analyze-grid + chip-strip report) is in BoundarySetup.jsx but BoundarySetup is NOT imported or rendered anywhere in TemplateSetup.jsx. The inline analysis card (line 458) is still the old <dl> with Stat rows (Font/Size/Thickness only) — no grid chips, no compact strip. Fix: replace UploadView's controls + analysis block with the BoundarySetup component (or wire BoundarySetup as a separate view between 'upload' and 'map').",
+        "selector": "[data-testid=upload-controls]",
+        "priority": "CRITICAL"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Pick TripMonitor Default → preview modal → confirm",
+        "issue": "Entire modal flow is dead code today. `showDefaultPreview` state defaults to false, no setter call exists in handlePickDefault, so DefaultPreviewDialog never mounts.",
+        "affected_selectors": ["[data-testid=pick-default]", "[data-testid=default-preview-modal]", "[data-testid=default-sheet-preview]", "[data-testid=default-preview-cancel]", "[data-testid=default-preview-confirm]"]
+      },
+      {
+        "flow": "Scan upload → boundary setup → mapping mode",
+        "issue": "Spec describes BoundarySetup as the screen between scan upload and Studio; the rendered app jumps from upload directly into Quick/Pro mapping cards without ever rendering BoundarySetup. The new boundary-analyze-grid / grid-cols / grid-rows / grid-cell / boundary-set / boundary-reset testids will NOT appear in the live DOM at any step today.",
+        "affected_selectors": ["[data-testid=boundary-setup]", "[data-testid=boundary-reset]", "[data-testid=boundary-analyze]", "[data-testid=boundary-analyze-grid]", "[data-testid=boundary-set]", "[data-testid=grid-cols]", "[data-testid=grid-rows]", "[data-testid=grid-cell]"]
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "BoundarySetup (when wired) — grid-not-detected toast",
+        "issues": ["BoundarySetup line 82 calls `toast.success('No grid pattern detected')` for the negative path — that's a success-styled (green) toast for a failure outcome. Use toast.info or toast.warning to match user expectation."]
+      }
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix TemplateSetup.jsx handlePickDefault (lines 69-73): replace `await setActiveTemplateId(...); toast.success(...); navigate('/dashboard');` with simply `setShowDefaultPreview(true);` so the modal opens.",
+    "Add the missing handleConfirmDefault function in TemplateSetup.jsx — body: `await setActiveTemplateId(DEFAULT_TEMPLATE_ID); setShowDefaultPreview(false); toast.success('Using TripMonitor default sheet'); navigate('/dashboard');`",
+    "Wire BoundarySetup component into TemplateSetup.jsx upload flow. Either import BoundarySetup and add a new `view==='boundary'` step (advance to it after scan loads, replace the inline UploadView controls/analysis), OR replace UploadView's [data-testid=upload-controls] block + [data-testid=upload-analysis-card] block with the new toolbar+chip-strip layout matching BoundarySetup.jsx. The new boundary-* testids must be reachable from /templates → pick-scan → upload scan in the live DOM.",
+    "Confirm onConfirm payload upstream: when BoundarySetup is wired, the parent's onConfirm handler must accept { boundaries, analysis, gridAnalysis } and stash gridAnalysis into the draft template (currently buildDraftWithBoundary() only consumes boundaries+analysis).",
+    "Consider switching the 'No grid pattern detected' toast to toast.info / toast.warning instead of toast.success."
+  ],
+  "critical_code_review_comments": [
+    "TemplateSetup.jsx is 668 lines and growing — DefaultPreviewDialog, ResumeDialog, StudioLockDialog, UpgradePrompt, PickView, UploadView, Stat, BoundaryPolygon/Handles + clamp01/dist/hitHandle/applyHandle helpers all live here. Past the 700-line guideline now once BoundarySetup is wired. Split UploadView and the 4 dialogs into their own files; lift clamp01/dist/hitHandle/applyHandle into pro-mapping-v2.js (BoundarySetup.jsx duplicates the same 4 helpers — clear DRY violation, ~60 LoC duplicated).",
+    "BoundarySetup.jsx is well-built: 4 buttons in flex-wrap row each h-8, ml-auto on boundary-set, condensed Chip strip with both text and grid stats, accent-blue grid chips. onConfirm payload {boundaries,analysis,gridAnalysis} matches spec. Good. Just isn't reachable from any route today.",
+    "TripSheetPreview.jsx is correct and slim (~92 LoC). 8 column headers ['#','Code','Location','City','ST','Trailer','Dep','Notes'] match spec. 6 empty rows. Driver-info strip + totals footer present. data-testid=default-sheet-preview present.",
+    "DefaultPreviewDialog (TemplateSetup.jsx 242-291) is correct — sticky header + body + sticky footer scroll, has all four required testids (modal/preview/cancel/confirm), backdrop click cancels, content stopPropagation. Just dead code today.",
+    "showDefaultPreview state is declared (line 54) but never written. Lint with --rule no-unused-vars would have caught this regression."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only request)", "frontend": "Source-level: BoundarySetup.jsx 100% conformant, TripSheetPreview.jsx 100% conformant, DefaultPreviewDialog markup 100% conformant. Wiring-level: 0/4 spec changes reachable at runtime (handlePickDefault doesn't open modal, handleConfirmDefault undefined, BoundarySetup not imported, UploadView still has old layout)."},
+  "test_credentials": "Tester / TS0001 / 135790 / 'alpha bravo charlie delta' (per review_request — wizard advances Identity→PIN successfully; PIN-confirm step needs Playwright to drive the hidden setup-pin-confirm-input directly via .fill rather than keyboard.type since stale focus blocks digit entry on the hidden field)",
+  "seed_data_creation": "None. Wizard partially walked but never reached /dashboard or /templates; behavioral verification of pick-default modal flow was deferred in favor of source-level evidence (handlePickDefault impl + missing handleConfirmDefault + BoundarySetup not imported are all unambiguous in source).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "To exercise live: walk wizard with `await page.fill('[data-testid=setup-pin-input]', '135790')` then click setup-pin-continue → `await page.fill('[data-testid=setup-pin-confirm-input]', '135790')` then click setup-pin-confirm-next → fill setup-recovery-input with 'alpha bravo charlie delta' → continue → setup-done. Then goto /templates. Once main agent fixes the 3 critical action items above, verify: (a) click pick-default → URL stays /templates and default-preview-modal+default-sheet-preview both render, (b) click default-preview-cancel → modal closes and URL is still /templates with template-setup-pick visible, (c) re-open + click default-preview-confirm → modal closes and URL becomes /dashboard. For BoundarySetup: pick-scan → upload a scan blob (use a 1px PNG via DataTransfer or directly call onFile in dev) → assert boundary-setup mounts and boundary-reset/analyze/analyze-grid/set + chip-strip testids are all present.",
+  "rca of the issue": "Root cause #1 (modal): handlePickDefault was never updated when the new requirement landed — it still has the pre-spec body that navigates to /dashboard immediately. The new state `showDefaultPreview` was declared but never wired to a setter call. Root cause #2 (handleConfirmDefault undefined): the developer added the JSX usage of DefaultPreviewDialog (lines 227-232) and defined the dialog component (lines 242-291) but forgot to define the confirm handler in the parent. Root cause #3 (BoundarySetup not wired): BoundarySetup.jsx was created as a standalone module but never imported/rendered in TemplateSetup.jsx; the inline UploadView was left intact and not migrated to the new layout. Reproduction: from any pre-authed device, navigate to /templates and click 'Use TripMonitor Default' — the URL flips to /dashboard with no modal interstitial. Mitigation: see the four action_items above. Lint would have caught the unused setShowDefaultPreview setter and the undefined handleConfirmDefault reference (no-undef)."
+}

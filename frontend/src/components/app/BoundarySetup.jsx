@@ -1,8 +1,8 @@
 import React, { useMemo, useRef, useState } from "react";
 import { Button } from "../ui/button";
 import { toast } from "sonner";
-import { ArrowLeft, Lock, Sparkles, Loader2, RotateCcw, Check, AlertTriangle } from "lucide-react";
-import { DEFAULT_BOUNDARIES, analyzeFontDefaults, FONT_PRESETS_BY_ID } from "../../lib/pro-mapping-v2";
+import { ArrowLeft, Lock, Sparkles, Loader2, RotateCcw, Check, Grid3x3 } from "lucide-react";
+import { DEFAULT_BOUNDARIES, analyzeFontDefaults, analyzeGridDefaults, FONT_PRESETS_BY_ID } from "../../lib/pro-mapping-v2";
 import { runOcr } from "../../lib/scan-pipeline";
 
 /**
@@ -23,7 +23,12 @@ export default function BoundarySetup({ scan, ocrWords, onBack, onConfirm }) {
       ? analyzeFontDefaults(ocrWords, scan?.width, scan?.height)
       : null
   );
-  const [analyzing, setAnalyzing] = useState(false);
+  const [gridAnalysis, setGridAnalysis] = useState(() =>
+    ocrWords?.length
+      ? analyzeGridDefaults(ocrWords, scan?.width, scan?.height)
+      : null
+  );
+  const [analyzing, setAnalyzing] = useState(null); // null | "text" | "grid"
   const [progress, setProgress] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -59,28 +64,36 @@ export default function BoundarySetup({ scan, ocrWords, onBack, onConfirm }) {
     toast.success("Boundary reset to 1-inch margin");
   };
 
-  const onAnalyze = async () => {
+  const onAnalyze = async (kind) => {
     if (!scan) return;
-    setAnalyzing(true);
+    setAnalyzing(kind);
     setProgress(0);
     try {
       const words = await runOcr(scan, {
         onProgress: (p) => setProgress(Math.round(p * 100)),
       });
-      const a = analyzeFontDefaults(words, scan.width, scan.height);
-      setAnalysis(a);
-      toast.success(`Analyzed ${a.wordsAnalyzed} words`);
+      if (kind === "text") {
+        const a = analyzeFontDefaults(words, scan.width, scan.height);
+        setAnalysis(a);
+        toast.success(`Text · ${a.fontSizePt}pt · ${a.wordsAnalyzed} words`);
+      } else {
+        const g = analyzeGridDefaults(words, scan.width, scan.height);
+        setGridAnalysis(g);
+        toast.success(g.cols && g.rows
+          ? `Grid · ${g.cols} cols × ${g.rows} rows`
+          : `No grid pattern detected`);
+      }
     } catch (e) {
       toast.error(`Analyze failed: ${e?.message || e}`);
     } finally {
-      setAnalyzing(false);
+      setAnalyzing(null);
     }
   };
 
   const onSet = () => setConfirmOpen(true);
   const onConfirmLock = () => {
     setConfirmOpen(false);
-    onConfirm({ boundaries, analysis });
+    onConfirm({ boundaries, analysis, gridAnalysis });
   };
 
   return (
@@ -124,61 +137,84 @@ export default function BoundarySetup({ scan, ocrWords, onBack, onConfirm }) {
         </svg>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      {/* Compact 3-button toolbar — Reset · Analyze Text · Analyze Grid */}
+      <div className="flex items-center gap-1.5 flex-wrap">
         <Button
-          variant="outline"
+          variant="outline" size="sm"
           data-testid="boundary-reset"
           onClick={onReset}
-          className="h-10 bg-white border-[var(--tm-border)] text-[var(--tm-navy)]"
+          className="h-8 px-2.5 text-xs bg-white border-[var(--tm-border)] text-[var(--tm-navy)]"
         >
-          <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset to 1" margin
+          <RotateCcw className="h-3 w-3 mr-1" /> Reset 1″
         </Button>
         <Button
-          variant="outline"
+          variant="outline" size="sm"
           data-testid="boundary-analyze"
-          onClick={onAnalyze}
-          disabled={analyzing}
-          className="h-10 bg-white border-[var(--tm-blue)] text-[var(--tm-navy)]"
-          title="Run OCR to detect font size, weight and line spacing — used as Studio defaults"
+          onClick={() => onAnalyze("text")}
+          disabled={!!analyzing}
+          className="h-8 px-2.5 text-xs bg-white border-[var(--tm-blue)] text-[var(--tm-navy)] disabled:opacity-60"
+          title="Run OCR to detect font size, weight and line spacing"
         >
-          {analyzing ? (
-            <span className="inline-flex items-center gap-1.5">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> {progress}%
+          {analyzing === "text" ? (
+            <span className="inline-flex items-center gap-1">
+              <Loader2 className="h-3 w-3 animate-spin" /> {progress}%
             </span>
           ) : (
-            <>
-              <Sparkles className="h-3.5 w-3.5 mr-1" /> {analysis ? "Re-analyze text" : "Analyze text"}
-            </>
+            <><Sparkles className="h-3 w-3 mr-1" />{analysis ? "Re-text" : "Text"}</>
           )}
+        </Button>
+        <Button
+          variant="outline" size="sm"
+          data-testid="boundary-analyze-grid"
+          onClick={() => onAnalyze("grid")}
+          disabled={!!analyzing}
+          className="h-8 px-2.5 text-xs bg-white border-[var(--tm-blue)] text-[var(--tm-navy)] disabled:opacity-60"
+          title="Detect grid lines (rows × columns) on the scan"
+        >
+          {analyzing === "grid" ? (
+            <span className="inline-flex items-center gap-1">
+              <Loader2 className="h-3 w-3 animate-spin" /> {progress}%
+            </span>
+          ) : (
+            <><Grid3x3 className="h-3 w-3 mr-1" />{gridAnalysis?.cols ? "Re-grid" : "Grid"}</>
+          )}
+        </Button>
+        {/* Continue button is INLINE with the analyzers — does not get
+            pushed down by the report below. */}
+        <Button
+          data-testid="boundary-set"
+          size="sm"
+          onClick={onSet}
+          className="h-8 px-3 text-xs bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold ml-auto"
+        >
+          <Lock className="h-3 w-3 mr-1" /> Set &amp; continue
         </Button>
       </div>
 
-      {analysis && (
-        <div data-testid="boundary-analysis-card" className="bg-[var(--tm-surface)] border border-[var(--tm-border)] rounded-md p-3">
-          <div className="text-[10px] uppercase tracking-[0.25em] font-bold text-[var(--tm-orange)] mb-2">
-            Detected text defaults
-          </div>
-          <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-            <Stat k="Font" v={FONT_PRESETS_BY_ID[analysis.fontFamily]?.label || analysis.fontFamily} testid="analysis-font" />
-            <Stat k="Size" v={`${analysis.fontSizePt}pt`} testid="analysis-size" />
-            <Stat k="Weight" v={analysis.weight} testid="analysis-weight" />
-            <Stat k="Line spacing" v={`${(analysis.lineSpacingNorm * 100).toFixed(1)}% page`} testid="analysis-spacing" />
-            <Stat k="Words sampled" v={analysis.wordsAnalyzed} testid="analysis-count" />
-          </dl>
-          <p className="text-[10px] uppercase tracking-wider text-[var(--tm-text-muted)] font-bold mt-2 flex items-center gap-1">
-            <AlertTriangle className="h-3 w-3 text-[var(--tm-blue)]" />
-            Used as Studio defaults — sheet is NOT auto-built.
-          </p>
+      {/* Single condensed report strip — chips replace the old 5-row dl. */}
+      {(analysis || gridAnalysis?.cols || gridAnalysis?.rows) && (
+        <div data-testid="boundary-analysis-card"
+          className="flex items-center gap-1.5 flex-wrap text-[10px] bg-[var(--tm-surface)] border border-[var(--tm-border)] rounded-md px-2 py-1.5">
+          {analysis && (
+            <>
+              <Chip testid="analysis-font" k="Font" v={FONT_PRESETS_BY_ID[analysis.fontFamily]?.label || analysis.fontFamily} />
+              <Chip testid="analysis-size" k="Size" v={`${analysis.fontSizePt}pt`} />
+              <Chip testid="analysis-weight" k="Wt" v={analysis.weight} />
+              <Chip testid="analysis-spacing" k="LH" v={`${(analysis.lineSpacingNorm * 100).toFixed(1)}%`} />
+              <Chip testid="analysis-count" k="N" v={analysis.wordsAnalyzed} />
+            </>
+          )}
+          {gridAnalysis?.cols > 0 && (
+            <>
+              <Chip testid="grid-cols" k="Cols" v={gridAnalysis.cols} accent />
+              <Chip testid="grid-rows" k="Rows" v={gridAnalysis.rows} accent />
+              <Chip testid="grid-cell" k="Cell"
+                v={`${(gridAnalysis.avgCellW * 100).toFixed(1)}×${(gridAnalysis.avgCellH * 100).toFixed(1)}%`}
+                accent />
+            </>
+          )}
         </div>
       )}
-
-      <Button
-        data-testid="boundary-set"
-        onClick={onSet}
-        className="h-12 w-full bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold rounded-md"
-      >
-        <Lock className="h-4 w-4 mr-1" /> Set boundary &amp; continue
-      </Button>
 
       {confirmOpen && (
         <div
@@ -224,12 +260,21 @@ export default function BoundarySetup({ scan, ocrWords, onBack, onConfirm }) {
   );
 }
 
-function Stat({ k, v, testid }) {
+function Chip({ k, v, testid, accent }) {
+  // Compact key·value pill used in the analysis report strip.
+  // `accent` colours grid stats blue so text vs grid info is glanceable.
   return (
-    <>
-      <dt className="text-[10px] uppercase tracking-wider font-bold text-[var(--tm-text-muted)]">{k}</dt>
-      <dd data-testid={testid} className="text-xs font-bold text-[var(--tm-navy)]">{v}</dd>
-    </>
+    <span
+      data-testid={testid}
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm border font-bold ${
+        accent
+          ? "bg-[var(--tm-blue)]/8 border-[var(--tm-blue)]/30 text-[var(--tm-blue)]"
+          : "bg-white border-[var(--tm-border)] text-[var(--tm-navy)]"
+      }`}
+    >
+      <span className="text-[8px] uppercase tracking-wider opacity-70">{k}</span>
+      {v}
+    </span>
   );
 }
 

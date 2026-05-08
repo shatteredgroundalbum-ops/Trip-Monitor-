@@ -697,3 +697,82 @@ export function analyzeFontDefaults(ocrWords, scanW, scanH) {
     lineSpacingNorm: lineGap, wordsAnalyzed: total,
   };
 }
+
+/**
+ * Detect grid structure on a scanned trip sheet. Uses OCR word
+ * positions as a structural hint: trip-sheet grids typically have many
+ * words aligned on the same X-coordinate (column starts) and on the
+ * same Y-coordinate (row baselines). This function clusters those
+ * positions to estimate column/row counts and average cell size.
+ *
+ * Output is intentionally coarse — it is used only as a Studio default
+ * suggestion ("this looks like a 12-row × 8-col grid"), not to actually
+ * draw the grid.
+ */
+export function analyzeGridDefaults(ocrWords, scanW, scanH) {
+  const empty = {
+    cols: 0, rows: 0, avgCellW: 0, avgCellH: 0,
+    columnConfidence: 0, rowConfidence: 0, wordsAnalyzed: 0,
+  };
+  if (!ocrWords?.length) return empty;
+  const xs = [], ys = [];
+  for (const w of ocrWords) {
+    let x, y, h;
+    if (typeof w.x === "number" && typeof w.y === "number" && w.x <= 1) {
+      x = w.x; y = w.y; h = w.h || 0.02;
+    } else if (w.bbox && scanW && scanH) {
+      x = w.bbox.x0 / scanW;
+      y = w.bbox.y0 / scanH;
+      h = (w.bbox.y1 - w.bbox.y0) / scanH;
+    } else { continue; }
+    xs.push(x); ys.push(y + h / 2);
+  }
+  if (xs.length < 4) return empty;
+  // Cluster X-starts → column boundaries. Threshold = 1.5% page width;
+  // tighter clusters than this collapse into a single column.
+  const colTol = 0.015;
+  const rowTol = 0.012;
+  const clusterCount = (vals, tol) => {
+    const sorted = [...vals].sort((a, b) => a - b);
+    let centers = [], hits = [];
+    for (const v of sorted) {
+      const last = centers[centers.length - 1];
+      if (last != null && v - last < tol) {
+        hits[hits.length - 1] += 1;
+        // running mean for the cluster
+        centers[centers.length - 1] =
+          (last * (hits[hits.length - 1] - 1) + v) / hits[hits.length - 1];
+      } else {
+        centers.push(v); hits.push(1);
+      }
+    }
+    // Drop singletons — likely noise, not actual grid lines.
+    const meaningful = centers.filter((_, i) => hits[i] >= 2);
+    return { centers: meaningful, hits };
+  };
+  const colData = clusterCount(xs, colTol);
+  const rowData = clusterCount(ys, rowTol);
+  const cols = colData.centers.length;
+  const rows = rowData.centers.length;
+  // Confidence = mean cluster fill. Higher = more words landed exactly
+  // on the grid lines (looks like a real grid, not a paragraph).
+  const meanHits = (arr) => arr.length
+    ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+  const columnConfidence = Math.min(1, meanHits(colData.hits.filter((h) => h >= 2)) / 6);
+  const rowConfidence    = Math.min(1, meanHits(rowData.hits.filter((h) => h >= 2)) / 6);
+  // Average cell dims = inter-cluster gap.
+  const avgGap = (centers) => {
+    if (centers.length < 2) return 0;
+    let s = 0;
+    for (let i = 1; i < centers.length; i++) s += centers[i] - centers[i - 1];
+    return s / (centers.length - 1);
+  };
+  return {
+    cols, rows,
+    avgCellW: +avgGap(colData.centers).toFixed(4),
+    avgCellH: +avgGap(rowData.centers).toFixed(4),
+    columnConfidence: +columnConfidence.toFixed(2),
+    rowConfidence: +rowConfidence.toFixed(2),
+    wordsAnalyzed: xs.length,
+  };
+}
