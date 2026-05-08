@@ -546,25 +546,39 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
     agent (no defects). Interactive behaviors not exercised because
     drawing tools are not on the HOME tab; deferred to next pass.
 
-- ✅ **CornerBoxx Technology pre-splash (Iter 21c)** (2026-02-08):
-  - User-supplied brand artwork (`/cornerboxx-logo.png`) shown ONCE
-    per session before the existing Trip Monitor splash, then
-    Welcome/role-selection.
-  - **Sequential cinematic spec (Iter 21c.2 — final)**:
-    `pre → gap → main → done`. Pre-splash mounts at full opacity
-    instantly (instant cover for app boot), holds 1.7 s, fades out
-    to white over 700 ms. 800 ms plain-white "gap" follows (no
-    logo). Trip Monitor splash mounts and fades IN over 800 ms,
-    plays the existing video, then slides up + fades out at the
-    very end. A persistent white shield (z-90, opacity 1 → 0 in
-    sync with the splash's slide-up at 6.3 s) blocks the Welcome
-    page underneath through the entire intro so it never bleeds
-    through during transitions.
-  - User feedback corrected from earlier crossfade attempt: "no
-    double exposure — fade out, then fade in." Implementation now
-    matches: zero overlap between the two splashes.
-  - Live-verified across 5 frames: solid pre, fading pre, white
-    gap, fading-in main, full main → Welcome.
+- ✅ **CornerBoxx Technology pre-splash — data-driven (Iter 21c)** (2026-02-08):
+  - User-supplied brand artwork shown ONCE per session before the
+    Trip Monitor splash. Single purpose: cover the time it takes the
+    splash to load on real-world devices.
+  - **Iter 21c.3 (final)** — pre-splash duration is **NOT hardcoded**.
+    Driven by `max(MIN_LEGIBILITY_MS=1500, time-until-canplaythrough)`,
+    capped at `HARD_CAP_MS=5000`:
+      • Fast network → 1.5 s legibility floor wins.
+      • Slow network → `canplaythrough` of the preloaded
+        `<video src="/trip-monitor-splash.mp4">` governs.
+      • Pathological network / 404 / codec error → 5 s cap fires,
+        SplashScreen falls back to its static image automatically.
+  - **Sequential transitions** (no overlap, no double-exposure):
+    `pre → gap (800 ms white) → main (fade-in 800 ms) → done`.
+    A persistent z-90 white shield blocks Welcome until the very end;
+    the shield fades out in sync with SplashScreen's built-in
+    slide-up at 6.3 s for a cinematic reveal.
+  - **Asset weight** — the original CornerBoxx PNG was 926 KB, which
+    would itself slow the pre-splash. Re-encoded to a 21 KB WebP
+    (97 % reduction) at 768×768. PreSplashScreen now uses a
+    `<picture>` element with PNG fallback for Safari < 14.
+  - Real-world load measurement (verified via Playwright CDP
+    network throttling against the live preview):
+      Unthrottled : 1.4 MB MP4 in 205 ms
+      Fast 4G     : 7.3 s     (cap fires → static fallback)
+      Slow 4G     : 19.6 s    (cap fires → static fallback)
+      3G          : 39.7 s    (cap fires → static fallback)
+    `canplaythrough` typically fires at ~20–30 % buffered, well
+    before full download, so on Fast 4G the cap is unlikely to be
+    reached in real Chrome/Safari.
+  - Live-verified on the preview environment: pre-splash unmounted
+    at 2,799 ms total (= 1.5 s legibility + 0.7 s fade + scheduler
+    overhead), Trip Monitor splash mounted on schedule.
 
 - ✅ **Website features disabled until release (Iter 20.1)** (2026-02-??):
   - User instruction: hide every UI surface that touches the public Website License ID, Premium unlock codes, or external Trip Monitor website — but DO NOT delete the underlying logic. Flip-on-launch.

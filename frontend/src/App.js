@@ -62,55 +62,98 @@ function App() {
 }
 
 function SplashOnce() {
-  // 4-phase intro, sequential (no overlap, no double-exposure):
-  //   pre  — CornerBoxx pre-splash. Instant on (covers app boot),
-  //          holds, fades out into white (~700 ms).
-  //   gap  — Plain white shield only, no logo (~800 ms breathing
-  //          beat between the two brand stamps).
-  //   main — Trip Monitor splash fades IN from white (800 ms),
-  //          plays its full video, then slides up + fades out at
-  //          the end. The white shield underneath fades in sync
-  //          so Welcome is revealed cinematically.
+  // Data-driven 4-phase intro:
+  //   pre  — CornerBoxx pre-splash. Stays up just long enough to (a)
+  //          let a human read the brand AND (b) buffer the Trip Monitor
+  //          splash video enough to play through smoothly.
+  //   gap  — 800 ms of plain white between the two brand stamps so the
+  //          transition reads as "fade out → fade in," never overlap.
+  //   main — Trip Monitor splash fades IN, plays its full video, slides
+  //          up + fades out at the very end.
   //   done — everything unmounted, Welcome visible.
   //
-  // sessionStorage gate ensures the entire intro plays once per tab.
+  // Pre-splash duration is NOT hardcoded. It is the MAX of:
+  //   • MIN_LEGIBILITY_MS  — minimum readable time on screen
+  //   • time until splash <video> fires `canplaythrough`
+  // …capped by HARD_CAP_MS in case the video can't load (slow network,
+  // 404, error). On the cap path, SplashScreen will fall back to its
+  // static logo image — still safe.
+  const MIN_LEGIBILITY_MS = 1500;
+  const HARD_CAP_MS = 5000;
+
   const [phase, setPhase] = React.useState(() => {
     try { return sessionStorage.getItem("tm_splash_seen") ? "done" : "pre"; }
     catch { return "pre"; }
   });
+  // Two independent gates that must BOTH be true before we leave "pre".
+  const [minHoldDone, setMinHoldDone] = React.useState(false);
+  const [splashReady, setSplashReady] = React.useState(false);
+  // Drives PreSplashScreen's fade-out animation.
+  const fadeOutPre = phase === "pre" && minHoldDone && splashReady;
   const [shieldOpacity, setShieldOpacity] = React.useState(1);
   const [mainOpacity, setMainOpacity]     = React.useState(0);
 
-  // Gap → main hand-off: 800 ms of plain white, then the Trip Monitor
-  // splash mounts and starts its fade-in.
+  // Minimum legibility hold — independent of network conditions.
   React.useEffect(() => {
-    if (phase === "gap") {
-      const t = setTimeout(() => setPhase("main"), 800);
-      return () => clearTimeout(t);
-    }
-    return undefined;
+    if (phase !== "pre") return undefined;
+    const t = setTimeout(() => setMinHoldDone(true), MIN_LEGIBILITY_MS);
+    return () => clearTimeout(t);
   }, [phase]);
 
-  // Main fade-in: as soon as the SplashScreen mounts, request a frame
-  // and animate its wrapper opacity 0 → 1 over 800 ms.
+  // Preload the splash video so we know exactly when it can play.
+  // We create a detached <video> element, set the same src that
+  // SplashScreen uses, and listen for canplaythrough. The browser's
+  // HTTP cache will then serve SplashScreen's own <video> instantly.
   React.useEffect(() => {
-    if (phase === "main") {
-      const id = requestAnimationFrame(() => setMainOpacity(1));
-      return () => cancelAnimationFrame(id);
-    }
-    setMainOpacity(0);
-    return undefined;
+    if (phase === "done") return undefined;
+    const v = document.createElement("video");
+    v.src = "/trip-monitor-splash.mp4";
+    v.muted = true;
+    v.preload = "auto";
+    v.playsInline = true;
+    const ready = () => setSplashReady(true);
+    // canplaythrough = browser estimates the whole clip will play
+    // without needing to stop for buffering. That's exactly what we
+    // want: the user sees the splash fade-in only after that bar is
+    // cleared.
+    v.addEventListener("canplaythrough", ready, { once: true });
+    // Network failure → splash will fall back to static image, which
+    // loads instantly. Treat the error as "ready to advance."
+    v.addEventListener("error", ready, { once: true });
+    // Hard cap — never hold the user on a brand stamp longer than
+    // HARD_CAP_MS, even on flaky networks.
+    const cap = setTimeout(ready, HARD_CAP_MS);
+    v.load();
+    return () => {
+      clearTimeout(cap);
+      v.removeEventListener("canplaythrough", ready);
+      v.removeEventListener("error", ready);
+      v.src = "";
+      v.load();
+    };
   }, [phase]);
 
-  // Final reveal: SplashScreen begins its built-in slide-up + fade-out
-  // at `durationMs - 1100` = 6300 ms after mount. Drop the white
-  // shield in sync so Welcome dissolves in cleanly underneath.
+  // Gap → main hand-off (fixed 800 ms breath).
   React.useEffect(() => {
-    if (phase === "main") {
-      const t = setTimeout(() => setShieldOpacity(0), 6300);
-      return () => clearTimeout(t);
-    }
-    return undefined;
+    if (phase !== "gap") return undefined;
+    const t = setTimeout(() => setPhase("main"), 800);
+    return () => clearTimeout(t);
+  }, [phase]);
+
+  // Main fade-in: 800 ms opacity 0 → 1 once SplashScreen mounts.
+  React.useEffect(() => {
+    if (phase !== "main") { setMainOpacity(0); return undefined; }
+    const id = requestAnimationFrame(() => setMainOpacity(1));
+    return () => cancelAnimationFrame(id);
+  }, [phase]);
+
+  // Sync the shield fade-out with SplashScreen's built-in slide-up
+  // (begins at durationMs - 1100 = 6300 ms after mount) so Welcome
+  // dissolves in cinematically rather than snap-cutting.
+  React.useEffect(() => {
+    if (phase !== "main") return undefined;
+    const t = setTimeout(() => setShieldOpacity(0), 6300);
+    return () => clearTimeout(t);
   }, [phase]);
 
   if (phase === "done") return null;
@@ -122,8 +165,9 @@ function SplashOnce() {
 
   return (
     <>
-      {/* White shield — covers <Routes> through the entire intro so
-          Welcome never flashes through. Lower z than both splashes. */}
+      {/* White shield — sits above <Routes> for the entire intro so
+          Welcome never flashes through any transition. Fades out in
+          sync with the Trip Monitor splash's own slide-up at the end. */}
       <div
         aria-hidden
         data-testid="splash-shield"
@@ -135,7 +179,10 @@ function SplashOnce() {
         }}
       />
       {phase === "pre" && (
-        <PreSplashScreen onComplete={() => setPhase("gap")} />
+        <PreSplashScreen
+          fadeOut={fadeOutPre}
+          onComplete={() => setPhase("gap")}
+        />
       )}
       {phase === "main" && (
         <div
