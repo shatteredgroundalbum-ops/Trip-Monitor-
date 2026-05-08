@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
 import TemplateSetup from "./pages/TemplateSetup";
 import SplashScreen from "./components/app/SplashScreen";
+import PreSplashScreen from "./components/app/PreSplashScreen";
 import OfflineBanner from "./components/app/OfflineBanner";
 import { Toaster } from "./components/ui/sonner";
 
@@ -61,15 +62,24 @@ function App() {
 }
 
 function SplashOnce() {
-  const [show, setShow] = React.useState(() => {
-    try { return !sessionStorage.getItem("tm_splash_seen"); } catch { return true; }
+  // Two-stage cinematic intro, run once per session:
+  //   1. CornerBoxx Technology pre-splash (~2.6s)
+  //   2. Trip Monitor splash (~7.4s)
+  //   3. → Welcome / landing screen
+  // `phase` advances `pre` → `main` → `done`. The combined sequence is
+  // gated behind sessionStorage so it never replays after a soft route
+  // change inside the same tab.
+  const [phase, setPhase] = React.useState(() => {
+    try { return sessionStorage.getItem("tm_splash_seen") ? "done" : "pre"; }
+    catch { return "pre"; }
   });
-  const done = () => {
+  const finish = () => {
     try { sessionStorage.setItem("tm_splash_seen", "1"); } catch { /* ignore */ }
-    setShow(false);
+    setPhase("done");
   };
-  if (!show) return null;
-  return <SplashScreen onComplete={done} />;
+  if (phase === "done") return null;
+  if (phase === "pre") return <PreSplashScreen onComplete={() => setPhase("main")} />;
+  return <SplashScreen onComplete={finish} />;
 }
 
 export default App;

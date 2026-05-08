@@ -491,6 +491,76 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
   - Privacy preserved: `total_trip_miles` + `segment_miles` stay out of JPEG/PDF (PaperSheet). They DO appear in CSV/JSON because that's the driver's own backup, not an exported document.
   - Testing: Iter 20 → **15/15 PASS** via testing_agent_v3_fork. 11/11 spec assertions verified. Zero defects in Iter 20 scope.
 
+- ✅ **Studio Header Ribbon System (Iter 21a)** (2026-02-08):
+  - Replaced the legacy Studio top-row toolbars with a single-row layout
+    `[ STUDIO ] [ HOME · GRID · TEXT · ASSETS · INSPECTOR · CUSTOM TRACE ] [ Continue ]`.
+  - New `StudioRibbon.jsx` (~340 LoC) houses the per-tab tool groups
+    (~86 tools across 6 tabs). Folder/ribbon styling: orange top
+    border + orange halo + vertical separators on active tab.
+  - File reconstruction: 146-file repo manually rebuilt from 30 user
+    upload batches (mobile PWA workaround). Broken `TemplateLab`
+    imports/routes removed.
+
+- ✅ **HOME-tab Selection Tool — fully functional, zero placeholders (Iter 21b)** (2026-02-08):
+  - Per user spec: every Selection sub-tool is wired live to the canvas.
+  - State added in `ProMappingStudio.jsx`: `selectionMode` (element / grid
+    / all), `multiSelectOn`, `directSelectOn`, `boxSelect`, `gridCellSel`,
+    `vertexSel`, `vertexDrag`.
+  - **Select** — default arrow tool. Click element → single select.
+  - **Direct Select** — toggle. While active, clicking a path/polygon
+    primary selection grabs a vertex; clicking a grid picks a single
+    cell as a sub-selection (`studio-grid-cell-highlight`). Standard
+    transform handles are hidden in this mode; `VertexHandles`
+    component renders draggable squares per vertex returned by the
+    new `elementVertices()` helper (line/text_marker → from/to;
+    triangle → 3 verts; curve/trace → all path points;
+    corner_box → 4 corners; bullet → dot/textStart;
+    rect/grid/logo/qr_box → 4 corners; circle → 4 cardinal radius
+    handles).
+  - **Multi-Select Toggle** — persistent shift-mode. While on, plain
+    clicks append/toggle. Shift+click and Cmd/Ctrl+click always
+    toggle regardless.
+  - **Box Select** — pointer-down on empty canvas starts an SVG
+    marquee. Direction-sensitive: `end.x ≥ start.x` (L→R) → blue
+    dashed marquee, only fully-enclosed elements selected
+    (`bboxEnclosed`). `end.x < start.x` (R→L) → orange dashed
+    marquee, any intersecting elements selected (`bboxIntersects`).
+    Tiny clicks (< 0.6%·canvas edge) are treated as a clear-tap, no
+    marquee committed. Marquee `<rect>` has `pointerEvents="none"`
+    so it does not block subsequent canvas interaction.
+  - **Select Mode** filters — `element` excludes grids, `grid`
+    keeps grids only, `all` no filter. Applied to click hit-tests,
+    box-select results, and Select All targets.
+  - **Select All / Deselect All** — bulk actions. Cmd/Ctrl+A triggers
+    Select All (filtered by current mode); Esc clears selection,
+    box-select draft, vertex/sub-selection. Both shortcuts bail
+    when an INPUT/TEXTAREA/contenteditable has focus.
+  - **Lock / Unlock / Duplicate** in HOME tab now operate on the
+    full multi-selection (not just first element). Delete already
+    did.
+  - StudioRibbon.jsx HOME-tab `Selection` group has 4 wired tools
+    (no `stub()`); new `Select Mode` group has 3 mutually-exclusive
+    radio buttons; new `Bulk` group has Select All + Deselect All.
+  - Testing: iter 21 → render-level **9/9** Selection ribbon
+    `data-testid`s present; source-level wiring verified by testing
+    agent (no defects). Interactive behaviors not exercised because
+    drawing tools are not on the HOME tab; deferred to next pass.
+
+- ✅ **CornerBoxx Technology pre-splash (Iter 21c)** (2026-02-08):
+  - User-supplied brand artwork (`/cornerboxx-logo.png`) shown ONCE
+    per session before the existing Trip Monitor splash, then
+    Welcome/role-selection.
+  - New `PreSplashScreen.jsx` (~80 LoC). 3 phases mirror SplashScreen
+    (in 700ms → hold → out 900ms, ~2.6s total). White field, logo
+    centered with a bottom "PRESENTS" tagline (uppercase letter-spacing
+    badge). z-index 110 stacks above the Trip Monitor splash (z-100).
+  - `App.js` `SplashOnce` rewritten as a 3-phase state machine:
+    `pre` → `main` → `done`. Same `tm_splash_seen` sessionStorage gate
+    so the entire intro sequence runs once per tab.
+  - Live-verified: pre-splash mounts on cold load, hands off to the
+    Trip Monitor splash after fade-out, then unmounts revealing
+    Welcome.
+
 - ✅ **Website features disabled until release (Iter 20.1)** (2026-02-??):
   - User instruction: hide every UI surface that touches the public Website License ID, Premium unlock codes, or external Trip Monitor website — but DO NOT delete the underlying logic. Flip-on-launch.
   - **NEW `lib/feature-flags.js`** — single `WEBSITE_FEATURES_ENABLED = false` flag. All gated logic (`generateLicenseId`, `verifyPremiumUnlockCode`, `getPremiumState`, master code keychain storage, hash verifiers) keeps running so re-enabling is a one-line flip.
