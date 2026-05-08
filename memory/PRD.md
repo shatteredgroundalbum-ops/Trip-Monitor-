@@ -546,6 +546,27 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
     agent (no defects). Interactive behaviors not exercised because
     drawing tools are not on the HOME tab; deferred to next pass.
 
+- ✅ **Splash plays under the cover (Iter 21c.5)** (2026-02-08):
+  - User reported the splash showed a frozen frame after the
+    pre-splash exited, then snapped to the animation late. Reverted
+    primary source order so the **original 1.4 MB MP4 plays first**
+    on every device that can decode it (the lite WebM / MP4 are kept
+    only as fallbacks for browsers that can't).
+  - Re-architected `SplashOnce` so the splash is no longer mounted
+    after the pre-splash exits. Instead, **SplashScreen mounts at
+    t = 0** (z-100), hidden under a white shield (z-105) and the
+    pre-splash (z-120). The video preloads + autoplays while
+    invisible. The pre-splash now gates its fade-out on the
+    splash's `onPlaying` event (real frames being drawn), not on
+    `canplaythrough`. Result: by the time the user ever sees the
+    splash, it's mid-animation — no frozen first frame.
+  - Phases are now `pre → reveal → done`. The shield fades out
+    when we enter `reveal`, exposing the already-playing video.
+    SplashScreen drives its own slide-up + fade-out at the end.
+  - Hard 5 s cap retained in case the video never plays (codec
+    error, broken network) — SplashScreen falls back to its
+    static logo image automatically.
+
 - ✅ **Splash video re-encoded for cellular (Iter 21c.4)** (2026-02-08):
   - Original splash MP4 was 1.4 MB — too heavy for the 5 s hard cap
     on cellular, which meant most cellular users hit the static-image

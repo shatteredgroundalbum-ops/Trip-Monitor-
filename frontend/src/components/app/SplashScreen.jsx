@@ -1,14 +1,25 @@
 import React, { useEffect, useState, useRef } from "react";
 
 /**
- * Cinematic full-screen splash. Plays a video if /trip-monitor-splash.mp4 exists,
- * otherwise falls back to the static logo image. Image is NOT modified — only
+ * Cinematic full-screen splash. Plays a video if it loads, otherwise
+ * falls back to the static logo image. Image is NOT modified — only
  * the wrapping container fades and slides.
  *
- * Slides UP and out at the end (the login screen slides UP and in over the same
- * window for a continuous cinematic transition).
+ * Slides UP and out at the end (the parent screen slides UP and in over
+ * the same window for a continuous cinematic transition).
+ *
+ * Source order matters: the FIRST `<source>` whose codec the browser
+ * can decode is what plays. The original full-quality MP4 is listed
+ * first so every modern browser picks it. The smaller WebM and
+ * lite-MP4 are kept as raw fallbacks for any browser that can't decode
+ * the original.
+ *
+ * `onPlaying` lets the parent know when actual frames are being drawn,
+ * not just when the element mounts. The pre-splash flow uses this to
+ * stay on screen until the splash is genuinely animating, so the user
+ * never sees a frozen first frame during the hand-off.
  */
-export default function SplashScreen({ onComplete, durationMs = 7400 }) {
+export default function SplashScreen({ onComplete, onPlaying, durationMs = 7400 }) {
   const [phase, setPhase] = useState("in");      // "in" → "hold" → "out"
   const [hasVideo, setHasVideo] = useState(true); // optimistic; flips false on error
   const videoRef = useRef(null);
@@ -54,6 +65,7 @@ export default function SplashScreen({ onComplete, durationMs = 7400 }) {
           playsInline
           preload="auto"
           onError={() => setHasVideo(false)}
+          onPlaying={() => onPlaying?.()}
           data-testid="splash-video"
           style={{
             width: "100vw",
@@ -64,10 +76,11 @@ export default function SplashScreen({ onComplete, durationMs = 7400 }) {
             background: "#FFFFFF",
           }}
         >
-          {/* Smallest first — browser picks the first <source> it can
-              decode. WebM (VP9) is ~307 KB, lite MP4 (H.264 Baseline)
-              ~396 KB. Both have no audio (splash is muted anyway). */}
-          <source src="/trip-monitor-splash.webm" type="video/webm" />
+          {/* Original full-quality MP4 first — what every modern
+              browser picks. The lite WebM / MP4 are only consulted by
+              browsers that can't decode the original. */}
+          <source src="/trip-monitor-splash.mp4"      type="video/mp4" />
+          <source src="/trip-monitor-splash.webm"     type="video/webm" />
           <source src="/trip-monitor-splash.lite.mp4" type="video/mp4" />
         </video>
       ) : (
