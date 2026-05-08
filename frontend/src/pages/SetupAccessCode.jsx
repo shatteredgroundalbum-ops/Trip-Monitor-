@@ -418,28 +418,46 @@ function TwoButtons({ leftTestid, leftLabel, onLeft, rightTestid, rightLabel, on
 }
 
 export function PinField({ value, onChange, autoFocus, testid }) {
+  // Single set of 6 boxes — each displays the digit typed into it.
+  // A visually-hidden <input> behind the boxes captures keystrokes;
+  // tapping any box focuses that input so the OS keyboard opens.
+  const inputRef = React.useRef(null);
   const handle = (e) => {
     const v = e.target.value.replace(/\D/g, "").slice(0, 6);
     onChange(v);
   };
+  const focusInput = () => inputRef.current?.focus();
   return (
-    <div className="flex flex-col items-center gap-4">
-      <div className="flex gap-2" aria-hidden>
-        {Array.from({ length: 6 }).map((_, i) => (
+    <div
+      className="relative flex justify-center gap-2"
+      onClick={focusInput}
+    >
+      {/* The 6 digit cells. The active cell (next to be filled) gets a
+          subtle blue ring so the user sees where typing will land. */}
+      {Array.from({ length: 6 }).map((_, i) => {
+        const filled = i < value.length;
+        const active = i === value.length;
+        return (
           <div
             key={i}
-            data-testid={`${testid}-dot-${i}`}
+            data-testid={`${testid}-box-${i}`}
             className={`h-12 w-10 rounded-md border-2 flex items-center justify-center font-black text-xl transition ${
-              i < value.length
+              filled
                 ? "bg-[var(--tm-navy)] text-white border-[var(--tm-navy)]"
+                : active
+                ? "bg-white text-[var(--tm-navy)] border-[var(--tm-blue)] ring-2 ring-[var(--tm-blue)]/30"
                 : "bg-white text-[var(--tm-text-muted)] border-[var(--tm-border)]"
             }`}
           >
-            {i < value.length ? "•" : ""}
+            {filled ? value[i] : ""}
           </div>
-        ))}
-      </div>
+        );
+      })}
+      {/* Hidden native input — captures the OS numeric keyboard but
+          renders invisibly behind the boxes so tapping anywhere in the
+          row focuses it. */}
       <input
+        ref={inputRef}
         type="tel"
         inputMode="numeric"
         autoComplete="one-time-code"
@@ -449,8 +467,9 @@ export function PinField({ value, onChange, autoFocus, testid }) {
         value={value}
         onChange={handle}
         data-testid={`${testid}-input`}
-        className="text-center text-2xl font-mono tracking-[0.35em] bg-white border-2 border-[var(--tm-border)] rounded-md h-12 w-64 focus:border-[var(--tm-blue)] outline-none"
-        placeholder="••••••"
+        aria-label="6-digit PIN"
+        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        style={{ caretColor: "transparent", color: "transparent", background: "transparent" }}
       />
     </div>
   );
