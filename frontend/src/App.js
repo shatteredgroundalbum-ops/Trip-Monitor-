@@ -62,13 +62,18 @@ function App() {
 }
 
 function SplashOnce() {
-  // Two-stage cinematic intro, run once per session:
-  //   1. CornerBoxx Technology pre-splash (~2.6s)
-  //   2. Trip Monitor splash (~7.4s)
-  //   3. → Welcome / landing screen
-  // `phase` advances `pre` → `main` → `done`. The combined sequence is
-  // gated behind sessionStorage so it never replays after a soft route
-  // change inside the same tab.
+  // 3-stage cinematic intro, run once per session:
+  //   1. CornerBoxx Technology pre-splash (instant cover, holds while
+  //      the app finishes booting, then fades out).
+  //   2. Trip Monitor splash (~7.4s) — MOUNTED THE MOMENT the pre-splash
+  //      starts fading, so the cross-dissolve goes pre-splash → splash
+  //      directly. The Welcome page sitting in <Routes> never flashes
+  //      through the gap.
+  //   3. → Welcome / landing page.
+  //
+  // Phases: "pre" (only pre-splash) → "crossfade" (both mounted, pre on
+  // top fading out, main visible underneath) → "main" (pre unmounted,
+  // main only) → "done" (both unmounted, sessionStorage flag set).
   const [phase, setPhase] = React.useState(() => {
     try { return sessionStorage.getItem("tm_splash_seen") ? "done" : "pre"; }
     catch { return "pre"; }
@@ -78,8 +83,24 @@ function SplashOnce() {
     setPhase("done");
   };
   if (phase === "done") return null;
-  if (phase === "pre") return <PreSplashScreen onComplete={() => setPhase("main")} />;
-  return <SplashScreen onComplete={finish} />;
+
+  // SplashScreen mounts as soon as we leave the "pre" phase. While
+  // phase === "crossfade" it sits at z-100 underneath the still-fading
+  // pre-splash (z-120), so by the time pre-splash hits opacity 0 the
+  // main splash is already at full opacity 1 with the video playing.
+  const mainMounted = phase === "crossfade" || phase === "main";
+  const preMounted  = phase === "pre" || phase === "crossfade";
+  return (
+    <>
+      {mainMounted && <SplashScreen onComplete={finish} />}
+      {preMounted && (
+        <PreSplashScreen
+          onFadeStart={() => setPhase("crossfade")}
+          onComplete={() => setPhase("main")}
+        />
+      )}
+    </>
+  );
 }
 
 export default App;
