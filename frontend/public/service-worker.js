@@ -2,7 +2,7 @@
 // Trip Monitor — Driver Edition Service Worker
 // Cache-first for app shell + static assets, network-first for API.
 
-const CACHE_VERSION = "trip-monitor-v9";
+const CACHE_VERSION = "trip-monitor-v10";
 const APP_SHELL = [
   "/",
   "/dashboard",

@@ -19,6 +19,8 @@ import NotificationsScreen from "./pages/NotificationsScreen";
 import ReportsScreen from "./pages/ReportsScreen";
 import AnalyticsScreen from "./pages/AnalyticsScreen";
 import SupportScreen from "./pages/SupportScreen";
+import LegalScreen from "./pages/LegalScreen";
+import ComingSoonScreen from "./pages/ComingSoonScreen";
 import SplashScreen from "./components/app/SplashScreen";
 import PreSplashScreen from "./components/app/PreSplashScreen";
 import OfflineBanner from "./components/app/OfflineBanner";
@@ -71,6 +73,25 @@ function App() {
             <Route path="/reports" element={<ProtectedRoute><ReportsScreen /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><AnalyticsScreen /></ProtectedRoute>} />
             <Route path="/support" element={<ProtectedRoute><SupportScreen /></ProtectedRoute>} />
+            <Route path="/legal" element={<ProtectedRoute><LegalScreen /></ProtectedRoute>} />
+            <Route path="/change-pin" element={<ProtectedRoute>
+              <ComingSoonScreen
+                title="Change PIN"
+                body="Full PIN change flow with current-PIN verification, new-PIN entry, and re-enrollment of biometric unlock is on the way. For now, reset your account in Account Actions to set a new PIN at first launch."
+              />
+            </ProtectedRoute>} />
+            <Route path="/recovery" element={<ProtectedRoute>
+              <ComingSoonScreen
+                title="Login Recovery"
+                body="Set up a recovery phrase or master code so you can regain access if you forget your PIN. Coming next — uses on-device key derivation, never stored on a server."
+              />
+            </ProtectedRoute>} />
+            <Route path="/license" element={<ProtectedRoute>
+              <ComingSoonScreen
+                title="Manage License"
+                body="License upgrade, plan switching and billing live here. While Development Mode is on, all premium features are unlocked and this screen is disabled."
+              />
+            </ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           <OfflineBanner />
