@@ -842,8 +842,18 @@ Wraps every screen with sticky header (brand · bell · hamburger) + fixed botto
 - **L2** primary action cards `shadow-[0_8px_24px_rgba(14,31,71,0.08-0.12)]` rounded-xl (Active Trip navy card, Dispatch)
 - **L3** modals `shadow-[0_24px_60px_rgba(14,31,71,0.18)]` rounded-2xl (continue, finish, preview, profile, logout-confirm)
 
+### New Trip launcher refactor (Feb 9, 2026)
+- `/new-trip` is now a **pure launcher** screen (4 tiles: Create New Trip · Resume Draft · Saved Templates · Trip History) plus Recent Templates and Recent Trips preview sections. Tapping a tile navigates to a full screen — no popups.
+- New route `/new-trip/create` → `CreateTripScreen.jsx` hosts the 3-step `SessionWizard` **inline** inside `AppShell` (Back to New Trip link in-page). The wizard popup mount has been removed from both `Dashboard.jsx` and `NewTripScreen.jsx`.
+- `SessionWizard` now supports `inline` prop — when true, returns the step content sans `Dialog` wrapper, used by `CreateTripScreen`. Legacy popup mode preserved for any future quick-start surface.
+- Dashboard's "New Trip" / "Start a trip" CTAs now `navigate("/new-trip")` instead of opening the wizard popup.
+- Service worker bumped to `trip-monitor-v16`.
+
+### Notifications screen (Feb 9, 2026)
+- `/notifications` shipped per spec — Overview tiles (Unread / High Priority / Last Sync / Recent Activity), Priority Alerts pinned cluster, Filter & Search, full notification list with type chips and per-row actions, Notification Settings shortcut. Auto-seeds from system state (storage warning, dispatch update, autosave, export complete, backup, app update, milestone).
+
 ### Service Worker
-Cache version: `trip-monitor-v7`. Bumps every UI architecture change to force PWA refresh.
+Cache version: `trip-monitor-v16`. Bumps every UI architecture change to force PWA refresh.
 
 ## Pending / Backlog (Updated Feb 2026)
 - **P0**: Wire external Trip Monitor folder file I/O — currently writes still go to legacy storage. Files should land in `Trip Monitor/Documents/{Sub}/` based on type.

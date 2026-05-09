@@ -13,6 +13,7 @@ import AccountScreen from "./pages/AccountScreen";
 import UserProfileScreen from "./pages/UserProfileScreen";
 import SettingsScreen from "./pages/SettingsScreen";
 import NewTripScreen from "./pages/NewTripScreen";
+import CreateTripScreen from "./pages/CreateTripScreen";
 import MessagesScreen from "./pages/MessagesScreen";
 import DocumentsScreen from "./pages/DocumentsScreen";
 import NotificationsScreen from "./pages/NotificationsScreen";
@@ -64,6 +65,7 @@ function App() {
             <Route path="/templates" element={<ProtectedRoute><TemplateSetup /></ProtectedRoute>} />
             <Route path="/studio" element={<ProtectedRoute><TemplateSetup /></ProtectedRoute>} />
             <Route path="/new-trip" element={<ProtectedRoute><NewTripScreen /></ProtectedRoute>} />
+            <Route path="/new-trip/create" element={<ProtectedRoute><CreateTripScreen /></ProtectedRoute>} />
             <Route path="/messages" element={<ProtectedRoute><MessagesScreen /></ProtectedRoute>} />
             <Route path="/documents" element={<ProtectedRoute><DocumentsScreen /></ProtectedRoute>} />
             <Route path="/notifications" element={<ProtectedRoute><NotificationsScreen /></ProtectedRoute>} />

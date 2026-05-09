@@ -10,7 +10,7 @@ import { CalendarIcon, ChevronRight, ArrowLeft } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
-export default function SessionWizard({ open, profile, onCreate, onCancel }) {
+export default function SessionWizard({ open, profile, onCreate, onCancel, inline = false }) {
   const [step, setStep] = useState(1);
   const [sessionType, setSessionType] = useState("");
   const [chosenDate, setChosenDate] = useState(new Date());
@@ -57,17 +57,10 @@ export default function SessionWizard({ open, profile, onCreate, onCancel }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  return (
-    <Dialog open={open}>
-      <DialogContent
-        data-testid="session-wizard"
-        className="max-w-lg bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md"
-        hideClose
-      >
-        <DialogTitle className="sr-only">Start a new trip</DialogTitle>
-        <DialogDescription className="sr-only">
-          Three-step wizard to start a new trip session.
-        </DialogDescription>
+  // Step content extracted so we can render it either inside a Dialog
+  // (legacy popup) or inline as a full-screen page.
+  const content = (
+    <>
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-[var(--tm-orange)] font-bold">
           <span>Start New Trip</span>
           <span className="text-[var(--tm-text-muted)]">· Step {step} / 3</span>
@@ -221,6 +214,29 @@ export default function SessionWizard({ open, profile, onCreate, onCancel }) {
             </div>
           </div>
         )}
+    </>
+  );
+
+  if (inline) {
+    return (
+      <div data-testid="session-wizard" className="bg-white border border-[var(--tm-border)] rounded-xl p-5 md:p-6 shadow-[0_2px_8px_rgba(14,31,71,0.04)] max-w-lg">
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <Dialog open={open}>
+      <DialogContent
+        data-testid="session-wizard"
+        className="max-w-lg bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md"
+        hideClose
+      >
+        <DialogTitle className="sr-only">Start a new trip</DialogTitle>
+        <DialogDescription className="sr-only">
+          Three-step wizard to start a new trip session.
+        </DialogDescription>
+        {content}
       </DialogContent>
     </Dialog>
   );

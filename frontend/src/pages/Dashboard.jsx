@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import AppShell from "../components/app/AppShell";
-import SessionWizard from "../components/app/SessionWizard";
 import TripSheetForm from "../components/app/TripSheetForm";
 import FinishExportDialog from "../components/app/FinishExportDialog";
 import BadgeUnlockedModal from "../components/app/BadgeUnlockedModal";
@@ -42,7 +41,6 @@ export default function Dashboard() {
   const [achievements, setAchievements] = useState(null);
   const [template, setTemplate] = useState(null);
 
-  const [showWizard, setShowWizard] = useState(false);
   const [showContinue, setShowContinue] = useState(false);
   const [showFinish, setShowFinish] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -98,20 +96,6 @@ export default function Dashboard() {
       }
     })();
   }, [user, navigate]);
-
-  const createSession = async (payload) => {
-    const rows = Array.from({ length: 8 }, (_, i) => ({ seq: i + 1 }));
-    rows[0].departure_date = payload.initial_date;
-    try {
-      const res = await api.post("/trip-sessions", { ...payload, rows });
-      setSession(res.data);
-      setShowWizard(false);
-      setShowSheet(true);
-      toast.success("Trip started");
-    } catch {
-      toast.error("Could not start trip");
-    }
-  };
 
   const continueSession = (yes) => {
     setShowContinue(false);
@@ -173,7 +157,7 @@ export default function Dashboard() {
         <ActiveTripCard
           session={session}
           onOpen={() => setShowSheet(true)}
-          onStartNew={() => setShowWizard(true)}
+          onStartNew={() => navigate("/new-trip")}
         />
         <DispatchCard
           updates={dispatchUpdates}
@@ -196,7 +180,7 @@ export default function Dashboard() {
 
       {/* UP NEXT */}
       <section className="mb-5" data-testid="up-next-section">
-        <UpNextCard upNext={upNext} onCreate={() => setShowWizard(true)} />
+        <UpNextCard upNext={upNext} onCreate={() => navigate("/new-trip")} />
       </section>
 
       {/* MILESTONES */}
@@ -252,14 +236,6 @@ export default function Dashboard() {
       </section>
 
       {/* DIALOGS — confirmations / workspaces only, NEVER navigation */}
-      {profile && (
-        <SessionWizard
-          open={showWizard}
-          profile={profile}
-          onCreate={createSession}
-          onCancel={() => setShowWizard(false)}
-        />
-      )}
 
       <Dialog open={showContinue}>
         <DialogContent
