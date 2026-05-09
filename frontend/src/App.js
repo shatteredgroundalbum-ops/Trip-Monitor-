@@ -9,6 +9,16 @@ import PinLogin from "./pages/PinLogin";
 import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
 import TemplateSetup from "./pages/TemplateSetup";
+import AccountScreen from "./pages/AccountScreen";
+import UserProfileScreen from "./pages/UserProfileScreen";
+import SettingsScreen from "./pages/SettingsScreen";
+import NewTripScreen from "./pages/NewTripScreen";
+import MessagesScreen from "./pages/MessagesScreen";
+import DocumentsScreen from "./pages/DocumentsScreen";
+import NotificationsScreen from "./pages/NotificationsScreen";
+import ReportsScreen from "./pages/ReportsScreen";
+import AnalyticsScreen from "./pages/AnalyticsScreen";
+import SupportScreen from "./pages/SupportScreen";
 import SplashScreen from "./components/app/SplashScreen";
 import PreSplashScreen from "./components/app/PreSplashScreen";
 import OfflineBanner from "./components/app/OfflineBanner";
@@ -50,6 +60,17 @@ function App() {
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
             <Route path="/templates" element={<ProtectedRoute><TemplateSetup /></ProtectedRoute>} />
+            <Route path="/studio" element={<ProtectedRoute><TemplateSetup /></ProtectedRoute>} />
+            <Route path="/new-trip" element={<ProtectedRoute><NewTripScreen /></ProtectedRoute>} />
+            <Route path="/messages" element={<ProtectedRoute><MessagesScreen /></ProtectedRoute>} />
+            <Route path="/documents" element={<ProtectedRoute><DocumentsScreen /></ProtectedRoute>} />
+            <Route path="/notifications" element={<ProtectedRoute><NotificationsScreen /></ProtectedRoute>} />
+            <Route path="/account" element={<ProtectedRoute><AccountScreen /></ProtectedRoute>} />
+            <Route path="/user-profile" element={<ProtectedRoute><UserProfileScreen /></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute><SettingsScreen /></ProtectedRoute>} />
+            <Route path="/reports" element={<ProtectedRoute><ReportsScreen /></ProtectedRoute>} />
+            <Route path="/analytics" element={<ProtectedRoute><AnalyticsScreen /></ProtectedRoute>} />
+            <Route path="/support" element={<ProtectedRoute><SupportScreen /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           <OfflineBanner />

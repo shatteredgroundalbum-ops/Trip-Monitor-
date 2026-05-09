@@ -11,7 +11,7 @@ import {
  * Compact dropdown menu anchored to the hamburger icon.
  *
  * Per spec, the hamburger contains exactly:
- *   - My Account
+ *   - Account
  *   - User Profile
  *   - Analytics
  *   - Reports
@@ -21,17 +21,15 @@ import {
  *   - Logout
  *
  * Behavior:
+ *   • Each item navigates to a FULL SCREEN — never opens a popup.
+ *   • Logout is the only item that triggers a confirmation popup.
  *   • NO X close button.
  *   • Slides DOWN from under the hamburger (anchored via Radix).
  *   • Closes by tapping the hamburger again, tapping outside, or
  *     selecting an item.
- *   • Tablet-first compact list — never a giant detached side sheet.
- *
- * Profile / Reports / Analytics / Settings / Support live ONLY here —
- * never in the bottom nav.
  */
 export default function DashboardMenu({
-  onOpenMyAccount, onOpenUserProfile,
+  onOpenAccount, onOpenUserProfile,
   onOpenAnalytics, onOpenReports, onOpenSettings, onOpenSupport,
   onLogout,
   triggerTestId = "header-menu",
@@ -54,7 +52,7 @@ export default function DashboardMenu({
         sideOffset={8}
         className="w-56 bg-white text-[var(--tm-navy)] border border-[var(--tm-border)] rounded-md p-1.5 shadow-[0_24px_60px_rgba(14,31,71,0.18)]"
       >
-        <Row testId="menu-my-account"   icon={<IdCard className="h-4 w-4" />}          label="My Account"   onSelect={onOpenMyAccount} />
+        <Row testId="menu-account"      icon={<IdCard className="h-4 w-4" />}          label="Account"      onSelect={onOpenAccount} />
         <Row testId="menu-user-profile" icon={<UserCircle className="h-4 w-4" />}      label="User Profile" onSelect={onOpenUserProfile} />
         <Row testId="menu-analytics"    icon={<BarChart3 className="h-4 w-4" />}       label="Analytics"    onSelect={onOpenAnalytics} />
         <Row testId="menu-reports"      icon={<FileSpreadsheet className="h-4 w-4" />} label="Reports"      onSelect={onOpenReports} />
