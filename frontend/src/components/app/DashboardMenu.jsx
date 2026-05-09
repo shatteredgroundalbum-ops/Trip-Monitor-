@@ -79,7 +79,13 @@ function Row({ testId, icon, label, onSelect, tone }) {
   return (
     <DropdownMenuItem
       data-testid={testId}
-      onSelect={(e) => { e.preventDefault?.(); onSelect && onSelect(); }}
+      onSelect={() => {
+        // Defer navigation a tick so Radix can close the menu portal
+        // before the route unmounts. Without this, on mobile browsers
+        // the closing portal can swallow the next pointer event,
+        // which makes the hamburger feel broken on the second tap.
+        if (onSelect) setTimeout(onSelect, 0);
+      }}
       className={`text-sm font-semibold gap-2.5 px-2.5 py-2 rounded cursor-pointer ${toneClass}`}
     >
       <span className="opacity-90">{icon}</span>
