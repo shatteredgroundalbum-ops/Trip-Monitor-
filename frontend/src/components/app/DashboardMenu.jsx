@@ -1,33 +1,39 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuSeparator,
 } from "../ui/dropdown-menu";
 import {
-  UserCog, History, FileText, IdCard, HardDrive, Fingerprint, LogOut, Eye, Menu,
+  UserCircle, IdCard, BarChart3, FileSpreadsheet, Settings, LifeBuoy, LogOut, Menu,
 } from "lucide-react";
-import {
-  enrollFingerprint, disableFingerprint, isFingerprintEnrolled, isFingerprintSupported,
-} from "../../lib/local-auth";
-import { toast } from "sonner";
 
 /**
  * Compact dropdown menu anchored to the hamburger icon.
  *
- * Per spec:
- *   • NO X button (closed by tap-outside or item-select).
- *   • Slides DOWN from under the hamburger, not from the side.
- *   • Tablet-first compact list — not a giant detached side sheet.
- *   • Profile / My Account lives ONLY here (never in bottom nav).
+ * Per spec, the hamburger contains exactly:
+ *   - My Account
+ *   - User Profile
+ *   - Analytics
+ *   - Reports
+ *   - Settings
+ *   - Support
+ *   ─── separator ───
+ *   - Logout
  *
- * The trigger is the hamburger button itself; the dropdown anchors
- * to it via Radix DropdownMenu so positioning is automatic.
+ * Behavior:
+ *   • NO X close button.
+ *   • Slides DOWN from under the hamburger (anchored via Radix).
+ *   • Closes by tapping the hamburger again, tapping outside, or
+ *     selecting an item.
+ *   • Tablet-first compact list — never a giant detached side sheet.
+ *
+ * Profile / Reports / Analytics / Settings / Support live ONLY here —
+ * never in the bottom nav.
  */
 export default function DashboardMenu({
-  hasActiveSession,
-  onOpenProfile, onOpenHistory, onOpenTemplates, onOpenLicense, onOpenStorage,
-  onOpenPreview, onLogout,
-  storageWarning, websiteFeaturesEnabled,
+  onOpenMyAccount, onOpenUserProfile,
+  onOpenAnalytics, onOpenReports, onOpenSettings, onOpenSupport,
+  onLogout,
   triggerTestId = "header-menu",
 }) {
   return (
@@ -46,30 +52,19 @@ export default function DashboardMenu({
         data-testid="dashboard-menu"
         align="end"
         sideOffset={8}
-        className="w-60 bg-white text-[var(--tm-navy)] border border-[var(--tm-border)] rounded-md p-1.5 shadow-[0_24px_60px_rgba(14,31,71,0.18)]"
+        className="w-56 bg-white text-[var(--tm-navy)] border border-[var(--tm-border)] rounded-md p-1.5 shadow-[0_24px_60px_rgba(14,31,71,0.18)]"
       >
-        <Row testId="menu-profile" icon={<UserCog className="h-4 w-4" />} label="My Account" onSelect={onOpenProfile} />
-        <Row testId="menu-templates" icon={<FileText className="h-4 w-4" />} label="Templates" onSelect={onOpenTemplates} />
-        <Row testId="menu-history" icon={<History className="h-4 w-4" />} label="History" onSelect={onOpenHistory} />
-        {hasActiveSession && (
-          <Row testId="menu-preview" icon={<Eye className="h-4 w-4" />} label="Preview Trip Sheet" onSelect={onOpenPreview} />
-        )}
-        <Row
-          testId="menu-storage"
-          icon={<HardDrive className="h-4 w-4" />}
-          label="Storage"
-          onSelect={onOpenStorage}
-          warn={storageWarning}
-        />
-        {websiteFeaturesEnabled && (
-          <Row testId="menu-license" icon={<IdCard className="h-4 w-4" />} label="License & Premium" onSelect={onOpenLicense} />
-        )}
-        <FingerprintRow />
+        <Row testId="menu-my-account"   icon={<IdCard className="h-4 w-4" />}          label="My Account"   onSelect={onOpenMyAccount} />
+        <Row testId="menu-user-profile" icon={<UserCircle className="h-4 w-4" />}      label="User Profile" onSelect={onOpenUserProfile} />
+        <Row testId="menu-analytics"    icon={<BarChart3 className="h-4 w-4" />}       label="Analytics"    onSelect={onOpenAnalytics} />
+        <Row testId="menu-reports"      icon={<FileSpreadsheet className="h-4 w-4" />} label="Reports"      onSelect={onOpenReports} />
+        <Row testId="menu-settings"     icon={<Settings className="h-4 w-4" />}        label="Settings"     onSelect={onOpenSettings} />
+        <Row testId="menu-support"      icon={<LifeBuoy className="h-4 w-4" />}        label="Support"      onSelect={onOpenSupport} />
         <DropdownMenuSeparator className="my-1.5 bg-[var(--tm-border)]" />
         <Row
           testId="menu-logout"
           icon={<LogOut className="h-4 w-4" />}
-          label="Sign out"
+          label="Logout"
           onSelect={onLogout}
           tone="danger"
         />
@@ -78,66 +73,19 @@ export default function DashboardMenu({
   );
 }
 
-function Row({ testId, icon, label, onSelect, warn = false, tone }) {
+function Row({ testId, icon, label, onSelect, tone }) {
   const toneClass =
     tone === "danger"
       ? "text-[var(--tm-orange-deep)] hover:bg-[var(--tm-orange)]/10 focus:bg-[var(--tm-orange)]/10"
-      : warn
-        ? "text-[var(--tm-orange-deep)] hover:bg-[var(--tm-orange)]/10 focus:bg-[var(--tm-orange)]/10"
-        : "text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] focus:bg-[var(--tm-surface)]";
+      : "text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] focus:bg-[var(--tm-surface)]";
   return (
     <DropdownMenuItem
       data-testid={testId}
       onSelect={(e) => { e.preventDefault?.(); onSelect && onSelect(); }}
       className={`text-sm font-semibold gap-2.5 px-2.5 py-2 rounded cursor-pointer ${toneClass}`}
     >
-      <span className="text-[var(--tm-navy)] opacity-90">{icon}</span>
+      <span className="opacity-90">{icon}</span>
       <span>{label}</span>
-    </DropdownMenuItem>
-  );
-}
-
-function FingerprintRow() {
-  const [supported, setSupported] = useState(false);
-  const [enrolled, setEnrolled] = useState(false);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    (async () => {
-      setSupported(await isFingerprintSupported());
-      setEnrolled(await isFingerprintEnrolled());
-    })();
-  }, []);
-  if (!supported) return null;
-  const onSelect = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      if (enrolled) {
-        await disableFingerprint();
-        setEnrolled(false);
-        toast.success("Fingerprint unlock disabled");
-      } else {
-        await enrollFingerprint();
-        setEnrolled(true);
-        toast.success("Fingerprint unlock enabled");
-      }
-    } catch (err) {
-      toast.error(err?.message || "Fingerprint setup cancelled");
-    } finally { setBusy(false); }
-  };
-  return (
-    <DropdownMenuItem
-      data-testid="menu-fingerprint"
-      disabled={busy}
-      onSelect={(e) => { e.preventDefault?.(); onSelect(); }}
-      className={`text-sm font-semibold gap-2.5 px-2.5 py-2 rounded cursor-pointer ${
-        enrolled
-          ? "text-[var(--tm-blue)] hover:bg-[var(--tm-blue)]/10 focus:bg-[var(--tm-blue)]/10"
-          : "text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] focus:bg-[var(--tm-surface)]"
-      }`}
-    >
-      <Fingerprint className="h-4 w-4" />
-      <span>{enrolled ? "Fingerprint: On" : "Fingerprint Unlock"}</span>
     </DropdownMenuItem>
   );
 }

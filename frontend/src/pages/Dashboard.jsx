@@ -10,6 +10,7 @@ import BadgeUnlockedModal from "../components/app/BadgeUnlockedModal";
 import InstallPrompt from "../components/app/InstallPrompt";
 import BottomNav from "../components/app/BottomNav";
 import DashboardMenu from "../components/app/DashboardMenu";
+import SettingsDialog from "../components/app/SettingsDialog";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "../components/ui/dialog";
@@ -64,6 +65,12 @@ export default function Dashboard() {
   const [showFinish, setShowFinish] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [showDispatch, setShowDispatch] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showDocuments, setShowDocuments] = useState(false);
+  const [showMessages, setShowMessages] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showSupport, setShowSupport] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [showSheet, setShowSheet] = useState(false); // active trip-sheet form modal
 
   const [storageUsage, setStorageUsage] = useState({ usage: 0, quota: 0, percent: 0, supported: false });
@@ -149,9 +156,9 @@ export default function Dashboard() {
       else setShowWizard(true);
       return;
     }
-    if (key === "studio")   { navigate("/templates"); return; }
-    if (key === "reports")  { navigate("/history"); return; }
-    if (key === "messages") { setShowDispatch(true); return; }
+    if (key === "studio")    { navigate("/templates"); return; }
+    if (key === "messages")  { setShowMessages(true); return; }
+    if (key === "documents") { setShowDocuments(true); return; }
   };
 
   // Up-next pulled from earliest non-finished, non-active session if any.
@@ -176,6 +183,18 @@ export default function Dashboard() {
   // backend is wired. Two updates by default to match "2 NEW" badge.
   const dispatchUpdates = DEMO_DISPATCH;
 
+  // System alerts — top-toolbar bell. NOT messages. Storage / sync /
+  // template-conflict notices. Mocked until the alerts service exists.
+  const systemAlerts = storageWarn
+    ? [{
+        id: "storage",
+        title: "Storage past warning threshold",
+        body: `Storage at ${storageUsage.percent}%. Pick a Trip Monitor folder so saved documents stay outside the app.`,
+        when: "Now",
+        tone: "warn",
+      }]
+    : [];
+
   return (
     <div className="min-h-screen bg-white text-[var(--tm-navy)] pb-24">
       {/* HEADER */}
@@ -186,32 +205,29 @@ export default function Dashboard() {
             <button
               type="button"
               data-testid="header-bell"
-              onClick={() => setShowDispatch(true)}
+              onClick={() => setShowNotifications(true)}
               className="relative h-10 w-10 rounded-md inline-flex items-center justify-center text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] transition-colors"
               aria-label="Notifications"
             >
               <Bell className="h-5 w-5" strokeWidth={1.6} />
-              {dispatchUpdates.length > 0 && (
+              {systemAlerts.length > 0 && (
                 <span
                   data-testid="header-bell-badge"
                   className="absolute top-1 right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-[var(--tm-orange)] text-white text-[10px] font-black flex items-center justify-center leading-none"
                 >
-                  {dispatchUpdates.length}
+                  {systemAlerts.length}
                 </span>
               )}
             </button>
             <DashboardMenu
               triggerTestId="header-menu"
-              hasActiveSession={!!session}
-              onOpenProfile={() => setShowProfile(true)}
-              onOpenHistory={() => navigate("/history")}
-              onOpenTemplates={() => navigate("/templates")}
-              onOpenLicense={() => setShowLicense(true)}
-              onOpenStorage={() => setShowStorage(true)}
-              onOpenPreview={() => setShowPreview(true)}
+              onOpenMyAccount={() => setShowProfile(true)}
+              onOpenUserProfile={() => setShowProfile(true)}
+              onOpenAnalytics={() => setShowAnalytics(true)}
+              onOpenReports={() => navigate("/history")}
+              onOpenSettings={() => setShowSettings(true)}
+              onOpenSupport={() => setShowSupport(true)}
               onLogout={logout}
-              storageWarning={storageWarn}
-              websiteFeaturesEnabled={WEBSITE_FEATURES_ENABLED}
             />
           </div>
         </div>
@@ -361,7 +377,43 @@ export default function Dashboard() {
       <BottomNav
         active="dashboard"
         onSelect={onNavSelect}
-        badges={{ messages: dispatchUpdates.length || undefined }}
+        badges={{}}
+      />
+
+      {/* SETTINGS DIALOG */}
+      <SettingsDialog
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        profile={profile}
+        onOpenStorage={() => setShowStorage(true)}
+        onOpenUserProfile={() => setShowProfile(true)}
+      />
+
+      {/* COMING-SOON STUBS — wired to real screens in a later pass. */}
+      <ComingSoonDialog
+        open={showAnalytics} onClose={() => setShowAnalytics(false)}
+        title="Analytics"
+        body="Mileage trends, on-time performance, fuel and stop analytics will live here."
+        testId="analytics-dialog"
+      />
+      <ComingSoonDialog
+        open={showSupport} onClose={() => setShowSupport(false)}
+        title="Support"
+        body="Help articles, contact dispatch, and report-an-issue will live here."
+        testId="support-dialog"
+      />
+      <ComingSoonDialog
+        open={showMessages} onClose={() => setShowMessages(false)}
+        title="Messages"
+        body="Direct communication, compose, and threads with dispatch and support will live here."
+        testId="messages-dialog"
+      />
+      <DocumentsDialog
+        open={showDocuments} onClose={() => setShowDocuments(false)}
+      />
+      <NotificationsDialog
+        open={showNotifications} onClose={() => setShowNotifications(false)}
+        alerts={systemAlerts}
       />
 
       {/* HAMBURGER DROPDOWN is rendered inline in the header (anchored to its own trigger). */}
@@ -686,6 +738,134 @@ function DispatchUpdatesDialog({ open, onClose, updates }) {
     </Dialog>
   );
 }
+
+/* ──────────────────────── stub & utility dialogs ──────────────────────── */
+
+/** Generic "this screen is coming next" placeholder modal. */
+function ComingSoonDialog({ open, onClose, title, body, testId }) {
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent
+        data-testid={testId}
+        className="max-w-sm bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-2xl shadow-[0_24px_60px_rgba(14,31,71,0.18)]"
+      >
+        <DialogHeader>
+          <DialogTitle className="text-[var(--tm-navy)] inline-flex items-center gap-2">
+            <Clock className="h-4 w-4" /> {title}
+          </DialogTitle>
+          <DialogDescription className="text-[var(--tm-text-soft)] font-semibold leading-snug">
+            {body}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex justify-end pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            data-testid={`${testId}-close`}
+            className="h-10 px-4 rounded-md bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white text-sm font-bold"
+          >
+            Got it
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Documents — operational paperwork hub. Lists the folder structure
+ * the app uses on the user-selected Trip Monitor folder. Real file
+ * listing arrives when the documents pipeline is wired.
+ */
+function DocumentsDialog({ open, onClose }) {
+  const folders = [
+    { name: "BOLs", desc: "Bills of lading", path: "Documents/BOLs" },
+    { name: "Scale Tickets", desc: "Weight & axle tickets", path: "Documents/Scale Tickets" },
+    { name: "Lumper Receipts", desc: "Lumper-fee receipts", path: "Documents/Lumper Receipts" },
+    { name: "Receipts", desc: "Fuel, tolls, expenses", path: "Documents/Receipts" },
+    { name: "Trip Attachments", desc: "Per-trip notes & files", path: "Documents/Trip Attachments" },
+    { name: "Photos", desc: "Damage & proof-of-delivery photos", path: "Documents/Photos" },
+  ];
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent
+        data-testid="documents-dialog"
+        className="max-w-md bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-2xl shadow-[0_24px_60px_rgba(14,31,71,0.18)]"
+      >
+        <DialogHeader>
+          <DialogTitle className="text-[var(--tm-navy)] inline-flex items-center gap-2">
+            <FileText className="h-4 w-4" /> Documents
+          </DialogTitle>
+          <DialogDescription className="text-[var(--tm-text-soft)] font-semibold leading-snug">
+            Operational paperwork. Saved outside the app in your Trip Monitor folder so uninstalling the app doesn&apos;t delete your files.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid grid-cols-2 gap-2">
+          {folders.map((f) => (
+            <button
+              type="button"
+              key={f.name}
+              data-testid={`docs-folder-${f.name.toLowerCase().replace(/\s+/g, "-")}`}
+              onClick={() => toast.info(`${f.name} viewer coming soon`)}
+              className="text-left rounded-md border border-[var(--tm-border)] bg-white hover:bg-[var(--tm-surface)] p-3 transition-colors"
+            >
+              <div className="text-sm font-bold text-[var(--tm-navy)]">{f.name}</div>
+              <div className="text-[11px] text-[var(--tm-navy)]/70 font-semibold mt-0.5">{f.desc}</div>
+              <div className="text-[10px] uppercase tracking-wider text-[var(--tm-text-muted)] font-bold mt-1.5">{f.path}</div>
+            </button>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Notifications — system alerts (NOT messages). Top-toolbar only. */
+function NotificationsDialog({ open, onClose, alerts }) {
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent
+        data-testid="notifications-dialog"
+        className="max-w-md bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-2xl shadow-[0_24px_60px_rgba(14,31,71,0.18)]"
+      >
+        <DialogHeader>
+          <DialogTitle className="text-[var(--tm-navy)] inline-flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" /> Notifications
+          </DialogTitle>
+          <DialogDescription className="text-[var(--tm-text-soft)] font-semibold leading-snug">
+            System alerts about storage, sync and templates. For dispatcher messages, use the Messages tab.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3 max-h-[60vh] overflow-auto">
+          {alerts.length === 0 ? (
+            <div className="text-sm text-[var(--tm-text-soft)] font-semibold">All systems clear — no alerts.</div>
+          ) : (
+            alerts.map((a) => (
+              <div key={a.id} className="flex items-start gap-3 border-b border-[var(--tm-border)] pb-3 last:border-b-0 last:pb-0">
+                <span
+                  className={[
+                    "h-9 w-9 rounded-full flex items-center justify-center flex-shrink-0",
+                    a.tone === "warn"
+                      ? "bg-[var(--tm-orange)] text-white"
+                      : "bg-[var(--tm-blue)] text-white",
+                  ].join(" ")}
+                >
+                  <AlertTriangle className="h-4 w-4" strokeWidth={2} />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-bold text-[var(--tm-navy)]">{a.title}</div>
+                  <div className="text-[12px] text-[var(--tm-navy)]/70 font-semibold leading-snug">{a.body}</div>
+                  <div className="text-[10px] text-[var(--tm-text-muted)] font-bold uppercase tracking-wider mt-0.5">{a.when}</div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 
 /** Single white metric card — clean, thin navy outline icon top-left. */
 function MetricCard({ testId, label, value, sub, icon }) {

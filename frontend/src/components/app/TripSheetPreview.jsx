@@ -52,7 +52,7 @@ export default function TripSheetPreview() {
     >
       {/* Title strip */}
       <div className="bg-[var(--tm-navy)] text-white px-3 py-2 flex items-baseline justify-between">
-        <div className="font-black tracking-tight text-sm">TripMonitor</div>
+        <div className="font-black tracking-tight text-sm">Trip Monitor</div>
         <div className="text-[8px] uppercase tracking-[0.25em] opacity-80">Driver Trip Sheet</div>
       </div>
 

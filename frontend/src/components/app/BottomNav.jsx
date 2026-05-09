@@ -3,12 +3,12 @@ import {
   DashboardGaugeIcon,
   NewTripIcon,
   StudioIcon,
-  ReportsIcon,
   MessagesIcon,
+  DocumentsIcon,
 } from "./DashboardIcons";
 
 /**
- * Fixed bottom navigation toolbar — Dashboard · New Trip · Studio · Reports · Messages.
+ * Fixed bottom navigation toolbar — Dashboard · New Trip · Studio · Messages · Documents.
  *
  * Active rule (per spec): the icon SHAPE itself emits a subtle orange glow.
  *   - No circle backgrounds.
@@ -16,15 +16,18 @@ import {
  *   - Inactive icons are thin navy line-art.
  *   - Active icons get an orange drop-shadow on the SVG shape only.
  *
- * The Profile / My Account icon is intentionally NOT in this toolbar —
- * it lives only inside the hamburger menu (per dashboard spec).
+ * The Profile / My Account / Reports / Analytics / Settings / Support
+ * items live ONLY inside the hamburger menu — never duplicated here.
+ *
+ * Documents is for operational paperwork storage (BOLs, scale tickets,
+ * lumper receipts, trip attachments, receipts, photos). Not reports.
  */
 const ITEMS = [
   { key: "dashboard", label: "Dashboard", Icon: DashboardGaugeIcon },
   { key: "new-trip",  label: "New Trip",  Icon: NewTripIcon },
   { key: "studio",    label: "Studio",    Icon: StudioIcon },
-  { key: "reports",   label: "Reports",   Icon: ReportsIcon },
   { key: "messages",  label: "Messages",  Icon: MessagesIcon },
+  { key: "documents", label: "Documents", Icon: DocumentsIcon },
 ];
 
 export default function BottomNav({ active, onSelect, badges = {} }) {

@@ -135,7 +135,7 @@ export async function ensureDefaultTemplate() {
   const now = new Date().toISOString();
   const defaultTpl = {
     id: DEFAULT_TEMPLATE_ID,
-    name: "TripMonitor Default",
+    name: "Trip Monitor Default",
     source: "default",
     is_default: true,
     created_at: now,

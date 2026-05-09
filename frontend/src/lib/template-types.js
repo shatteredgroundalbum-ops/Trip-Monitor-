@@ -155,7 +155,7 @@ export function emptyTemplate({ name, source }) {
   const now = new Date().toISOString();
   return {
     id: cryptoUuid(),
-    name: name || (source === "default" ? "TripMonitor Default" : "Untitled scan"),
+    name: name || (source === "default" ? "Trip Monitor Default" : "Untitled scan"),
     source: source === "default" ? "default" : "scanned",
     is_default: source === "default",
     created_at: now,

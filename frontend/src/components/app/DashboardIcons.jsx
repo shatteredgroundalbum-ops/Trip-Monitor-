@@ -98,6 +98,22 @@ export function ReportsIcon({ className = "" }) {
 }
 
 /**
+ * Documents — folder containing a document. Operational paperwork
+ * storage (BOLs, scale tickets, lumper receipts, photos, attachments).
+ */
+export function DocumentsIcon({ className = "" }) {
+  return (
+    <svg {...COMMON} className={className} aria-hidden="true">
+      {/* Folder body */}
+      <path d="M3.5 7 A1.5 1.5 0 0 1 5 5.5 H9.5 L11.5 7.5 H19 A1.5 1.5 0 0 1 20.5 9 V18 A1.5 1.5 0 0 1 19 19.5 H5 A1.5 1.5 0 0 1 3.5 18 Z" />
+      {/* Document inside the folder */}
+      <path d="M8.5 12 H15.5" />
+      <path d="M8.5 14.5 H13.5" />
+    </svg>
+  );
+}
+
+/**
  * Messages — speech bubble outline.
  */
 export function MessagesIcon({ className = "" }) {

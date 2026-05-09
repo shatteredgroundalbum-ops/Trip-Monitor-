@@ -74,7 +74,7 @@ export default function TemplateSetup() {
   const handleConfirmDefault = async () => {
     await setActiveTemplateId(DEFAULT_TEMPLATE_ID);
     setShowDefaultPreview(false);
-    toast.success("Using TripMonitor default sheet");
+    toast.success("Using Trip Monitor default sheet");
     navigate("/dashboard");
   };
   const handlePickScan = async () => {
@@ -285,7 +285,7 @@ function DefaultPreviewDialog({ onCancel, onConfirm }) {
       >
         <div className="px-5 py-4 border-b border-[var(--tm-border)] sticky top-0 bg-white">
           <div className="text-[10px] uppercase tracking-[0.3em] font-bold text-[var(--tm-orange)] mb-0.5 inline-flex items-center gap-1">
-            <FileText className="h-3 w-3" /> Preview · TripMonitor Default
+            <FileText className="h-3 w-3" /> Preview · Trip Monitor Default
           </div>
           <div className="text-base font-black text-[var(--tm-navy)]">
             Confirm you want to use this sheet
@@ -341,7 +341,7 @@ function PickView({ tier, onDefault, onScan }) {
         </div>
         <div className="flex-1">
           <div className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-orange)] font-bold">Recommended</div>
-          <div className="text-base font-bold">Use the TripMonitor Default</div>
+          <div className="text-base font-bold">Use the Trip Monitor Default</div>
           <div className="text-xs text-[var(--tm-text-soft)]">
             The built-in legacy sheet shipped with the app. Works out of the box.
           </div>
