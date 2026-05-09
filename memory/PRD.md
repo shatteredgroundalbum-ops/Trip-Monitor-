@@ -879,8 +879,17 @@ Wraps every screen with sticky header (brand · bell · hamburger) + fixed botto
 - Verified end-to-end: Nominatim geocode (Phoenix, AZ → 33.4484, -112.0741) and OSRM route (Phoenix → Los Angeles = 372.6 miles via I-10) both succeed from the preview environment.
 - Service worker bumped to `trip-monitor-v20`.
 
+### Global navigation rule (Feb 9, 2026)
+- Studio entry screen (`/studio` → `TemplateSetup.jsx`) was rendering its own minimal header and bypassing the global navigation. Now wrapped in `AppShell active="studio"` so the **Trip Monitor top header (logo · notification bell · hamburger menu)** and the **bottom toolbar (Dashboard · New Trip · Studio · Messages · Documents)** remain visible across:
+  - Pick view (Use Trip Monitor Default / Scan My Company Trip Sheet)
+  - Upload + boundary view
+  - Guided Quick Map wizard
+- Single permitted exception per spec: the **Pro Mapping Studio editing canvas** keeps its focused workspace layout for fine-grained mapping work, with a clear "Exit Studio" back link in its header.
+- All other 16 main screens (Dashboard · New Trip · Messages · Documents · Account · User Profile · Analytics · Reports · Settings · Support · Notifications · etc.) already use `AppShell` — verified.
+- Service worker bumped to `trip-monitor-v21`.
+
 ### Service Worker
-Cache version: `trip-monitor-v20`. Bumps every UI architecture change to force PWA refresh.
+Cache version: `trip-monitor-v21`. Bumps every UI architecture change to force PWA refresh.
 
 ## Pending / Backlog (Updated Feb 2026)
 - **P0**: Wire external Trip Monitor folder file I/O — currently writes still go to legacy storage. Files should land in `Trip Monitor/Documents/{Sub}/` based on type.

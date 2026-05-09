@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
+import AppShell from "../components/app/AppShell";
 import TemplateMappingWizard from "../components/app/TemplateMappingWizard";
 import ProMappingStudio from "../components/app/ProMappingStudio";
 import TripSheetPreview from "../components/app/TripSheetPreview";
@@ -195,28 +196,65 @@ export default function TemplateSetup() {
   };
   const onResumeNew = async () => { await clearDraft(); setResumeDraft(null); };
 
+  // The Pro Mapping Studio editing canvas is the single permitted
+  // exception to the "AppShell on every screen" rule — it needs the
+  // full viewport for fine-grained mapping work. All other Studio
+  // entry/upload/guided-map views render INSIDE AppShell so the
+  // global top header + bottom toolbar stay visible.
+  const isProEditingCanvas = view === "map" && mapMode === "pro" && !!draftTemplate;
+
+  if (isProEditingCanvas) {
+    return (
+      <div className="min-h-screen bg-white text-[var(--tm-navy)]" data-testid="template-setup-page">
+        <header className="border-b border-[var(--tm-border)] px-4 py-3 flex items-center gap-3 sticky top-0 bg-white z-10">
+          <button
+            type="button"
+            onClick={handleMapCancel}
+            className="text-[var(--tm-text-soft)] hover:text-[var(--tm-blue)] inline-flex items-center gap-1 text-xs uppercase tracking-wider font-bold"
+            data-testid="template-setup-back"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" /> Exit Studio
+          </button>
+          <div className="flex-1 text-center">
+            <span className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-text-muted)] font-bold">
+              Pro Mapping Studio
+            </span>
+          </div>
+          <span className="text-[10px] uppercase tracking-wider text-[var(--tm-text-muted)] font-bold">
+            {formatBytes(bytes)}
+          </span>
+        </header>
+        <main className="mx-auto p-4 space-y-5 max-w-[1600px]">
+          <ProMappingStudio template={draftTemplate} analysis={analysis}
+            onDone={handleMapDone} onCancel={handleMapCancel} />
+        </main>
+        {resumeDraft && <ResumeDialog draft={resumeDraft} onContinue={onResumeContinue} onNew={onResumeNew} />}
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-white text-[var(--tm-navy)]" data-testid="template-setup-page">
-      <header className="border-b border-[var(--tm-border)] px-4 py-3 flex items-center gap-3 sticky top-0 bg-white z-10">
-        <button
-          type="button"
-          onClick={() => view === "pick" ? navigate("/dashboard") : setView("pick")}
-          className="text-[var(--tm-text-soft)] hover:text-[var(--tm-blue)] inline-flex items-center gap-1 text-xs uppercase tracking-wider font-bold"
-          data-testid="template-setup-back"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" /> {view === "pick" ? "Back to Dashboard" : "Back"}
-        </button>
-        <div className="flex-1 text-center">
+    <AppShell active="studio" overline="Studio" pageTitle="Trip Sheet Templates">
+      <div data-testid="template-setup-page" className="flex flex-col gap-4">
+        {view !== "pick" && (
+          <button
+            type="button"
+            onClick={() => setView("pick")}
+            data-testid="template-setup-back"
+            className="self-start inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[var(--tm-blue)] hover:underline"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" /> Back
+          </button>
+        )}
+        <div className="flex items-center justify-between">
           <span className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-text-muted)] font-bold">
             Trip Sheet Templates
           </span>
+          <span className="text-[10px] uppercase tracking-wider text-[var(--tm-text-muted)] font-bold">
+            {formatBytes(bytes)}
+          </span>
         </div>
-        <span className="text-[10px] uppercase tracking-wider text-[var(--tm-text-muted)] font-bold">
-          {formatBytes(bytes)}
-        </span>
-      </header>
 
-      <main className={`mx-auto p-4 space-y-5 ${view === "map" && mapMode === "pro" ? "max-w-[1600px]" : "max-w-2xl"}`}>
         {view === "pick" && (
           <PickView tier={tier} onDefault={handlePickDefault} onScan={handlePickScan} />
         )}
@@ -233,16 +271,11 @@ export default function TemplateSetup() {
             tier={tier} onQuick={onEnterQuickMap} onPro={onEnterProStudio}
           />
         )}
-        {view === "map" && draftTemplate && (
-          mapMode === "pro" ? (
-            <ProMappingStudio template={draftTemplate} analysis={analysis}
-              onDone={handleMapDone} onCancel={handleMapCancel} />
-          ) : (
-            <TemplateMappingWizard template={draftTemplate}
-              onDone={handleMapDone} onCancel={handleMapCancel} />
-          )
+        {view === "map" && draftTemplate && mapMode === "guided" && (
+          <TemplateMappingWizard template={draftTemplate}
+            onDone={handleMapDone} onCancel={handleMapCancel} />
         )}
-      </main>
+      </div>
 
       {resumeDraft && <ResumeDialog draft={resumeDraft} onContinue={onResumeContinue} onNew={onResumeNew} />}
       {showStudioConfirm && (
@@ -261,7 +294,7 @@ export default function TemplateSetup() {
           onConfirm={handleConfirmDefault}
         />
       )}
-    </div>
+    </AppShell>
   );
 }
 
