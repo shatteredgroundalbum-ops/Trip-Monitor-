@@ -455,50 +455,59 @@ function UploadView({
             </svg>
           </div>
 
-          {/* Compact 4-button toolbar — Reset · Grid · Text · Set & continue.
-              All on one row at h-8 so the analysis report below does NOT
-              push the Set button down. */}
-          <div className="flex items-center gap-1.5 flex-wrap" data-testid="upload-controls">
+          {/* Uniform 4-button toolbar — Reset · Grid Analyzer · Text Analyzer · Set.
+              All buttons share equal width (flex-1) and consistent spacing. */}
+          <div className="flex items-stretch gap-2 w-full" data-testid="upload-controls">
             <Button
               variant="outline" data-testid="upload-reset" onClick={onReset}
-              className="h-8 px-2.5 text-xs bg-white border-[var(--tm-border)] text-[var(--tm-navy)]"
+              className="flex-1 min-w-0 h-9 px-2 text-xs bg-white border-[var(--tm-border)] text-[var(--tm-navy)]"
             >
-              <RotateCcw className="h-3 w-3 mr-1" /> Reset
+              <RotateCcw className="h-3 w-3 mr-1 shrink-0" />
+              <span className="truncate">Reset</span>
             </Button>
             <Button
               variant="outline" data-testid="upload-analyze-grid"
               onClick={onAnalyzeGrid} disabled={!!analyzing}
-              className="h-8 px-2.5 text-xs bg-white border-[var(--tm-blue)] text-[var(--tm-navy)] disabled:opacity-60"
-              title="Detect grid lines (rows × columns) on the scan"
+              className="flex-1 min-w-0 h-9 px-2 text-xs bg-white border-[var(--tm-blue)] text-[var(--tm-navy)] disabled:opacity-60"
+              title="Analyze the trip-sheet grid (rows, columns, headers, filled vs blank cells). Result is preset into the Studio."
             >
               {analyzing === "grid" ? (
                 <span className="inline-flex items-center gap-1">
-                  <Loader2 className="h-3 w-3 animate-spin" /> {analyzeProgress}%
+                  <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                  <span className="truncate">{analyzeProgress}%</span>
                 </span>
               ) : (
-                <><Grid3x3 className="h-3 w-3 mr-1" />{gridAnalysis?.cols ? "Re-grid" : "Grid"}</>
+                <>
+                  <Grid3x3 className="h-3 w-3 mr-1 shrink-0" />
+                  <span className="truncate">{gridAnalysis?.cols ? "Re-analyze Grid" : "Grid Analyzer"}</span>
+                </>
               )}
             </Button>
             <Button
               variant="outline" data-testid="upload-analyze"
               onClick={onAnalyze} disabled={!!analyzing}
-              className="h-8 px-2.5 text-xs bg-white border-[var(--tm-blue)] text-[var(--tm-navy)] disabled:opacity-60"
+              className="flex-1 min-w-0 h-9 px-2 text-xs bg-white border-[var(--tm-blue)] text-[var(--tm-navy)] disabled:opacity-60"
               title="Run OCR to detect font size, weight and line spacing"
             >
               {analyzing === "text" ? (
                 <span className="inline-flex items-center gap-1">
-                  <Loader2 className="h-3 w-3 animate-spin" /> {analyzeProgress}%
+                  <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                  <span className="truncate">{analyzeProgress}%</span>
                 </span>
               ) : (
-                <><Sparkles className="h-3 w-3 mr-1" />{analysis ? "Re-text" : "Text"}</>
+                <>
+                  <Sparkles className="h-3 w-3 mr-1 shrink-0" />
+                  <span className="truncate">{analysis ? "Re-analyze Text" : "Text Analyzer"}</span>
+                </>
               )}
             </Button>
             <Button
               data-testid="upload-set"
               onClick={() => toast.success("Boundary saved — pick a mapping mode below to lock & continue")}
-              className="h-8 px-3 text-xs bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold ml-auto"
+              className="flex-1 min-w-0 h-9 px-2 text-xs bg-[var(--tm-orange)] hover:bg-[var(--tm-orange-deep)] text-white font-bold"
             >
-              <Check className="h-3 w-3 mr-1" /> Set
+              <Check className="h-3 w-3 mr-1 shrink-0" />
+              <span className="truncate">Set</span>
             </Button>
           </div>
 
