@@ -44,6 +44,7 @@ import { toast } from "sonner";
  */
 const STATUS_OPTIONS = [
   { value: "available", label: "Available", color: "#16a34a" },
+  { value: "on_duty",   label: "On Duty",   color: "#0ea5e9" },
   { value: "off_duty",  label: "Off Duty",  color: "#94a3b8" },
   { value: "on_trip",   label: "On Trip",   color: "var(--tm-blue)" },
   { value: "home_time", label: "Home Time", color: "#a855f7" },
@@ -67,6 +68,28 @@ const BANNER_OPTIONS = [
   { value: "navy",  label: "Solid Navy" },
   { value: "blue",  label: "Solid Blue" },
   { value: "geo",   label: "Navy Geometric" },
+];
+
+// Avatar customization options — applied to the round avatar frame
+// in the hero card. Cosmetic only.
+const AVATAR_SHAPE_OPTIONS = [
+  { value: "rounded", label: "Rounded" },
+  { value: "circle",  label: "Circle" },
+  { value: "square",  label: "Square" },
+];
+const AVATAR_BORDER_OPTIONS = [
+  { value: "thin",  label: "Thin" },
+  { value: "thick", label: "Thick" },
+  { value: "none",  label: "None" },
+];
+
+// Lightweight theme preview row — actual theme application happens in
+// Settings; here we only render a swatch + label so users can see what
+// they have currently selected.
+const THEME_OPTIONS = [
+  { value: "system", label: "System", swatchA: "#0E1F47", swatchB: "#FFFFFF" },
+  { value: "light",  label: "Light",  swatchA: "#FFFFFF", swatchB: "#0E1F47" },
+  { value: "dark",   label: "Dark",   swatchA: "#0E1F47", swatchB: "#1E78FF" },
 ];
 
 const DENSITY_OPTIONS = [
@@ -130,6 +153,15 @@ export default function UserProfileScreen() {
   const update = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const saveProfile = async () => {
+    // Validate phone & email per spec.
+    if (form.phone && !/^[\d\s\-+().]{7,}$/.test(form.phone)) {
+      toast.error("Phone number looks invalid");
+      return;
+    }
+    if (extras.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(extras.email)) {
+      toast.error("Email address looks invalid");
+      return;
+    }
     setSaving(true);
     try {
       // Send only known backend fields; backend rejects unknowns.
@@ -228,11 +260,16 @@ export default function UserProfileScreen() {
               avatarUrl={extras.avatar_url || form.avatar_url}
               initials={initials}
               accent={extras.accent || "orange"}
+              shape={extras.avatar_shape || "rounded"}
+              border={extras.avatar_border || "thin"}
               onChange={(url) => setEx("avatar_url", url)}
             />
             <div className="flex-1 min-w-0">
               <div className="text-[10px] uppercase tracking-[0.3em] text-white/70 font-bold">Driver</div>
               <h1 className="text-2xl md:text-3xl font-black tracking-tight truncate">{form.full_name || "Add your name"}</h1>
+              <div className="mt-0.5 text-[12px] text-white/85 font-bold tracking-wide truncate">
+                @{extras.display_name || makeHandle(form.full_name)}
+              </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 <span className="px-2 py-0.5 rounded-full bg-white/15 text-white text-[10px] font-black tracking-[0.15em] uppercase">
                   {role.label}
@@ -289,6 +326,7 @@ export default function UserProfileScreen() {
         <Card>
           <CardHeader icon={<IdCard className="h-4 w-4" />} title="Personal Information" />
           <Field label="Full Name"><Input data-testid="up-full-name" value={form.full_name || ""} onChange={update("full_name")} placeholder="e.g. Richard Murphy" /></Field>
+          <Field label="Display Name (Username)"><Input data-testid="up-display-name" value={extras.display_name || ""} onChange={(e) => setEx("display_name", normalizeHandle(e.target.value))} placeholder="e.g. richard.m — letters, numbers, dot, underscore" /></Field>
           <Field label="Phone Number"><Input data-testid="up-phone" type="tel" value={form.phone || ""} onChange={update("phone")} placeholder="e.g. 555-0123" /></Field>
           <Field label="Email Address"><Input data-testid="up-email" type="email" value={extras.email || ""} onChange={(e) => setEx("email", e.target.value)} placeholder="driver@example.com" /></Field>
           <Field label="Emergency Contact"><Input data-testid="up-ec" value={extras.emergency_contact || ""} onChange={(e) => setEx("emergency_contact", e.target.value)} placeholder="Name · Relationship · Phone" /></Field>
@@ -358,30 +396,44 @@ export default function UserProfileScreen() {
 
         {/* APP PERSONALIZATION (light) */}
         <Card>
-          <CardHeader icon={<Palette className="h-4 w-4" />} title="App Personalization" />
+          <CardHeader icon={<Palette className="h-4 w-4" />} title="Profile Personalization" />
+          <ThemePreviewRow
+            testId="up-theme"
+            title="Theme Preview"
+            value={extras.theme || "system"}
+            onChange={(v) => setEx("theme", v)}
+            options={THEME_OPTIONS}
+          />
           <SwatchRow
             testId="up-accent"
-            title="Accent Color"
+            title="Accent Color Preview"
             value={extras.accent || "orange"}
             onChange={(v) => setEx("accent", v)}
             options={ACCENT_OPTIONS}
           />
           <SegRow
-            testId="up-banner"
-            title="Profile Banner"
-            value={extras.banner || "navy"}
-            onChange={(v) => setEx("banner", v)}
-            options={BANNER_OPTIONS}
+            testId="up-avatar-shape"
+            title="Avatar Shape"
+            value={extras.avatar_shape || "rounded"}
+            onChange={(v) => setEx("avatar_shape", v)}
+            options={AVATAR_SHAPE_OPTIONS}
+          />
+          <SegRow
+            testId="up-avatar-border"
+            title="Avatar Border"
+            value={extras.avatar_border || "thin"}
+            onChange={(v) => setEx("avatar_border", v)}
+            options={AVATAR_BORDER_OPTIONS}
           />
           <SegRow
             testId="up-density"
-            title="Display Density"
+            title="Display Density Preview"
             value={extras.density || "comfortable"}
             onChange={(v) => setEx("density", v)}
             options={DENSITY_OPTIONS}
           />
           <Hint icon={<Sun className="h-4 w-4 text-[var(--tm-blue)]" />}>
-            Theme &amp; advanced toggles live in <button onClick={() => navigate("/settings")} className="underline font-bold text-[var(--tm-blue)]">Settings</button>.
+            These are cosmetic previews. Real theme &amp; behavior toggles live in <button onClick={() => navigate("/settings")} className="underline font-bold text-[var(--tm-blue)]">Settings</button>.
           </Hint>
         </Card>
 
@@ -414,32 +466,56 @@ export default function UserProfileScreen() {
           </Hint>
         </Card>
 
-        {/* CONNECTED FEATURES (read-only) */}
-        <Card>
-          <CardHeader icon={<BadgeCheck className="h-4 w-4" />} title="Connected Features" />
-          <SummaryRow
-            testId="cf-biometric"
-            icon={<Fingerprint className="h-4 w-4" />}
-            title="Biometric Unlock"
-            value={fpSupported ? (fpEnrolled ? "Enabled" : "Disabled") : "Not supported"}
-          />
-          <SummaryRow
-            testId="cf-backup"
-            icon={<Cloud className="h-4 w-4" />}
-            title="Cloud Backup"
-            value={extras.backup_enabled ? "On · daily" : "Off"}
-          />
-          <SummaryRow
-            testId="cf-storage"
-            icon={<HardDrive className="h-4 w-4" />}
-            title="Storage Location"
-            value={destLabel}
-            warn={isAboveQuotaWarning(storageUsage.percent)}
-          />
-          <Hint icon={<ShieldAlert className="h-4 w-4 text-[var(--tm-blue)]" />}>
-            Manage these in <button onClick={() => navigate("/settings")} className="underline font-bold text-[var(--tm-blue)]">Settings</button>.
-          </Hint>
-        </Card>
+        {/* SOCIAL / CONNECTED FEATURES (optional, hidden by default) */}
+        {extras.social_enabled ? (
+          <Card>
+            <CardHeader icon={<BadgeCheck className="h-4 w-4" />} title="Social / Connected" />
+            <SummaryRow
+              testId="cf-driver-badge"
+              icon={<Award className="h-4 w-4" />}
+              title="Driver Badge"
+              value={milestonesEarned > 0 ? `${milestonesEarned} milestones earned` : "No badge yet"}
+            />
+            <SummaryRow
+              testId="cf-rating"
+              icon={<Activity className="h-4 w-4" />}
+              title="Reputation / Rating"
+              value="—"
+            />
+            <SummaryRow
+              testId="cf-achievements"
+              icon={<Award className="h-4 w-4" />}
+              title="Achievement Showcase"
+              value={milestonesEarned > 0 ? `${milestonesEarned} unlocked` : "Hidden"}
+            />
+            <SummaryRow
+              testId="cf-fleet"
+              icon={<Truck className="h-4 w-4" />}
+              title="Connected Fleet Status"
+              value={form.company_id ? `Connected to ${form.company_id}` : "Not connected"}
+            />
+            <button
+              type="button"
+              data-testid="social-toggle-off"
+              onClick={() => setEx("social_enabled", false)}
+              className="self-start text-xs font-bold uppercase tracking-wider text-[var(--tm-blue)] hover:underline"
+            >Hide social features</button>
+          </Card>
+        ) : (
+          <button
+            type="button"
+            data-testid="social-toggle-on"
+            onClick={() => setEx("social_enabled", true)}
+            className="text-left bg-white border border-dashed border-[var(--tm-border)] rounded-xl px-4 py-3 hover:bg-[var(--tm-surface)] transition-colors flex items-center gap-3"
+          >
+            <BadgeCheck className="h-4 w-4 text-[var(--tm-navy)]/60" />
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-bold text-[var(--tm-navy)]">Social / Connected Features</span>
+              <span className="block text-[12px] text-[var(--tm-navy)]/65 font-semibold">Driver badges, reputation, achievement showcase, fleet status. Hidden — tap to enable.</span>
+            </span>
+            <ChevronRight className="h-4 w-4 text-[var(--tm-text-muted)]" />
+          </button>
+        )}
 
         {/* PROFILE ACTIONS */}
         <Card>
@@ -498,7 +574,7 @@ export default function UserProfileScreen() {
 
 /* ───────────────────────── pieces ───────────────────────── */
 
-function AvatarBlock({ avatarUrl, initials, accent, onChange }) {
+function AvatarBlock({ avatarUrl, initials, accent, shape = "rounded", border = "thin", onChange }) {
   const fileRef = React.useRef(null);
   const onPick = () => fileRef.current?.click();
   const handleFile = (e) => {
@@ -508,10 +584,12 @@ function AvatarBlock({ avatarUrl, initials, accent, onChange }) {
     reader.readAsDataURL(f);
   };
   const accentColor = (ACCENT_OPTIONS.find((a) => a.value === accent) || ACCENT_OPTIONS[0]).color;
+  const radius = shape === "circle" ? "rounded-full" : shape === "square" ? "rounded-md" : "rounded-2xl";
+  const borderWidth = border === "thick" ? "border-[5px]" : border === "none" ? "border-0" : "border-4";
   return (
     <div className="relative shrink-0">
       <div
-        className="h-20 w-20 rounded-2xl overflow-hidden border-4 flex items-center justify-center bg-white text-[var(--tm-navy)] text-xl font-black"
+        className={`h-20 w-20 ${radius} overflow-hidden ${borderWidth} flex items-center justify-center bg-white text-[var(--tm-navy)] text-xl font-black`}
         style={{ borderColor: accentColor }}
         data-testid="profile-avatar"
       >
@@ -682,6 +760,37 @@ function SegRow({ testId, title, value, onChange, options }) {
     </div>
   );
 }
+function ThemePreviewRow({ testId, title, value, onChange, options }) {
+  return (
+    <div data-testid={testId} className="flex items-center justify-between gap-3 px-1 py-2">
+      <span className="text-sm font-semibold text-[var(--tm-navy)]">{title}</span>
+      <div className="inline-flex items-center gap-2">
+        {options.map((o) => {
+          const active = value === o.value;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              data-testid={`${testId}-${o.value}`}
+              onClick={() => onChange(o.value)}
+              className={[
+                "h-8 rounded-md inline-flex items-center gap-1.5 pl-1 pr-2 transition-colors border-2",
+                active ? "border-[var(--tm-navy)]" : "border-transparent hover:border-[var(--tm-border)]",
+              ].join(" ")}
+              aria-label={o.label}
+            >
+              <span className="relative h-6 w-6 rounded-full overflow-hidden ring-1 ring-[var(--tm-border)]">
+                <span className="absolute inset-0" style={{ background: o.swatchA }} />
+                <span className="absolute inset-y-0 right-0 w-1/2" style={{ background: o.swatchB }} />
+              </span>
+              <span className="text-xs font-bold text-[var(--tm-navy)]">{o.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 function Hint({ icon, children }) {
   return (
     <div className="flex items-start gap-2 px-2 py-2 rounded-md bg-[var(--tm-surface)] border border-[var(--tm-border)]">
@@ -736,6 +845,14 @@ function bannerBg(kind) {
   return "linear-gradient(135deg, #0E1F47 0%, #122655 100%)";
 }
 
+function makeHandle(name) {
+  if (!name) return "driver";
+  return String(name).trim().toLowerCase().replace(/\s+/g, ".").replace(/[^a-z0-9._]/g, "").slice(0, 24) || "driver";
+}
+function normalizeHandle(s) {
+  return String(s || "").toLowerCase().replace(/[^a-z0-9._]/g, "").slice(0, 24);
+}
+
 const EXTRAS_KEY = "tm_profile_extras_v1";
 const DEFAULT_EXTRAS = {
   status: "available",
@@ -752,6 +869,12 @@ const DEFAULT_EXTRAS = {
   density: "comfortable",
   backup_enabled: true,
   company_start_date: "",
+  // New per spec
+  display_name: "",
+  theme: "system",
+  avatar_shape: "rounded",
+  avatar_border: "thin",
+  social_enabled: false,
 };
 function loadExtras() {
   try { return { ...DEFAULT_EXTRAS, ...JSON.parse(localStorage.getItem(EXTRAS_KEY) || "{}") }; }
