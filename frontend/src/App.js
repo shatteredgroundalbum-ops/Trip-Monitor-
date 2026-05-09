@@ -13,7 +13,10 @@ import AccountScreen from "./pages/AccountScreen";
 import UserProfileScreen from "./pages/UserProfileScreen";
 import SettingsScreen from "./pages/SettingsScreen";
 import NewTripScreen from "./pages/NewTripScreen";
-import CreateTripScreen from "./pages/CreateTripScreen";import MessagesScreen from "./pages/MessagesScreen";
+import CreateTripScreen from "./pages/CreateTripScreen";
+import MessagesScreen from "./pages/MessagesScreen";
+import ConversationScreen from "./pages/ConversationScreen";
+import MessageComposeScreen from "./pages/MessageComposeScreen";
 import DocumentsScreen from "./pages/DocumentsScreen";
 import DocumentViewerScreen from "./pages/DocumentViewerScreen";
 import NotificationsScreen from "./pages/NotificationsScreen";
@@ -68,6 +71,8 @@ function App() {
             <Route path="/new-trip" element={<ProtectedRoute><NewTripScreen /></ProtectedRoute>} />
             <Route path="/new-trip/create" element={<ProtectedRoute><CreateTripScreen /></ProtectedRoute>} />
             <Route path="/messages" element={<ProtectedRoute><MessagesScreen /></ProtectedRoute>} />
+            <Route path="/messages/compose" element={<ProtectedRoute><MessageComposeScreen /></ProtectedRoute>} />
+            <Route path="/messages/:id" element={<ProtectedRoute><ConversationScreen /></ProtectedRoute>} />
             <Route path="/documents" element={<ProtectedRoute><DocumentsScreen /></ProtectedRoute>} />
             <Route path="/documents/:id" element={<ProtectedRoute><DocumentViewerScreen /></ProtectedRoute>} />
             <Route path="/notifications" element={<ProtectedRoute><NotificationsScreen /></ProtectedRoute>} />

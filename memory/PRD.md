@@ -865,8 +865,15 @@ Wraps every screen with sticky header (brand · bell · hamburger) + fixed botto
 - Imported files are categorized automatically (image → photos, PDF → BOLs, csv/json → exports, other → trip_attachments) and the user can re-categorize via Move.
 - Service worker bumped to `trip-monitor-v18`.
 
+### Messages screen (Feb 9, 2026)
+- `/messages` rebuilt per the 10-section spec — Conversation Overview tiles · Compose CTA · Search & Filters (search · role chips · pinned/priority filters) · Conversation list with avatars, online indicators, role/trip/priority chips, unread badges, per-row pin & archive · Message Organization summary · Driver & Dispatch + Support shortcut sections · Attachments & Sharing info card · Message Settings shortcuts.
+- New `/messages/:id` route → `ConversationScreen.jsx` opens full screen (no popup) — sent vs received bubbles with delivery status icons (Clock → Check → CheckCheck → blue read), attach-from-Documents picker dialog (file references — never copies), Pin / Priority / Archive / Delete actions.
+- New `/messages/compose` route → `MessageComposeScreen.jsx` full-screen composer — recipient picker with role labels, optional trip number, message body, attach-from-Documents. On send: starts (or reuses) a conversation and navigates to its thread.
+- New `lib/message-store.js` — localStorage conversation/contact store with seed data, mark-read, sendMessage, startConversation (idempotent reuse), pin/archive/priority, filter helpers, totalUnread.
+- Service worker bumped to `trip-monitor-v19`.
+
 ### Service Worker
-Cache version: `trip-monitor-v18`. Bumps every UI architecture change to force PWA refresh.
+Cache version: `trip-monitor-v19`. Bumps every UI architecture change to force PWA refresh.
 
 ## Pending / Backlog (Updated Feb 2026)
 - **P0**: Wire external Trip Monitor folder file I/O — currently writes still go to legacy storage. Files should land in `Trip Monitor/Documents/{Sub}/` based on type.
