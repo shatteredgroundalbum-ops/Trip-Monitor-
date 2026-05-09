@@ -713,11 +713,14 @@ export function analyzeGridDefaults(ocrWords, scanW, scanH) {
   const empty = {
     cols: 0, rows: 0, avgCellW: 0, avgCellH: 0,
     columnConfidence: 0, rowConfidence: 0, wordsAnalyzed: 0,
+    cells: [], filled: 0, blank: 0, headers: [], rowSummaries: [],
+    columnSummaries: [],
   };
   if (!ocrWords?.length) return empty;
-  const xs = [], ys = [];
+  // Step 1: normalise word coords into [0..1] page-space and remember text.
+  const items = [];
   for (const w of ocrWords) {
-    let x, y, h;
+    let x, y, h, txt = (w.text || "").trim();
     if (typeof w.x === "number" && typeof w.y === "number" && w.x <= 1) {
       x = w.x; y = w.y; h = w.h || 0.02;
     } else if (w.bbox && scanW && scanH) {
@@ -725,54 +728,145 @@ export function analyzeGridDefaults(ocrWords, scanW, scanH) {
       y = w.bbox.y0 / scanH;
       h = (w.bbox.y1 - w.bbox.y0) / scanH;
     } else { continue; }
-    xs.push(x); ys.push(y + h / 2);
+    items.push({ x, y: y + h / 2, h, txt });
   }
-  if (xs.length < 4) return empty;
-  // Cluster X-starts → column boundaries. Threshold = 1.5% page width;
-  // tighter clusters than this collapse into a single column.
+  if (items.length < 4) return empty;
+  // Step 2: cluster X-starts → column boundaries (1.5% page tol);
+  // cluster Y-centres → row boundaries (1.2% page tol).
   const colTol = 0.015;
   const rowTol = 0.012;
-  const clusterCount = (vals, tol) => {
+  const cluster = (vals, tol) => {
     const sorted = [...vals].sort((a, b) => a - b);
     let centers = [], hits = [];
     for (const v of sorted) {
       const last = centers[centers.length - 1];
       if (last != null && v - last < tol) {
         hits[hits.length - 1] += 1;
-        // running mean for the cluster
         centers[centers.length - 1] =
           (last * (hits[hits.length - 1] - 1) + v) / hits[hits.length - 1];
       } else {
         centers.push(v); hits.push(1);
       }
     }
-    // Drop singletons — likely noise, not actual grid lines.
-    const meaningful = centers.filter((_, i) => hits[i] >= 2);
+    const meaningful = [];
+    for (let i = 0; i < centers.length; i++) {
+      if (hits[i] >= 2) meaningful.push(centers[i]);
+    }
     return { centers: meaningful, hits };
   };
-  const colData = clusterCount(xs, colTol);
-  const rowData = clusterCount(ys, rowTol);
+  const colData = cluster(items.map((i) => i.x), colTol);
+  const rowData = cluster(items.map((i) => i.y), rowTol);
   const cols = colData.centers.length;
   const rows = rowData.centers.length;
-  // Confidence = mean cluster fill. Higher = more words landed exactly
-  // on the grid lines (looks like a real grid, not a paragraph).
+  if (cols === 0 || rows === 0) return { ...empty, wordsAnalyzed: items.length };
+
+  // Step 3: derive cell boundaries — midpoint between adjacent cluster
+  // centres becomes the inter-column / inter-row line.
+  const edges = (centers) => {
+    const out = [0];
+    for (let i = 0; i < centers.length - 1; i++) {
+      out.push((centers[i] + centers[i + 1]) / 2);
+    }
+    out.push(1);
+    return out;
+  };
+  const colEdges = edges(colData.centers);
+  const rowEdges = edges(rowData.centers);
+
+  // Step 4: assign each word to its (row, col) cell. Build a 2-D array
+  // of cell objects: { row, col, text, isBlank, wordCount }.
+  const cells = Array.from({ length: rows }, (_, r) =>
+    Array.from({ length: cols }, (_, c) => ({
+      row: r, col: c, text: "", words: [], isBlank: true,
+    })));
+  for (const it of items) {
+    let c = 0;
+    for (let k = 0; k < cols; k++) {
+      if (it.x >= colEdges[k] && it.x < colEdges[k + 1]) { c = k; break; }
+    }
+    let r = 0;
+    for (let k = 0; k < rows; k++) {
+      if (it.y >= rowEdges[k] && it.y < rowEdges[k + 1]) { r = k; break; }
+    }
+    if (it.txt) cells[r][c].words.push(it.txt);
+  }
+  let filled = 0, blank = 0;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      cells[r][c].text = cells[r][c].words.join(" ").trim();
+      cells[r][c].isBlank = cells[r][c].text.length === 0;
+      if (cells[r][c].isBlank) blank++; else filled++;
+    }
+  }
+
+  // Step 5: detect the header row — first row whose every cell is filled
+  // (or, falling back, the first row with the most filled cells).
+  let headerRowIdx = -1;
+  for (let r = 0; r < rows; r++) {
+    if (cells[r].every((cell) => !cell.isBlank)) { headerRowIdx = r; break; }
+  }
+  if (headerRowIdx === -1) {
+    let best = -1, bestFilled = 0;
+    for (let r = 0; r < rows; r++) {
+      const f = cells[r].filter((cell) => !cell.isBlank).length;
+      if (f > bestFilled) { best = r; bestFilled = f; }
+    }
+    headerRowIdx = best;
+  }
+  const headers = headerRowIdx >= 0
+    ? cells[headerRowIdx].map((c) => c.text || "")
+    : [];
+
+  // Step 6: row-level + column-level summaries — what each row contains
+  // (filled count + first cell value for context) and what each column
+  // contains across all rows (header label + filled / blank ratio).
+  const rowSummaries = cells.map((rowCells, r) => ({
+    row: r,
+    filled: rowCells.filter((c) => !c.isBlank).length,
+    blank:  rowCells.filter((c) =>  c.isBlank).length,
+    sample: rowCells.find((c) => !c.isBlank)?.text || "",
+    isHeader: r === headerRowIdx,
+  }));
+  const columnSummaries = Array.from({ length: cols }, (_, c) => {
+    let f = 0, b = 0;
+    for (let r = 0; r < rows; r++) {
+      if (cells[r][c].isBlank) b++; else f++;
+    }
+    return {
+      col: c,
+      header: headers[c] || `Col ${c + 1}`,
+      filled: f, blank: b,
+    };
+  });
+
+  // Step 7: confidence + average cell dims, same as before.
   const meanHits = (arr) => arr.length
     ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
-  const columnConfidence = Math.min(1, meanHits(colData.hits.filter((h) => h >= 2)) / 6);
-  const rowConfidence    = Math.min(1, meanHits(rowData.hits.filter((h) => h >= 2)) / 6);
-  // Average cell dims = inter-cluster gap.
+  const colHitsKept = [];
+  const rowHitsKept = [];
+  for (const h of colData.hits) if (h >= 2) colHitsKept.push(h);
+  for (const h of rowData.hits) if (h >= 2) rowHitsKept.push(h);
+  const columnConfidence = Math.min(1, meanHits(colHitsKept) / 6);
+  const rowConfidence    = Math.min(1, meanHits(rowHitsKept) / 6);
   const avgGap = (centers) => {
     if (centers.length < 2) return 0;
     let s = 0;
     for (let i = 1; i < centers.length; i++) s += centers[i] - centers[i - 1];
     return s / (centers.length - 1);
   };
+
   return {
     cols, rows,
     avgCellW: +avgGap(colData.centers).toFixed(4),
     avgCellH: +avgGap(rowData.centers).toFixed(4),
     columnConfidence: +columnConfidence.toFixed(2),
     rowConfidence: +rowConfidence.toFixed(2),
-    wordsAnalyzed: xs.length,
+    wordsAnalyzed: items.length,
+    cells,           // 2D array of { row, col, text, words, isBlank }
+    filled, blank,   // counts across the whole grid
+    headers,         // detected header row content (may be all "")
+    headerRowIdx,    // which row index was treated as header (-1 if none)
+    rowSummaries,    // per-row: filled / blank / sample / isHeader
+    columnSummaries, // per-column: header label / filled / blank
   };
 }

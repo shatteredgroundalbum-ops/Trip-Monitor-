@@ -116,11 +116,17 @@ export default function TemplateSetup() {
       } else {
         const g = analyzeGridDefaults(words, scan.width, scan.height);
         setGridAnalysis(g);
-        // Use info (blue) toast for the negative path so the colour
-        // matches the outcome — only the success path (cols+rows
-        // both detected) flashes a green toast.
         if (g.cols > 0 && g.rows > 0) {
-          toast.success(`Grid · ${g.cols} cols × ${g.rows} rows`);
+          // Build a richer success toast — the user wants to see what the
+          // analyzer actually found, not just dimensions.
+          const filledHeaders = (g.headers || [])
+            .map((h) => (h || "").trim()).filter(Boolean).slice(0, 4);
+          const headerStr = filledHeaders.length
+            ? ` · headers: ${filledHeaders.join(" | ")}`
+            : "";
+          toast.success(
+            `Grid · ${g.cols}×${g.rows} · ${g.filled} filled / ${g.blank} blank${headerStr}`
+          );
         } else {
           toast.info("No grid pattern detected");
         }
@@ -514,6 +520,8 @@ function UploadView({
                 <>
                   <Chip testid="grid-cols" k="Cols" v={gridAnalysis.cols} accent />
                   <Chip testid="grid-rows" k="Rows" v={gridAnalysis.rows} accent />
+                  <Chip testid="grid-filled" k="Filled" v={gridAnalysis.filled} accent />
+                  <Chip testid="grid-blank"  k="Blank"  v={gridAnalysis.blank}  accent />
                   <Chip testid="grid-cell" k="Cell"
                     v={`${(gridAnalysis.avgCellW * 100).toFixed(1)}×${(gridAnalysis.avgCellH * 100).toFixed(1)}%`}
                     accent />
