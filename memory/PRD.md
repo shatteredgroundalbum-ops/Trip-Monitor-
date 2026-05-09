@@ -852,8 +852,14 @@ Wraps every screen with sticky header (brand · bell · hamburger) + fixed botto
 ### Notifications screen (Feb 9, 2026)
 - `/notifications` shipped per spec — Overview tiles (Unread / High Priority / Last Sync / Recent Activity), Priority Alerts pinned cluster, Filter & Search, full notification list with type chips and per-row actions, Notification Settings shortcut. Auto-seeds from system state (storage warning, dispatch update, autosave, export complete, backup, app update, milestone).
 
+### Reports screen (Feb 9, 2026)
+- `/reports` rebuilt per the 10-section spec — Report Overview tiles, Report Types chip filter, Filter & Search panel (search · trip# · driver · truck# · date from/to · status · format), Generated Reports list (preview + archive + delete per row), Export Options summary, Print Settings (page size · orientation · margins · header-footer toggle · branding toggle, persisted via `lib/print-settings.js`), Report History 3-column (Recent · Shared · Failed), Storage Location with usage row, Archive Management with destructive confirmations.
+- New `/reports/:id` route → `ReportPreviewScreen.jsx` opens as a full screen (not a popup) with zoom, page navigation, all 9 export actions (PDF · JPEG · PNG · CSV · JSON · Print · Share · Save to device · Save to cloud), and a print-calibrated page preview that respects the saved Print Settings.
+- New `lib/report-store.js` — localStorage-backed metadata store for reports, with `seedReportsFromTrips()` so finished trips automatically show up as Trip Reports until the real export pipeline starts emitting entries directly.
+- Service worker bumped to `trip-monitor-v17`.
+
 ### Service Worker
-Cache version: `trip-monitor-v16`. Bumps every UI architecture change to force PWA refresh.
+Cache version: `trip-monitor-v17`. Bumps every UI architecture change to force PWA refresh.
 
 ## Pending / Backlog (Updated Feb 2026)
 - **P0**: Wire external Trip Monitor folder file I/O — currently writes still go to legacy storage. Files should land in `Trip Monitor/Documents/{Sub}/` based on type.

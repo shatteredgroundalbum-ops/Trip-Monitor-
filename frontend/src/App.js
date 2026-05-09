@@ -13,11 +13,11 @@ import AccountScreen from "./pages/AccountScreen";
 import UserProfileScreen from "./pages/UserProfileScreen";
 import SettingsScreen from "./pages/SettingsScreen";
 import NewTripScreen from "./pages/NewTripScreen";
-import CreateTripScreen from "./pages/CreateTripScreen";
-import MessagesScreen from "./pages/MessagesScreen";
+import CreateTripScreen from "./pages/CreateTripScreen";import MessagesScreen from "./pages/MessagesScreen";
 import DocumentsScreen from "./pages/DocumentsScreen";
 import NotificationsScreen from "./pages/NotificationsScreen";
 import ReportsScreen from "./pages/ReportsScreen";
+import ReportPreviewScreen from "./pages/ReportPreviewScreen";
 import AnalyticsScreen from "./pages/AnalyticsScreen";
 import SupportScreen from "./pages/SupportScreen";
 import LegalScreen from "./pages/LegalScreen";
@@ -73,6 +73,7 @@ function App() {
             <Route path="/user-profile" element={<ProtectedRoute><UserProfileScreen /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><SettingsScreen /></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute><ReportsScreen /></ProtectedRoute>} />
+            <Route path="/reports/:id" element={<ProtectedRoute><ReportPreviewScreen /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><AnalyticsScreen /></ProtectedRoute>} />
             <Route path="/support" element={<ProtectedRoute><SupportScreen /></ProtectedRoute>} />
             <Route path="/legal" element={<ProtectedRoute><LegalScreen /></ProtectedRoute>} />
