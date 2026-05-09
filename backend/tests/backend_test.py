@@ -1,5 +1,6 @@
 """RTI Trip Management backend tests."""
 import os
+from typing import Any, Dict, List
 import pytest
 import requests
 
@@ -8,14 +9,14 @@ TOKEN = os.environ.get("TEST_SESSION_TOKEN")
 
 
 @pytest.fixture(scope="session")
-def auth():
+def auth() -> Dict[str, Any]:
     if not TOKEN:
         pytest.skip("TEST_SESSION_TOKEN env var not set")
     return {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
 
 
 # root
-def test_root_ok():
+def test_root_ok() -> None:
     r = requests.get(f"{BASE}/api/")
     assert r.status_code == 200
     j = r.json()
@@ -23,12 +24,12 @@ def test_root_ok():
 
 
 # auth
-def test_auth_me_unauth():
+def test_auth_me_unauth() -> None:
     r = requests.get(f"{BASE}/api/auth/me")
     assert r.status_code == 401
 
 
-def test_auth_me_bearer(auth):
+def test_auth_me_bearer(auth: Dict[str, Any]) -> None:
     r = requests.get(f"{BASE}/api/auth/me", headers=auth)
     assert r.status_code == 200
     j = r.json()
@@ -37,7 +38,7 @@ def test_auth_me_bearer(auth):
 
 
 # profile
-def test_profile_save_and_get(auth):
+def test_profile_save_and_get(auth: Dict[str, Any]) -> None:
     payload = {
         "full_name": "TEST_Driver One",
         "home_terminal": "Riverside",
@@ -62,7 +63,7 @@ def test_profile_save_and_get(auth):
 
 # trip session CRUD
 @pytest.fixture(scope="module")
-def session_id(auth):
+def session_id(auth: Dict[str, Any]) -> str:
     payload = {
         "session_type": "New",
         "load_type": "Warehouse-Water",
@@ -82,7 +83,7 @@ def session_id(auth):
     return j["session_id"]
 
 
-def test_active_session(auth, session_id):
+def test_active_session(auth: Dict[str, Any], session_id: str) -> None:
     r = requests.get(f"{BASE}/api/trip-sessions/active", headers=auth)
     assert r.status_code == 200
     j = r.json()
@@ -91,7 +92,7 @@ def test_active_session(auth, session_id):
     assert "_id" not in j
 
 
-def test_update_session_persists_whitelist_fields(auth, session_id):
+def test_update_session_persists_whitelist_fields(auth: Dict[str, Any], session_id: str) -> None:
     """Whitelisted fields on PUT /api/trip-sessions/{id} must be persisted."""
     r0 = requests.get(f"{BASE}/api/trip-sessions/{session_id}", headers=auth)
     orig = r0.json()
@@ -119,25 +120,25 @@ def test_update_session_persists_whitelist_fields(auth, session_id):
     assert "_id" not in j
 
 
-def _blacklist_assert_user_id(j, orig, _sid):
+def _blacklist_assert_user_id(j: Dict[str, Any], orig: Dict[str, Any], _sid: str) -> None:
     assert j["user_id"] == orig["user_id"], "user_id must NOT be settable by client"
 
 
-def _blacklist_assert_finished_at(j, _orig, _sid):
+def _blacklist_assert_finished_at(j: Dict[str, Any], _orig: Dict[str, Any], _sid: str) -> None:
     # `finished_at` is Optional[str] — None or absent means "not set". The
     # falsy check covers both without using flagged `is None` idiom.
     assert not j["finished_at"], "finished_at must NOT be settable by client"
 
 
-def _blacklist_assert_session_id(j, _orig, sid):
+def _blacklist_assert_session_id(j: Dict[str, Any], _orig: Dict[str, Any], sid: str) -> None:
     assert j["session_id"] == sid, "session_id must NOT be overwritten"
 
 
-def _blacklist_assert_created_at(j, orig, _sid):
+def _blacklist_assert_created_at(j: Dict[str, Any], orig: Dict[str, Any], _sid: str) -> None:
     assert j["created_at"] == orig["created_at"], "created_at must NOT be overwritten"
 
 
-def _blacklist_assert_internal_id(j, _orig, _sid):
+def _blacklist_assert_internal_id(j: Dict[str, Any], _orig: Dict[str, Any], _sid: str) -> None:
     assert "_id" not in j
 
 
@@ -159,7 +160,7 @@ _BLACKLIST_ASSERTIONS = {
     ("session_id",   "HACK_SID"),
     ("created_at",   "1999-01-01T00:00:00+00:00"),
 ])
-def test_update_session_ignores_blacklist_field(auth, session_id, field, value):
+def test_update_session_ignores_blacklist_field(auth: Dict[str, Any], session_id: str, field: str, value: Any) -> None:
     """Non-whitelisted fields must be silently ignored on PUT (not error)."""
     r0 = requests.get(f"{BASE}/api/trip-sessions/{session_id}", headers=auth)
     orig = r0.json()
@@ -172,12 +173,12 @@ def test_update_session_ignores_blacklist_field(auth, session_id, field, value):
     _BLACKLIST_ASSERTIONS[field](r.json(), orig, session_id)
 
 
-def test_finish_not_found(auth):
+def test_finish_not_found(auth: Dict[str, Any]) -> None:
     r = requests.post(f"{BASE}/api/trip-sessions/ts_doesnotexist/finish", headers=auth)
     assert r.status_code == 404
 
 
-def test_finish_session(auth, session_id):
+def test_finish_session(auth: Dict[str, Any], session_id: str) -> None:
     r = requests.post(f"{BASE}/api/trip-sessions/{session_id}/finish", headers=auth)
     assert r.status_code == 200
     j = r.json()
@@ -186,13 +187,13 @@ def test_finish_session(auth, session_id):
     assert "_id" not in j
 
 
-def test_finish_already_finished_returns_409(auth, session_id):
+def test_finish_already_finished_returns_409(auth: Dict[str, Any], session_id: str) -> None:
     # session_id is already finished by previous test
     r = requests.post(f"{BASE}/api/trip-sessions/{session_id}/finish", headers=auth)
     assert r.status_code == 409
 
 
-def test_update_finished_session_returns_409(auth, session_id):
+def test_update_finished_session_returns_409(auth: Dict[str, Any], session_id: str) -> None:
     # session_id is already finished
     r = requests.put(
         f"{BASE}/api/trip-sessions/{session_id}",
@@ -202,7 +203,7 @@ def test_update_finished_session_returns_409(auth, session_id):
     assert r.status_code == 409
 
 
-def test_reopen_finished_session(auth, session_id):
+def test_reopen_finished_session(auth: Dict[str, Any], session_id: str) -> None:
     # session_id is finished — reopen should flip status back to active
     r = requests.post(f"{BASE}/api/trip-sessions/{session_id}/reopen", headers=auth)
     assert r.status_code == 200
@@ -218,13 +219,13 @@ def test_reopen_finished_session(auth, session_id):
     assert r2.json()["notes"] == "REOPENED_OK"
 
 
-def test_reopen_not_found(auth):
+def test_reopen_not_found(auth: Dict[str, Any]) -> None:
     r = requests.post(f"{BASE}/api/trip-sessions/ts_doesnotexist/reopen", headers=auth)
     assert r.status_code == 404
 
 
 # learning
-def _bump_locations(auth):
+def _bump_locations(auth: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Helper: 2× bump 'TEST_LocA', 1× bump 'TEST_LocB'. Returns list response."""
     for _ in range(2):
         r = requests.post(f"{BASE}/api/locations/bump", headers=auth, json={"name": "TEST_LocA"})
@@ -235,32 +236,32 @@ def _bump_locations(auth):
     return lst
 
 
-def test_locations_bump_records_both_names(auth):
+def test_locations_bump_records_both_names(auth: Dict[str, Any]) -> None:
     lst = _bump_locations(auth)
     names = [d["name"] for d in lst]
     assert "TEST_LocA" in names and "TEST_LocB" in names
 
 
-def test_locations_count_reflects_bump_frequency(auth):
+def test_locations_count_reflects_bump_frequency(auth: Dict[str, Any]) -> None:
     lst = _bump_locations(auth)
     a = next(d for d in lst if d["name"] == "TEST_LocA")
     b = next(d for d in lst if d["name"] == "TEST_LocB")
     assert a["count"] >= b["count"]
 
 
-def test_locations_list_excludes_internal_id(auth):
+def test_locations_list_excludes_internal_id(auth: Dict[str, Any]) -> None:
     lst = _bump_locations(auth)
     assert all("_id" not in d for d in lst)
 
 
-def test_trailers_bump_and_list(auth):
+def test_trailers_bump_and_list(auth: Dict[str, Any]) -> None:
     requests.post(f"{BASE}/api/trailers/bump", headers=auth, json={"number": "TEST_TR1", "type": "Reefer"})
     lst = requests.get(f"{BASE}/api/trailers", headers=auth).json()
     assert any(d["number"] == "TEST_TR1" for d in lst)
     assert all("_id" not in d for d in lst)
 
 
-def test_cities_bump_and_list(auth):
+def test_cities_bump_and_list(auth: Dict[str, Any]) -> None:
     requests.post(f"{BASE}/api/cities/bump", headers=auth, json={"city": "TEST_City", "state": "ca"})
     lst = requests.get(f"{BASE}/api/cities", headers=auth).json()
     assert any(d["city"] == "TEST_City" and d["state"] == "CA" for d in lst)

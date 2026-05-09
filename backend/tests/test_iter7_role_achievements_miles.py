@@ -6,6 +6,7 @@
    - GET /api/achievements badges
 """
 import os
+from typing import Any, Dict, List
 import time
 import pytest
 import requests
@@ -18,7 +19,7 @@ DB_NAME = os.environ.get('DB_NAME', 'test_database')
 
 
 @pytest.fixture(scope="module")
-def auth():
+def auth() -> Dict[str, Any]:
     """Inject a fresh test user + session directly into Mongo."""
     mc = MongoClient(MONGO_URL)
     db = mc[DB_NAME]
@@ -47,7 +48,7 @@ def auth():
 
 
 @pytest.fixture
-def client(auth):
+def client(auth: Dict[str, Any]) -> requests.Session:
     s = requests.Session()
     s.headers.update({"Authorization": f"Bearer {auth['token']}", "Content-Type": "application/json"})
     return s
@@ -55,12 +56,12 @@ def client(auth):
 
 # -------- /api/auth/role --------
 class TestAuthRole:
-    def test_unauth_rejected(self):
+    def test_unauth_rejected(self) -> None:
         r = requests.post(f"{BASE_URL}/api/auth/role", json={"role": "lto"})
         assert r.status_code == 401
 
     @pytest.mark.parametrize("role", ["company_driver", "owner_operator", "lto"])
-    def test_valid_roles_accepted(self, client, auth, role):
+    def test_valid_roles_accepted(self, client: requests.Session, auth: Dict[str, Any], role: str) -> None:
         r = client.post(f"{BASE_URL}/api/auth/role", json={"role": role})
         assert r.status_code == 200, r.text
         assert r.json()["role"] == role
@@ -68,18 +69,18 @@ class TestAuthRole:
         assert u["role"] == role
 
     @pytest.mark.parametrize("bad", ["DRIVER", "admin", "", "  ", "null"])
-    def test_invalid_role_422(self, client, bad):
+    def test_invalid_role_422(self, client: requests.Session, bad: str) -> None:
         r = client.post(f"{BASE_URL}/api/auth/role", json={"role": bad})
         assert r.status_code == 422, r.text
 
-    def test_missing_role_field_422(self, client):
+    def test_missing_role_field_422(self, client: requests.Session) -> None:
         r = client.post(f"{BASE_URL}/api/auth/role", json={})
         assert r.status_code == 422
 
 
 # -------- /api/profile --------
 class TestProfileNewShape:
-    def test_full_new_shape_persists(self, client, auth):
+    def test_full_new_shape_persists(self, client: requests.Session, auth: Dict[str, Any]) -> None:
         payload = {
             "full_name": "Iter Seven Driver",
             "address": "100 Main St", "city": "Dallas", "state": "TX", "zip_code": "75001",
@@ -103,7 +104,7 @@ class TestProfileNewShape:
         assert gd["lifetime_miles"] == 850_000
         assert gd["truck_make"] == "Peterbilt"
 
-    def test_legacy_alias_slip_seating(self, client):
+    def test_legacy_alias_slip_seating(self, client: requests.Session) -> None:
         r = client.post(f"{BASE_URL}/api/profile", json={
             "full_name": "Slip Test",
             "truck_assignment_type": "Slip-Seating",
@@ -111,13 +112,13 @@ class TestProfileNewShape:
         assert r.status_code == 200
         assert r.json()["truck_assignment_type"] == "Slip Seat"
 
-    def test_negative_years_rejected(self, client):
+    def test_negative_years_rejected(self, client: requests.Session) -> None:
         r = client.post(f"{BASE_URL}/api/profile", json={
             "full_name": "Neg Test", "years_experience": -1,
         })
         assert r.status_code == 422
 
-    def test_negative_lifetime_miles_rejected(self, client):
+    def test_negative_lifetime_miles_rejected(self, client: requests.Session) -> None:
         r = client.post(f"{BASE_URL}/api/profile", json={
             "full_name": "Neg Test", "lifetime_miles": -5,
         })
@@ -127,7 +128,7 @@ class TestProfileNewShape:
 # -------- Trip session miles guard --------
 class TestTripFinishMilesGuard:
     @pytest.fixture
-    def session_id(self, client, auth):
+    def session_id(self, client: requests.Session, auth: Dict[str, Any]) -> str:
         # close any existing
         auth["db"].trip_sessions.update_many(
             {"user_id": auth["user_id"], "status": "active"},
@@ -140,17 +141,17 @@ class TestTripFinishMilesGuard:
         assert r.status_code == 200
         return r.json()["session_id"]
 
-    def test_finish_without_miles_422(self, client, session_id):
+    def test_finish_without_miles_422(self, client: requests.Session, session_id: str) -> None:
         r = client.post(f"{BASE_URL}/api/trip-sessions/{session_id}/finish")
         assert r.status_code == 422
         assert "total_trip_miles" in r.text.lower()
 
-    def test_finish_with_zero_miles_422(self, client, session_id):
+    def test_finish_with_zero_miles_422(self, client: requests.Session, session_id: str) -> None:
         client.put(f"{BASE_URL}/api/trip-sessions/{session_id}", json={"total_trip_miles": 0})
         r = client.post(f"{BASE_URL}/api/trip-sessions/{session_id}/finish")
         assert r.status_code == 422
 
-    def test_finish_with_positive_miles_200(self, client, session_id):
+    def test_finish_with_positive_miles_200(self, client: requests.Session, session_id: str) -> None:
         u = client.put(f"{BASE_URL}/api/trip-sessions/{session_id}", json={"total_trip_miles": 542})
         assert u.status_code == 200
         assert u.json()["total_trip_miles"] == 542
@@ -161,7 +162,7 @@ class TestTripFinishMilesGuard:
 
 # -------- /api/stats miles aggregation --------
 class TestStatsMiles:
-    def test_stats_includes_miles_fields(self, client, auth):
+    def test_stats_includes_miles_fields(self, client: requests.Session, auth: Dict[str, Any]) -> None:
         # Ensure profile baseline 850k from earlier test in module if run together; otherwise set
         client.post(f"{BASE_URL}/api/profile", json={
             "full_name": "Stats Driver", "years_experience": 12, "lifetime_miles": 850_000,
@@ -183,7 +184,7 @@ class TestAchievements:
     REQUIRED_BADGE_KEYS = {"id", "category", "label", "threshold", "progress", "earned"}
 
     @pytest.fixture
-    def achievements_doc(self, client):
+    def achievements_doc(self, client: requests.Session) -> Dict[str, Any]:
         # set profile 12 yrs / 850k miles
         client.post(f"{BASE_URL}/api/profile", json={
             "full_name": "Ach Driver", "years_experience": 12, "lifetime_miles": 850_000,
@@ -192,28 +193,28 @@ class TestAchievements:
         assert r.status_code == 200
         return r.json()
 
-    def test_badges_is_a_list(self, achievements_doc):
+    def test_badges_is_a_list(self, achievements_doc: Dict[str, Any]) -> None:
         assert "badges" in achievements_doc
         assert isinstance(achievements_doc["badges"], list)
 
-    def test_total_count_matches_badges_length(self, achievements_doc):
+    def test_total_count_matches_badges_length(self, achievements_doc: Dict[str, Any]) -> None:
         assert achievements_doc["total_count"] == len(achievements_doc["badges"])
 
-    def test_total_count_floor(self, achievements_doc):
+    def test_total_count_floor(self, achievements_doc: Dict[str, Any]) -> None:
         assert achievements_doc["total_count"] >= 20
 
-    def test_earned_count_min_for_seeded_profile(self, achievements_doc):
+    def test_earned_count_min_for_seeded_profile(self, achievements_doc: Dict[str, Any]) -> None:
         # 12 yrs (1,5,10 = 3) + 850k miles (100k,250k,500k = 3) = 6
         assert achievements_doc["earned_count"] >= 6, \
             f"expected >=6 earned, got {achievements_doc['earned_count']}"
 
-    def test_locked_badges_progress_below_threshold(self, achievements_doc):
+    def test_locked_badges_progress_below_threshold(self, achievements_doc: Dict[str, Any]) -> None:
         for b in achievements_doc["badges"]:
             if not b["earned"]:
                 assert b["progress"] < b["threshold"], \
                     f"locked badge {b['id']} has progress >= threshold"
 
-    def test_every_badge_has_required_keys(self, achievements_doc):
+    def test_every_badge_has_required_keys(self, achievements_doc: Dict[str, Any]) -> None:
         for b in achievements_doc["badges"]:
             assert self.REQUIRED_BADGE_KEYS <= set(b.keys()), \
                 f"badge {b.get('id')} missing keys"

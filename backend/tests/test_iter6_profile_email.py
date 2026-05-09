@@ -1,5 +1,6 @@
 """Iteration 6 — Pydantic validation on /api/profile + Resend email endpoint tests."""
 import os
+from typing import Any, Dict, List
 import pytest
 import requests
 
@@ -8,7 +9,7 @@ TOKEN = os.environ.get("TEST_SESSION_TOKEN")
 
 
 @pytest.fixture(scope="module")
-def auth():
+def auth() -> Dict[str, Any]:
     if not TOKEN:
         pytest.skip("TEST_SESSION_TOKEN env not set")
     return {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
@@ -16,18 +17,18 @@ def auth():
 
 # ---------- /api/profile strict Pydantic validation ----------
 class TestProfileValidation:
-    def test_missing_required_fields_returns_422(self, auth):
+    def test_missing_required_fields_returns_422(self, auth: Dict[str, Any]) -> None:
         r = requests.post(f"{BASE}/api/profile", headers=auth, json={})
         assert r.status_code == 422
 
-    def test_missing_some_required_fields_returns_422(self, auth):
+    def test_missing_some_required_fields_returns_422(self, auth: Dict[str, Any]) -> None:
         # missing truck_assignment_type + driver_id
         r = requests.post(f"{BASE}/api/profile", headers=auth, json={
             "full_name": "X", "home_terminal": "Y", "time_zone": "America/Chicago"
         })
         assert r.status_code == 422
 
-    def test_permanent_without_truck_number_returns_422(self, auth):
+    def test_permanent_without_truck_number_returns_422(self, auth: Dict[str, Any]) -> None:
         r = requests.post(f"{BASE}/api/profile", headers=auth, json={
             "full_name": "TEST_Permanent",
             "home_terminal": "Riverside",
@@ -40,7 +41,7 @@ class TestProfileValidation:
         detail = r.json().get("detail", "")
         assert "truck_number" in str(detail).lower()
 
-    def test_invalid_assignment_type_returns_422(self, auth):
+    def test_invalid_assignment_type_returns_422(self, auth: Dict[str, Any]) -> None:
         r = requests.post(f"{BASE}/api/profile", headers=auth, json={
             "full_name": "TEST_Bad",
             "home_terminal": "Riverside",
@@ -51,7 +52,7 @@ class TestProfileValidation:
         })
         assert r.status_code == 422
 
-    def test_invalid_dispatcher_email_returns_422(self, auth):
+    def test_invalid_dispatcher_email_returns_422(self, auth: Dict[str, Any]) -> None:
         r = requests.post(f"{BASE}/api/profile", headers=auth, json={
             "full_name": "TEST_BadEmail",
             "home_terminal": "Riverside",
@@ -62,7 +63,7 @@ class TestProfileValidation:
         })
         assert r.status_code == 422
 
-    def test_slip_seat_without_truck_ok(self, auth):
+    def test_slip_seat_without_truck_ok(self, auth: Dict[str, Any]) -> None:
         r = requests.post(f"{BASE}/api/profile", headers=auth, json={
             "full_name": "TEST_SlipSeat",
             "home_terminal": "Riverside",
@@ -75,7 +76,7 @@ class TestProfileValidation:
         assert "_id" not in j
         assert j["truck_assignment_type"] == "Slip Seat"
 
-    def test_valid_profile_with_dispatcher_email_persists(self, auth):
+    def test_valid_profile_with_dispatcher_email_persists(self, auth: Dict[str, Any]) -> None:
         payload = {
             "full_name": "TEST_Dispatch Driver",
             "home_terminal": "Riverside",
@@ -110,42 +111,42 @@ class TestEmailSendTripSheet:
         "attachments": [],
     }
 
-    def test_no_auth_returns_401(self):
+    def test_no_auth_returns_401(self) -> None:
         r = requests.post(f"{BASE}/api/email/send-trip-sheet", json=self.VALID_PAYLOAD)
         assert r.status_code == 401
 
-    def test_auth_no_resend_key_returns_503(self, auth):
+    def test_auth_no_resend_key_returns_503(self, auth: Dict[str, Any]) -> None:
         # RESEND_API_KEY is intentionally empty in backend .env
         r = requests.post(f"{BASE}/api/email/send-trip-sheet", headers=auth, json=self.VALID_PAYLOAD)
         assert r.status_code == 503
         detail = r.json().get("detail", "")
         assert "not configured" in str(detail).lower()
 
-    def test_missing_recipient_returns_422(self, auth):
+    def test_missing_recipient_returns_422(self, auth: Dict[str, Any]) -> None:
         r = requests.post(f"{BASE}/api/email/send-trip-sheet", headers=auth, json={
             "subject": "s", "html_body": "<p>b</p>"
         })
         assert r.status_code == 422
 
-    def test_missing_subject_returns_422(self, auth):
+    def test_missing_subject_returns_422(self, auth: Dict[str, Any]) -> None:
         r = requests.post(f"{BASE}/api/email/send-trip-sheet", headers=auth, json={
             "recipient": "to@example.com", "html_body": "<p>b</p>"
         })
         assert r.status_code == 422
 
-    def test_missing_html_body_returns_422(self, auth):
+    def test_missing_html_body_returns_422(self, auth: Dict[str, Any]) -> None:
         r = requests.post(f"{BASE}/api/email/send-trip-sheet", headers=auth, json={
             "recipient": "to@example.com", "subject": "s"
         })
         assert r.status_code == 422
 
-    def test_malformed_recipient_returns_422(self, auth):
+    def test_malformed_recipient_returns_422(self, auth: Dict[str, Any]) -> None:
         r = requests.post(f"{BASE}/api/email/send-trip-sheet", headers=auth, json={
             "recipient": "not-an-email", "subject": "s", "html_body": "<p>b</p>"
         })
         assert r.status_code == 422
 
-    def test_more_than_four_attachments_returns_422(self, auth):
+    def test_more_than_four_attachments_returns_422(self, auth: Dict[str, Any]) -> None:
         payload = {
             "recipient": "to@example.com",
             "subject": "s",
@@ -158,7 +159,7 @@ class TestEmailSendTripSheet:
         r = requests.post(f"{BASE}/api/email/send-trip-sheet", headers=auth, json=payload)
         assert r.status_code == 422
 
-    def test_empty_attachment_filename_returns_422(self, auth):
+    def test_empty_attachment_filename_returns_422(self, auth: Dict[str, Any]) -> None:
         payload = {
             "recipient": "to@example.com",
             "subject": "s",

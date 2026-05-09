@@ -8,6 +8,7 @@ Covers:
  - GET /api/trip-sessions/{id}/recap 404 for unknown session.
 """
 import os
+from typing import Any, Dict, List
 import time
 import pytest
 import requests
@@ -19,7 +20,7 @@ MONGO_URL = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
 DB_NAME = os.environ.get('DB_NAME', 'test_database')
 
 
-def _seed_user():
+def _seed_user() -> "tuple[Any, str, str]":
     mc = MongoClient(MONGO_URL)
     db = mc[DB_NAME]
     suffix = str(int(time.time() * 1000))
@@ -41,7 +42,7 @@ def _seed_user():
     return db, user_id, token
 
 
-def _cleanup(db, user_id, token):
+def _cleanup(db: Any, user_id: str, token: str) -> None:
     db.users.delete_one({"user_id": user_id})
     db.user_sessions.delete_one({"session_token": token})
     db.driver_profiles.delete_one({"user_id": user_id})
@@ -49,14 +50,14 @@ def _cleanup(db, user_id, token):
 
 
 @pytest.fixture(scope="module")
-def auth():
+def auth() -> Dict[str, Any]:
     db, user_id, token = _seed_user()
     yield {"db": db, "user_id": user_id, "token": token}
     _cleanup(db, user_id, token)
 
 
 @pytest.fixture
-def client(auth):
+def client(auth: Dict[str, Any]) -> requests.Session:
     s = requests.Session()
     s.headers.update({
         "Authorization": f"Bearer {auth['token']}",
@@ -68,7 +69,7 @@ def client(auth):
 # ---------------- /api/profile mileage_mode ----------------
 class TestProfileMileageMode:
     @pytest.mark.parametrize("mode", ["workflow", "segment"])
-    def test_valid_modes_accepted(self, client, mode):
+    def test_valid_modes_accepted(self, client: requests.Session, mode: str) -> None:
         r = client.post(f"{BASE_URL}/api/profile", json={
             "full_name": "Iter9 Pytest",
             "mileage_mode": mode,
@@ -82,7 +83,7 @@ class TestProfileMileageMode:
         assert r2.status_code == 200
         assert r2.json()["mileage_mode"] == mode
 
-    def test_invalid_mode_422(self, client):
+    def test_invalid_mode_422(self, client: requests.Session) -> None:
         r = client.post(f"{BASE_URL}/api/profile", json={
             "full_name": "Iter9 Pytest",
             "mileage_mode": "garbage",
@@ -93,7 +94,7 @@ class TestProfileMileageMode:
 
 # ---------------- /finish segment-sum auto-use ----------------
 class TestFinishSegmentAutoSum:
-    def _make_trip(self, client, rows):
+    def _make_trip(self, client: requests.Session, rows: list) -> str:
         r = client.post(f"{BASE_URL}/api/trip-sessions", json={
             "session_type": "New",
             "load_type": "Store",
@@ -102,7 +103,7 @@ class TestFinishSegmentAutoSum:
         assert r.status_code == 200, r.text
         return r.json()["session_id"]
 
-    def _set_mode(self, client, mode):
+    def _set_mode(self, client: requests.Session, mode: str) -> None:
         r = client.post(f"{BASE_URL}/api/profile", json={
             "full_name": "Iter9 Pytest",
             "mileage_mode": mode,
@@ -110,7 +111,7 @@ class TestFinishSegmentAutoSum:
         })
         assert r.status_code == 200
 
-    def test_segment_mode_auto_sums_when_total_missing(self, client):
+    def test_segment_mode_auto_sums_when_total_missing(self, client: requests.Session) -> None:
         self._set_mode(client, "segment")
         rows = [
             {"seq": 1, "segment_miles": 142},
@@ -128,7 +129,7 @@ class TestFinishSegmentAutoSum:
         assert doc["total_trip_miles"] == 351
         assert doc.get("mileage_mode_at_finish") == "segment"
 
-    def test_segment_mode_422_when_no_segments_and_no_total(self, client):
+    def test_segment_mode_422_when_no_segments_and_no_total(self, client: requests.Session) -> None:
         self._set_mode(client, "segment")
         # All rows empty (no segment_miles, no total)
         rows = [{"seq": i + 1} for i in range(8)]
@@ -137,7 +138,7 @@ class TestFinishSegmentAutoSum:
         r = client.post(f"{BASE_URL}/api/trip-sessions/{sid}/finish")
         assert r.status_code == 422, r.text
 
-    def test_workflow_mode_still_needs_total_trip_miles(self, client):
+    def test_workflow_mode_still_needs_total_trip_miles(self, client: requests.Session) -> None:
         self._set_mode(client, "workflow")
         # segments set but mode=workflow → must ignore them
         rows = [{"seq": 1, "segment_miles": 100}]
@@ -153,7 +154,7 @@ class TestFinishSegmentAutoSum:
 # asserts, single-purpose names, and fails with a clear signal.
 class TestTripRecap:
     @pytest.fixture
-    def recap_doc(self, client, auth):
+    def recap_doc(self, client: requests.Session, auth: Dict[str, Any]) -> Dict[str, Any]:
         """Build a finished trip such that a milestone (1M miles) is crossed
         AND a 351-mile segment trip is recorded. Returns the parsed recap
         JSON for downstream tests to assert against."""
@@ -193,21 +194,21 @@ class TestTripRecap:
         "miles_today", "miles_week", "next_milestone",
         "new_badges", "mileage_mode", "trips_total", "finished_at",
     ])
-    def test_recap_has_required_key(self, recap_doc, key):
+    def test_recap_has_required_key(self, recap_doc: Dict[str, Any], key: str) -> None:
         assert key in recap_doc, f"missing {key}"
 
-    def test_recap_career_math(self, recap_doc):
+    def test_recap_career_math(self, recap_doc: Dict[str, Any]) -> None:
         assert recap_doc["trip_miles"] == 351
         assert recap_doc["career_before"] == 999700
         assert recap_doc["career_after"] == 1000051
         assert recap_doc["mileage_mode"] == "segment"
         assert recap_doc["trips_total"] >= 1
 
-    def test_recap_today_and_week_miles(self, recap_doc):
+    def test_recap_today_and_week_miles(self, recap_doc: Dict[str, Any]) -> None:
         assert recap_doc["miles_today"] >= 351
         assert recap_doc["miles_week"] >= 351
 
-    def test_recap_next_milestone_is_2m(self, recap_doc):
+    def test_recap_next_milestone_is_2m(self, recap_doc: Dict[str, Any]) -> None:
         nm = recap_doc["next_milestone"]
         assert nm  # truthy = a populated dict, not None
         assert nm["label"] == "2M Miles"
@@ -215,16 +216,16 @@ class TestTripRecap:
         assert nm["remaining"] == 2_000_000 - 1_000_051
         assert 0 <= nm["progress_pct"] <= 100
 
-    def test_recap_new_badges_includes_million(self, recap_doc):
+    def test_recap_new_badges_includes_million(self, recap_doc: Dict[str, Any]) -> None:
         new_ids = [b["id"] for b in recap_doc["new_badges"]]
         assert "miles_1000000" in new_ids, f"got {new_ids}"
         mb = next(b for b in recap_doc["new_badges"] if b["id"] == "miles_1000000")
         assert mb["label"] == "1M Miles"
 
-    def test_recap_missing_session_404(self, client):
+    def test_recap_missing_session_404(self, client: requests.Session) -> None:
         r = client.get(f"{BASE_URL}/api/trip-sessions/ts_doesnotexist/recap")
         assert r.status_code == 404
 
-    def test_recap_unauth_401(self):
+    def test_recap_unauth_401(self) -> None:
         r = requests.get(f"{BASE_URL}/api/trip-sessions/ts_any/recap")
         assert r.status_code == 401
