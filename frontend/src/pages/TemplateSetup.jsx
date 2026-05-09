@@ -196,45 +196,20 @@ export default function TemplateSetup() {
   };
   const onResumeNew = async () => { await clearDraft(); setResumeDraft(null); };
 
-  // The Pro Mapping Studio editing canvas is the single permitted
-  // exception to the "AppShell on every screen" rule — it needs the
-  // full viewport for fine-grained mapping work. All other Studio
-  // entry/upload/guided-map views render INSIDE AppShell so the
-  // global top header + bottom toolbar stay visible.
-  const isProEditingCanvas = view === "map" && mapMode === "pro" && !!draftTemplate;
-
-  if (isProEditingCanvas) {
-    return (
-      <div className="min-h-screen bg-white text-[var(--tm-navy)]" data-testid="template-setup-page">
-        <header className="border-b border-[var(--tm-border)] px-4 py-3 flex items-center gap-3 sticky top-0 bg-white z-10">
-          <button
-            type="button"
-            onClick={handleMapCancel}
-            className="text-[var(--tm-text-soft)] hover:text-[var(--tm-blue)] inline-flex items-center gap-1 text-xs uppercase tracking-wider font-bold"
-            data-testid="template-setup-back"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" /> Exit Studio
-          </button>
-          <div className="flex-1 text-center">
-            <span className="text-[10px] uppercase tracking-[0.25em] text-[var(--tm-text-muted)] font-bold">
-              Pro Mapping Studio
-            </span>
-          </div>
-          <span className="text-[10px] uppercase tracking-wider text-[var(--tm-text-muted)] font-bold">
-            {formatBytes(bytes)}
-          </span>
-        </header>
-        <main className="mx-auto p-4 space-y-5 max-w-[1600px]">
-          <ProMappingStudio template={draftTemplate} analysis={analysis}
-            onDone={handleMapDone} onCancel={handleMapCancel} />
-        </main>
-        {resumeDraft && <ResumeDialog draft={resumeDraft} onContinue={onResumeContinue} onNew={onResumeNew} />}
-      </div>
-    );
-  }
-
+  // GLOBAL RULE: Studio — including the Pro Mapping editing canvas —
+  // stays inside AppShell so the top header (Trip Monitor · bell ·
+  // hamburger) and the bottom toolbar (Dashboard · New Trip · Studio ·
+  // Messages · Documents) are always visible. A dedicated focus-mode
+  // toggle can be added later as a separate button if mapping work
+  // ever needs the full viewport.
+  const wideMode = view === "map" && mapMode === "pro";
   return (
-    <AppShell active="studio" overline="Studio" pageTitle="Trip Sheet Templates">
+    <AppShell
+      active="studio"
+      overline="Studio"
+      pageTitle="Trip Sheet Templates"
+      contentClassName={wideMode ? "!max-w-[1600px]" : ""}
+    >
       <div data-testid="template-setup-page" className="flex flex-col gap-4">
         {view !== "pick" && (
           <button
@@ -273,6 +248,10 @@ export default function TemplateSetup() {
         )}
         {view === "map" && draftTemplate && mapMode === "guided" && (
           <TemplateMappingWizard template={draftTemplate}
+            onDone={handleMapDone} onCancel={handleMapCancel} />
+        )}
+        {view === "map" && draftTemplate && mapMode === "pro" && (
+          <ProMappingStudio template={draftTemplate} analysis={analysis}
             onDone={handleMapDone} onCancel={handleMapCancel} />
         )}
       </div>

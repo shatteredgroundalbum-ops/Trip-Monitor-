@@ -888,8 +888,15 @@ Wraps every screen with sticky header (brand · bell · hamburger) + fixed botto
 - All other 16 main screens (Dashboard · New Trip · Messages · Documents · Account · User Profile · Analytics · Reports · Settings · Support · Notifications · etc.) already use `AppShell` — verified.
 - Service worker bumped to `trip-monitor-v21`.
 
+### Studio workspace inside AppShell (Feb 9, 2026 — fix)
+- Removed the previous "Pro Mapping Studio canvas is the lone exception" branch in `TemplateSetup.jsx`. The Studio workspace — pick view, upload/boundary view, Guided Quick Map wizard, **and the Pro Mapping Studio editing canvas** — now all render inside `AppShell active="studio"`. Driver always sees the global top header (Trip Monitor · bell · hamburger) and the bottom toolbar with the Studio tab highlighted in orange.
+- Pro mode passes `contentClassName="!max-w-[1600px]"` so the canvas still gets the wider workspace it needs without breaking out of AppShell.
+- Studio ribbon, tools, and bottom action bar are all preserved unchanged.
+- Future fullscreen "Focus Mode" left as a separate explicit button (not part of this fix).
+- Service worker bumped to `trip-monitor-v22`.
+
 ### Service Worker
-Cache version: `trip-monitor-v21`. Bumps every UI architecture change to force PWA refresh.
+Cache version: `trip-monitor-v22`. Bumps every UI architecture change to force PWA refresh.
 
 ## Pending / Backlog (Updated Feb 2026)
 - **P0**: Wire external Trip Monitor folder file I/O — currently writes still go to legacy storage. Files should land in `Trip Monitor/Documents/{Sub}/` based on type.
