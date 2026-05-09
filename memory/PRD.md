@@ -858,8 +858,15 @@ Wraps every screen with sticky header (brand · bell · hamburger) + fixed botto
 - New `lib/report-store.js` — localStorage-backed metadata store for reports, with `seedReportsFromTrips()` so finished trips automatically show up as Trip Reports until the real export pipeline starts emitting entries directly.
 - Service worker bumped to `trip-monitor-v17`.
 
+### Documents screen (Feb 9, 2026)
+- `/documents` rebuilt per the 10-section spec — Uninstall reassurance banner, Overview tiles (Total · Storage Used · Last Upload · Last Export · Storage Location), Categories grid (BOLs · Scale Tickets · Lumper Receipts · Receipts · Trip Attachments · Photos · Completed Trip Sheets · Exports) with per-category counts, Recent Documents thumbnail grid, Search & Filters (search · trip# · date · category · file-type chips), filtered Documents list, Upload & Capture (Take photo · Import image · Import PDF · Attach to trip · Batch upload), Storage Management (path · change · usage · cloud sync), Document Organization (5 prefs + Archive completed + Show duplicates), Export & Share, Document Security (Locked · Hidden · Sensitive tiles).
+- New `/documents/:id` route → `DocumentViewerScreen.jsx` opens as a full screen (not a popup) with zoom, rotate, Share / Export / Rename / Move / Attach-to-trip / Archive / Lock / Hide / Delete actions. Inline image preview when thumbnail is cached; PDF/other types show explainer pointing to the Trip Monitor folder (no in-app file storage).
+- New `lib/document-store.js` — localStorage index + thumbnail cache (≤ ~5 KB per row), filter helpers, duplicate detection, category count helper. New `lib/doc-organization.js` — organization prefs persistence.
+- Imported files are categorized automatically (image → photos, PDF → BOLs, csv/json → exports, other → trip_attachments) and the user can re-categorize via Move.
+- Service worker bumped to `trip-monitor-v18`.
+
 ### Service Worker
-Cache version: `trip-monitor-v17`. Bumps every UI architecture change to force PWA refresh.
+Cache version: `trip-monitor-v18`. Bumps every UI architecture change to force PWA refresh.
 
 ## Pending / Backlog (Updated Feb 2026)
 - **P0**: Wire external Trip Monitor folder file I/O — currently writes still go to legacy storage. Files should land in `Trip Monitor/Documents/{Sub}/` based on type.
