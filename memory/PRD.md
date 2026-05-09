@@ -872,8 +872,15 @@ Wraps every screen with sticky header (brand · bell · hamburger) + fixed botto
 - New `lib/message-store.js` — localStorage conversation/contact store with seed data, mark-read, sendMessage, startConversation (idempotent reuse), pin/archive/priority, filter helpers, totalUnread.
 - Service worker bumped to `trip-monitor-v19`.
 
+### Route Mileage Engine (Feb 9, 2026)
+- New `lib/route-mileage.js` — internal mileage calculator using Leaflet's tile sources (Nominatim for geocoding · OSRM for routing). The driver does NOT see a map, navigation UI, or routing controls — only the numbers. Aggressive caching of geocodes (30-day TTL) and route results, plus polite 200 ms throttle between Nominatim calls. Custom `RouteEngineError` with `no-stops | geocode-failed | route-failed | network` codes for graceful degradation.
+- New `components/app/MileageCard.jsx` — three big tiles: **Real Route Miles · Company Pay Miles · Difference** (orange = unpaid, blue = overpaid, emerald = matches). Single Calculate button + read-only stop-to-stop legs panel after a successful run. Mounted in `TripSheetForm.jsx` directly under the existing Trip Miles card.
+- Persistence (per spec — summary only, no GPS logs): `tm_route_mileage_v1` keyed by `session_id` stores `routeMiles`, `companyPayMiles`, `legMiles`, `waypoints`, `computedAt`, `updatedAt`. No detailed GPS trail unless the user later opts into "route learning."
+- Verified end-to-end: Nominatim geocode (Phoenix, AZ → 33.4484, -112.0741) and OSRM route (Phoenix → Los Angeles = 372.6 miles via I-10) both succeed from the preview environment.
+- Service worker bumped to `trip-monitor-v20`.
+
 ### Service Worker
-Cache version: `trip-monitor-v19`. Bumps every UI architecture change to force PWA refresh.
+Cache version: `trip-monitor-v20`. Bumps every UI architecture change to force PWA refresh.
 
 ## Pending / Backlog (Updated Feb 2026)
 - **P0**: Wire external Trip Monitor folder file I/O — currently writes still go to legacy storage. Files should land in `Trip Monitor/Documents/{Sub}/` based on type.

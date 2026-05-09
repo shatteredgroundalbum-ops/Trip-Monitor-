@@ -12,6 +12,7 @@ import { format, parse } from "date-fns";
 import { api } from "../../lib/api";
 import { toast } from "sonner";
 import useLongPress from "../../lib/useLongPress";
+import MileageCard from "./MileageCard";
 
 const EVENT_LABELS = Object.fromEntries(EVENT_CODES.map((e) => [e.code, e.label]));
 
@@ -211,6 +212,9 @@ export default function TripSheetForm({ session, onChange, mileageMode = "workfl
           />
         )}
       </div>
+
+      {/* Mileage card — Real Route vs Pay vs Difference (internal only). */}
+      <MileageCard session={local} />
 
       {/* Meta card */}
       <div data-testid="trip-meta-card" className="bg-[var(--tm-surface)] border border-[var(--tm-border)] rounded-md p-5 space-y-3 shadow-sm">
