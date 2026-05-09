@@ -5,11 +5,12 @@ import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import {
   Fingerprint, KeyRound, ShieldCheck, IdCard, FileText, Trash2,
-  ChevronRight, Info, Package,
+  ChevronRight, Info, Package, Wrench,
 } from "lucide-react";
 import {
   isFingerprintEnrolled, isFingerprintSupported,
 } from "../lib/local-auth";
+import { DEVELOPMENT_MODE, isPremiumUnlocked } from "../lib/feature-flags";
 import { toast } from "sonner";
 
 /**
@@ -83,9 +84,23 @@ export default function AccountScreen() {
           testId="account-license"
           icon={<Package className="h-4 w-4" />}
           title="License / Subscription"
-          sub="Free · Driver Edition"
-          actionLabel="Upgrade"
-          onClick={() => toast.info("License management coming soon")}
+          sub={DEVELOPMENT_MODE
+            ? "Development mode · all premium features unlocked"
+            : (isPremiumUnlocked() ? "Premium · all features unlocked" : "Free · Driver Edition")}
+          actionLabel={DEVELOPMENT_MODE ? "Dev" : "Upgrade"}
+          onClick={() => toast.info(
+            DEVELOPMENT_MODE
+              ? "Development mode is on — premium gating bypassed."
+              : "License management coming soon"
+          )}
+        />
+        <Row
+          testId="account-role"
+          icon={<Wrench className="h-4 w-4" />}
+          title="Driver Role"
+          sub="Company Driver · Lease Purchase Operator · Owner Operator"
+          actionLabel="Change"
+          onClick={() => navigate("/user-profile")}
         />
 
         <SectionHeader>Data &amp; Storage</SectionHeader>

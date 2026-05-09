@@ -77,7 +77,12 @@ export function AuthProvider({ children }) {
     // wait for the network. Local-device auth is the source of
     // truth; the backend session cookie is best-effort cleanup.
     try { api.post("/auth/logout").catch(() => {}); } catch { /* ignore */ }
-    window.location.href = "/";
+    // Per spec: logout returns to the PIN login screen, NOT the
+    // role-selection screen. Role only appears during first-time
+    // setup. If somehow no PIN was ever set up (extremely rare —
+    // implies device data was wiped between login and logout),
+    // /pin-login itself bounces back to /setup-access-code.
+    window.location.href = "/pin-login";
   };
 
   return (
