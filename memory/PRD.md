@@ -790,3 +790,72 @@ in-cab on mobile to log each stop and export the trip sheet at end of run.
 - P2: Company / Admin onboarding flow (multi-tenant)
 - P2: "Trip recap" shareable PNG card for social sharing
 - P2: Refactor `/app/backend/server.py` into sub-routers (~890 LoC)
+
+
+## CHANGELOG — Feb 2026
+
+### Navigation Architecture (Feb 2026)
+**Status:** Complete. All navigation is now full-screen-based.
+
+- **Branding**: "TripMonitor" → "Trip Monitor" everywhere visible in UI.
+- **Top toolbar**: Bell + Hamburger only on right; brand on left (tappable home).
+- **Bottom nav (5 items)**: Dashboard · New Trip · Studio · Messages · Documents.
+  - Dashboard icon = custom telemetry/instrument-cluster gauge SVG (not home, not grid).
+  - Active state = orange `drop-shadow` glow on icon shape; no circle backgrounds.
+  - Profile/User intentionally NOT in bottom nav.
+- **Hamburger dropdown** anchored under hamburger (no X button, closes by tap-outside / item / re-tap):
+  Account · User Profile · Analytics · Reports · Settings · Support · ─── · Logout.
+- **Logout confirmation dialog** — only allowed popup from menu.
+- **Notifications** = system alerts (storage / autosave / export-complete / backup / app updates). Distinct from Messages.
+
+### New Full-Screen Pages (Feb 2026)
+- `/account` — security/identity/license/legal/reset (NOT driver profile)
+- `/user-profile` — driver identity & work assignment
+- `/settings` — storage location, theme, notifications, autosave, export, offline, backup, behavior
+- `/new-trip` — Create / Resume Draft / Saved Templates / Trip History launcher
+- `/messages` — conversation list + thread view + compose
+- `/documents` — 8 folder cards (BOLs / Scale Tickets / Lumper Receipts / Receipts / Trip Attachments / Photos / Completed Trip Sheets / Exports) + uninstall notice
+- `/notifications` — system alerts
+- `/reports` — trip summaries / mileage / stops / export history
+- `/analytics` — week tiles + 7-day mileage bar trend
+- `/support` — help articles / tutorial / FAQ / contact / replay onboarding
+
+### Shared `AppShell` Component
+Wraps every screen with sticky header (brand · bell · hamburger) + fixed bottom nav. `active` prop drives the orange-glow tab indicator.
+
+### Storage Architecture (Spec, Implementation Pending)
+- App stores only mapping data, settings, indexes, template logic, references.
+- All large user files (BOLs, photos, receipts, PDFs, exports, completed trip sheets) live OUTSIDE app at user-selected `Trip Monitor/` folder.
+- Canonical folder layout shown in Settings:
+  ```
+  Trip Monitor/
+    Documents/{BOLs, Scale Tickets, Lumper Receipts, Receipts, Trip Attachments, Photos}/
+    Templates/  Completed Trip Sheets/  Exports/  Backups/  Mapping Data/
+  ```
+- **Uninstall reassurance notice** present in Settings, Documents header, Account.
+- File pipeline (write/read/preview against external folder) is NOT yet wired — current writes still hit existing storage system.
+
+### Elevation System
+3-level shadow hierarchy enforced:
+- **L0** background (no shadow)
+- **L1** standard cards `shadow-[0_2px_8px_rgba(14,31,71,0.04)]` rounded-xl (metrics, milestones, recent trips)
+- **L2** primary action cards `shadow-[0_8px_24px_rgba(14,31,71,0.08-0.12)]` rounded-xl (Active Trip navy card, Dispatch)
+- **L3** modals `shadow-[0_24px_60px_rgba(14,31,71,0.18)]` rounded-2xl (continue, finish, preview, profile, logout-confirm)
+
+### Service Worker
+Cache version: `trip-monitor-v7`. Bumps every UI architecture change to force PWA refresh.
+
+## Pending / Backlog (Updated Feb 2026)
+- **P0**: Wire external Trip Monitor folder file I/O — currently writes still go to legacy storage. Files should land in `Trip Monitor/Documents/{Sub}/` based on type.
+- **P0**: Replace stubbed ribbon tools across GRID / TEXT / ASSETS / INSPECTOR / CUSTOM TRACE in `StudioRibbon.jsx`.
+- **P1**: Real Messages backend + push (currently demo threads only).
+- **P1**: Real Notifications service (currently mocked from storage warning + demo entries).
+- **P1**: Account screen — wire Reset/Delete confirmation flow + recovery phrase reveal.
+- **P1**: PIN change flow inside Account.
+- **P1**: License/subscription screen — currently stub.
+- **P2**: Replay-onboarding action in Support screen.
+- **P2**: Real charting library for Analytics (replace CSS bars).
+- **P2**: Compose / Attach in Messages.
+- **P2**: Per-folder file viewers in Documents (open BOLs, Scale Tickets, etc.)
+- **P2**: Refactor `Dashboard.jsx` (~600 LoC after rewrite — still acceptable, not urgent).
+
