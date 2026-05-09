@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "../ui/sheet";
-import { Button } from "../ui/button";
 import {
-  UserCog, History, FileText, IdCard, HardDrive, Fingerprint, LogOut, Eye,
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuSeparator,
+} from "../ui/dropdown-menu";
+import {
+  UserCog, History, FileText, IdCard, HardDrive, Fingerprint, LogOut, Eye, Menu,
 } from "lucide-react";
 import {
   enrollFingerprint, disableFingerprint, isFingerprintEnrolled, isFingerprintSupported,
@@ -10,138 +12,92 @@ import {
 import { toast } from "sonner";
 
 /**
- * Slide-in side menu opened by the dashboard hamburger icon.
+ * Compact dropdown menu anchored to the hamburger icon.
  *
- * Per spec: Profile / My Account belongs ONLY here. The bottom nav
- * never duplicates account functionality.
+ * Per spec:
+ *   • NO X button (closed by tap-outside or item-select).
+ *   • Slides DOWN from under the hamburger, not from the side.
+ *   • Tablet-first compact list — not a giant detached side sheet.
+ *   • Profile / My Account lives ONLY here (never in bottom nav).
  *
- * All previously-top-bar icons (history, templates, profile, license,
- * storage, fingerprint, logout) live in this single drawer so the
- * dashboard header stays clean (bell + hamburger only).
+ * The trigger is the hamburger button itself; the dropdown anchors
+ * to it via Radix DropdownMenu so positioning is automatic.
  */
 export default function DashboardMenu({
-  open, onClose,
   hasActiveSession,
   onOpenProfile, onOpenHistory, onOpenTemplates, onOpenLicense, onOpenStorage,
   onOpenPreview, onLogout,
   storageWarning, websiteFeaturesEnabled,
+  triggerTestId = "header-menu",
 }) {
   return (
-    <Sheet open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <SheetContent
-        side="right"
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          data-testid={triggerTestId}
+          className="h-10 w-10 rounded-md inline-flex items-center justify-center text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tm-blue)]"
+          aria-label="Menu"
+        >
+          <Menu className="h-5 w-5" strokeWidth={1.6} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
         data-testid="dashboard-menu"
-        className="w-[88vw] max-w-sm bg-white text-[var(--tm-navy)] border-l border-[var(--tm-border)] p-0"
+        align="end"
+        sideOffset={8}
+        className="w-60 bg-white text-[var(--tm-navy)] border border-[var(--tm-border)] rounded-md p-1.5 shadow-[0_24px_60px_rgba(14,31,71,0.18)]"
       >
-        <SheetHeader className="px-5 pt-5 pb-3 border-b border-[var(--tm-border)] text-left">
-          <SheetTitle className="text-[var(--tm-navy)] text-lg font-black tracking-tight">Menu</SheetTitle>
-          <SheetDescription className="text-[var(--tm-text-soft)] text-xs">
-            Account, templates, storage and device settings.
-          </SheetDescription>
-        </SheetHeader>
-
-        <div className="p-3 flex flex-col gap-1.5">
-          <MenuRow
-            testId="menu-profile"
-            icon={<UserCog className="h-4 w-4" />}
-            label="My Account"
-            sub="Profile, role &amp; preferences"
-            onClick={() => { onClose(); onOpenProfile(); }}
-          />
-          <MenuRow
-            testId="menu-templates"
-            icon={<FileText className="h-4 w-4" />}
-            label="Trip Sheet Templates"
-            sub="Upload, build &amp; map templates"
-            onClick={() => { onClose(); onOpenTemplates(); }}
-          />
-          <MenuRow
-            testId="menu-history"
-            icon={<History className="h-4 w-4" />}
-            label="Trip History"
-            sub="All finished trips &amp; exports"
-            onClick={() => { onClose(); onOpenHistory(); }}
-          />
-          {hasActiveSession && (
-            <MenuRow
-              testId="menu-preview"
-              icon={<Eye className="h-4 w-4" />}
-              label="Preview Active Trip Sheet"
-              sub="See it as it will export"
-              onClick={() => { onClose(); onOpenPreview(); }}
-            />
-          )}
-          <MenuRow
-            testId="menu-storage"
-            icon={<HardDrive className="h-4 w-4" />}
-            label="Storage Location"
-            sub={storageWarning ? "⚠ Storage past warning threshold" : "Internal, folder, or SD card"}
-            onClick={() => { onClose(); onOpenStorage(); }}
-            warn={storageWarning}
-          />
-          {websiteFeaturesEnabled && (
-            <MenuRow
-              testId="menu-license"
-              icon={<IdCard className="h-4 w-4" />}
-              label="Website License &amp; Premium"
-              sub="License ID and premium features"
-              onClick={() => { onClose(); onOpenLicense(); }}
-            />
-          )}
-          <MenuFingerprintRow />
-          <div className="my-2 border-t border-[var(--tm-border)]" />
-          <Button
-            data-testid="menu-logout"
-            variant="outline"
-            onClick={() => { onClose(); onLogout(); }}
-            className="h-11 w-full justify-start gap-2 bg-white border-[var(--tm-border)] text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] rounded-md"
-          >
-            <LogOut className="h-4 w-4" /> Sign out
-          </Button>
-        </div>
-      </SheetContent>
-    </Sheet>
+        <Row testId="menu-profile" icon={<UserCog className="h-4 w-4" />} label="My Account" onSelect={onOpenProfile} />
+        <Row testId="menu-templates" icon={<FileText className="h-4 w-4" />} label="Templates" onSelect={onOpenTemplates} />
+        <Row testId="menu-history" icon={<History className="h-4 w-4" />} label="History" onSelect={onOpenHistory} />
+        {hasActiveSession && (
+          <Row testId="menu-preview" icon={<Eye className="h-4 w-4" />} label="Preview Trip Sheet" onSelect={onOpenPreview} />
+        )}
+        <Row
+          testId="menu-storage"
+          icon={<HardDrive className="h-4 w-4" />}
+          label="Storage"
+          onSelect={onOpenStorage}
+          warn={storageWarning}
+        />
+        {websiteFeaturesEnabled && (
+          <Row testId="menu-license" icon={<IdCard className="h-4 w-4" />} label="License & Premium" onSelect={onOpenLicense} />
+        )}
+        <FingerprintRow />
+        <DropdownMenuSeparator className="my-1.5 bg-[var(--tm-border)]" />
+        <Row
+          testId="menu-logout"
+          icon={<LogOut className="h-4 w-4" />}
+          label="Sign out"
+          onSelect={onLogout}
+          tone="danger"
+        />
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
-function MenuRow({ testId, icon, label, sub, onClick, warn = false }) {
+function Row({ testId, icon, label, onSelect, warn = false, tone }) {
+  const toneClass =
+    tone === "danger"
+      ? "text-[var(--tm-orange-deep)] hover:bg-[var(--tm-orange)]/10 focus:bg-[var(--tm-orange)]/10"
+      : warn
+        ? "text-[var(--tm-orange-deep)] hover:bg-[var(--tm-orange)]/10 focus:bg-[var(--tm-orange)]/10"
+        : "text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] focus:bg-[var(--tm-surface)]";
   return (
-    <button
-      type="button"
+    <DropdownMenuItem
       data-testid={testId}
-      onClick={onClick}
-      className={[
-        "w-full text-left flex items-center gap-3 px-3 py-3 rounded-md border transition-colors",
-        warn
-          ? "bg-[var(--tm-orange)]/10 border-[var(--tm-orange)] hover:bg-[var(--tm-orange)]/15"
-          : "bg-white border-[var(--tm-border)] hover:bg-[var(--tm-surface)]",
-      ].join(" ")}
+      onSelect={(e) => { e.preventDefault?.(); onSelect && onSelect(); }}
+      className={`text-sm font-semibold gap-2.5 px-2.5 py-2 rounded cursor-pointer ${toneClass}`}
     >
-      <span
-        className={[
-          "h-9 w-9 rounded-md flex items-center justify-center flex-shrink-0",
-          warn
-            ? "bg-[var(--tm-orange)] text-white"
-            : "bg-[var(--tm-surface-2)] text-[var(--tm-navy)]",
-        ].join(" ")}
-      >
-        {icon}
-      </span>
-      <span className="flex-1 min-w-0">
-        <span
-          className="block text-sm font-bold text-[var(--tm-navy)] truncate"
-          dangerouslySetInnerHTML={{ __html: label }}
-        />
-        <span
-          className="block text-[11px] text-[var(--tm-text-soft)] truncate"
-          dangerouslySetInnerHTML={{ __html: sub }}
-        />
-      </span>
-    </button>
+      <span className="text-[var(--tm-navy)] opacity-90">{icon}</span>
+      <span>{label}</span>
+    </DropdownMenuItem>
   );
 }
 
-function MenuFingerprintRow() {
+function FingerprintRow() {
   const [supported, setSupported] = useState(false);
   const [enrolled, setEnrolled] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -152,7 +108,8 @@ function MenuFingerprintRow() {
     })();
   }, []);
   if (!supported) return null;
-  const onClick = async () => {
+  const onSelect = async () => {
+    if (busy) return;
     setBusy(true);
     try {
       if (enrolled) {
@@ -169,27 +126,18 @@ function MenuFingerprintRow() {
     } finally { setBusy(false); }
   };
   return (
-    <button
-      type="button"
+    <DropdownMenuItem
       data-testid="menu-fingerprint"
       disabled={busy}
-      onClick={onClick}
-      className="w-full text-left flex items-center gap-3 px-3 py-3 rounded-md border bg-white border-[var(--tm-border)] hover:bg-[var(--tm-surface)] transition-colors disabled:opacity-60"
+      onSelect={(e) => { e.preventDefault?.(); onSelect(); }}
+      className={`text-sm font-semibold gap-2.5 px-2.5 py-2 rounded cursor-pointer ${
+        enrolled
+          ? "text-[var(--tm-blue)] hover:bg-[var(--tm-blue)]/10 focus:bg-[var(--tm-blue)]/10"
+          : "text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] focus:bg-[var(--tm-surface)]"
+      }`}
     >
-      <span
-        className={[
-          "h-9 w-9 rounded-md flex items-center justify-center flex-shrink-0",
-          enrolled ? "bg-[var(--tm-blue)] text-white" : "bg-[var(--tm-surface-2)] text-[var(--tm-navy)]",
-        ].join(" ")}
-      >
-        <Fingerprint className="h-4 w-4" />
-      </span>
-      <span className="flex-1 min-w-0">
-        <span className="block text-sm font-bold text-[var(--tm-navy)]">Fingerprint Unlock</span>
-        <span className="block text-[11px] text-[var(--tm-text-soft)]">
-          {enrolled ? "Enabled — tap to disable" : "Tap to enable (fingerprint only)"}
-        </span>
-      </span>
-    </button>
+      <Fingerprint className="h-4 w-4" />
+      <span>{enrolled ? "Fingerprint: On" : "Fingerprint Unlock"}</span>
+    </DropdownMenuItem>
   );
 }

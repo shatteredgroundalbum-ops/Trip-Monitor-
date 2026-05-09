@@ -31,7 +31,7 @@ export default function BottomNav({ active, onSelect, badges = {} }) {
   return (
     <nav
       data-testid="bottom-nav"
-      className="fixed left-0 right-0 bottom-0 z-40 bg-white border-t border-[var(--tm-border)]"
+      className="fixed left-0 right-0 bottom-0 z-40 bg-white border-t border-[var(--tm-border)] shadow-[0_-4px_14px_rgba(14,31,71,0.06)]"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
     >
       <div className="max-w-5xl mx-auto px-2 flex items-stretch justify-between h-16">

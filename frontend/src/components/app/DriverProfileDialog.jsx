@@ -114,7 +114,7 @@ export default function DriverProfileDialog({ open, initial, role, onSaved }) {
     <Dialog open={open}>
       <DialogContent
         data-testid="profile-dialog"
-        className="max-w-lg bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md max-h-[90vh] overflow-y-auto"
+        className="max-w-lg bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-2xl shadow-[0_24px_60px_rgba(14,31,71,0.18)] max-h-[90vh] overflow-y-auto"
         hideClose={!isEdit}
       >
         <DialogHeader>

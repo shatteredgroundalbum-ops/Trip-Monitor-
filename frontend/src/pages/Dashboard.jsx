@@ -15,7 +15,7 @@ import {
 } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
 import {
-  CheckCircle2, Save, Eye, ChevronRight, Bell, Menu,
+  CheckCircle2, Save, Eye, ChevronRight, Bell,
   Gauge, Route, ListChecks, Truck, AlertTriangle, FileText, Clock,
   CalendarDays, Trophy, MessageSquare, Plus,
 } from "lucide-react";
@@ -63,7 +63,6 @@ export default function Dashboard() {
   const [showContinue, setShowContinue] = useState(false);
   const [showFinish, setShowFinish] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
   const [showDispatch, setShowDispatch] = useState(false);
   const [showSheet, setShowSheet] = useState(false); // active trip-sheet form modal
 
@@ -201,15 +200,19 @@ export default function Dashboard() {
                 </span>
               )}
             </button>
-            <button
-              type="button"
-              data-testid="header-menu"
-              onClick={() => setShowMenu(true)}
-              className="h-10 w-10 rounded-md inline-flex items-center justify-center text-[var(--tm-navy)] hover:bg-[var(--tm-surface)] transition-colors"
-              aria-label="Menu"
-            >
-              <Menu className="h-5 w-5" strokeWidth={1.6} />
-            </button>
+            <DashboardMenu
+              triggerTestId="header-menu"
+              hasActiveSession={!!session}
+              onOpenProfile={() => setShowProfile(true)}
+              onOpenHistory={() => navigate("/history")}
+              onOpenTemplates={() => navigate("/templates")}
+              onOpenLicense={() => setShowLicense(true)}
+              onOpenStorage={() => setShowStorage(true)}
+              onOpenPreview={() => setShowPreview(true)}
+              onLogout={logout}
+              storageWarning={storageWarn}
+              websiteFeaturesEnabled={WEBSITE_FEATURES_ENABLED}
+            />
           </div>
         </div>
       </header>
@@ -220,7 +223,7 @@ export default function Dashboard() {
           <h1 className="text-3xl md:text-4xl font-black tracking-tight text-[var(--tm-navy)]">
             Hey, {driverFirstName}! <span aria-hidden="true">👋</span>
           </h1>
-          <p className="text-sm text-[var(--tm-text-soft)] mt-1">
+          <p className="text-sm text-[var(--tm-text-soft)] font-semibold mt-1">
             Ready to roll? Let&apos;s get your day moving.
           </p>
         </section>
@@ -314,11 +317,11 @@ export default function Dashboard() {
           </div>
 
           {recentTrips.length === 0 ? (
-            <div className="bg-white border border-[var(--tm-border)] rounded-md p-5 text-sm text-[var(--tm-text-soft)] text-center">
+            <div className="text-[12px] text-[var(--tm-text-soft)] font-semibold px-1 py-1.5">
               No finished trips yet — finish one and it&apos;ll show up here.
             </div>
           ) : (
-            <div className="bg-white border border-[var(--tm-border)] rounded-md divide-y divide-[var(--tm-border)] overflow-hidden">
+            <div className="bg-white border border-[var(--tm-border)] rounded-xl shadow-[0_2px_8px_rgba(14,31,71,0.04)] divide-y divide-[var(--tm-border)] overflow-hidden">
               {recentTrips.map((t) => {
                 const finished = !!t.finished_at;
                 return (
@@ -338,7 +341,7 @@ export default function Dashboard() {
                       <div className="text-sm font-bold text-[var(--tm-navy)] truncate">
                         Order #{t.order_number}
                       </div>
-                      <div className="text-[11px] text-[var(--tm-text-soft)] mt-0.5">
+                      <div className="text-[11px] text-[var(--tm-navy)]/65 font-semibold mt-0.5">
                         {formatDate(t.finished_at || t.created_at)} · {t.row_count ?? "—"} stops
                       </div>
                     </div>
@@ -361,21 +364,7 @@ export default function Dashboard() {
         badges={{ messages: dispatchUpdates.length || undefined }}
       />
 
-      {/* HAMBURGER DRAWER */}
-      <DashboardMenu
-        open={showMenu}
-        onClose={() => setShowMenu(false)}
-        hasActiveSession={!!session}
-        onOpenProfile={() => setShowProfile(true)}
-        onOpenHistory={() => navigate("/history")}
-        onOpenTemplates={() => navigate("/templates")}
-        onOpenLicense={() => setShowLicense(true)}
-        onOpenStorage={() => setShowStorage(true)}
-        onOpenPreview={() => setShowPreview(true)}
-        onLogout={logout}
-        storageWarning={storageWarn}
-        websiteFeaturesEnabled={WEBSITE_FEATURES_ENABLED}
-      />
+      {/* HAMBURGER DROPDOWN is rendered inline in the header (anchored to its own trigger). */}
 
       {/* DIALOGS */}
       <DriverProfileDialog
@@ -408,7 +397,7 @@ export default function Dashboard() {
       <Dialog open={showContinue}>
         <DialogContent
           data-testid="continue-dialog"
-          className="max-w-sm bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md"
+          className="max-w-sm bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-2xl shadow-[0_24px_60px_rgba(14,31,71,0.18)]"
           hideClose
         >
           <DialogHeader>
@@ -445,7 +434,7 @@ export default function Dashboard() {
         <Dialog open={showSheet} onOpenChange={setShowSheet}>
           <DialogContent
             data-testid="trip-sheet-dialog"
-            className="max-w-5xl w-[96vw] bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md overflow-hidden p-0 max-h-[92vh] flex flex-col"
+            className="max-w-5xl w-[96vw] bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-2xl shadow-[0_24px_60px_rgba(14,31,71,0.18)] overflow-hidden p-0 max-h-[92vh] flex flex-col"
           >
             <DialogHeader className="px-5 pt-5 pb-3 border-b border-[var(--tm-border)] text-left">
               <DialogTitle className="text-[var(--tm-navy)]">
@@ -496,7 +485,7 @@ export default function Dashboard() {
       {/* Paper preview */}
       {session && (
         <Dialog open={showPreview} onOpenChange={setShowPreview}>
-          <DialogContent className="max-w-5xl bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md overflow-auto max-h-[90vh]">
+          <DialogContent className="max-w-5xl bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-2xl shadow-[0_24px_60px_rgba(14,31,71,0.18)] overflow-auto max-h-[90vh]">
             <DialogHeader>
               <DialogTitle className="text-[var(--tm-navy)]">Paper Preview</DialogTitle>
               <DialogDescription className="text-[var(--tm-text-soft)]">
@@ -544,7 +533,7 @@ function ActiveTripCard({ session, onOpen, onStartNew }) {
         type="button"
         data-testid="active-trip-card-empty"
         onClick={onStartNew}
-        className="text-left bg-[var(--tm-navy)] text-white rounded-lg p-5 shadow-[0_12px_36px_-16px_rgba(14,31,71,0.6)] flex items-center gap-4 hover:brightness-110 transition"
+        className="text-left bg-[var(--tm-navy)] text-white rounded-xl p-5 shadow-[0_8px_24px_rgba(14,31,71,0.12)] flex items-center gap-4 hover:brightness-110 transition"
       >
         <span className="h-11 w-11 rounded-md bg-[var(--tm-blue)] flex items-center justify-center flex-shrink-0">
           <Plus className="h-5 w-5 text-white" strokeWidth={2} />
@@ -568,7 +557,7 @@ function ActiveTripCard({ session, onOpen, onStartNew }) {
       type="button"
       data-testid="active-trip-card"
       onClick={onOpen}
-      className="text-left bg-[var(--tm-navy)] text-white rounded-lg p-5 shadow-[0_12px_36px_-16px_rgba(14,31,71,0.6)] flex flex-col gap-3 hover:brightness-110 transition"
+      className="text-left bg-[var(--tm-navy)] text-white rounded-xl p-5 shadow-[0_8px_24px_rgba(14,31,71,0.12)] flex flex-col gap-3 hover:brightness-110 transition"
     >
       <div className="flex items-center gap-3">
         <span className="h-11 w-11 rounded-md bg-[var(--tm-blue)] flex items-center justify-center flex-shrink-0">
@@ -603,7 +592,7 @@ function DispatchCard({ updates, onViewAll }) {
   return (
     <div
       data-testid="dispatch-card"
-      className="bg-white border border-[var(--tm-border)] rounded-lg p-5 shadow-sm flex flex-col"
+      className="bg-white border border-[var(--tm-border)] rounded-xl p-5 shadow-[0_8px_24px_rgba(14,31,71,0.08)] flex flex-col"
     >
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-base md:text-lg font-black tracking-tight text-[var(--tm-navy)]">Dispatch Updates</h2>
@@ -636,8 +625,8 @@ function DispatchCard({ updates, onViewAll }) {
               </span>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-bold text-[var(--tm-navy)] truncate">{u.title}</div>
-                <div className="text-[11px] text-[var(--tm-text-soft)]">{u.body}</div>
-                <div className="text-[10px] text-[var(--tm-text-muted)] mt-0.5">{u.when}</div>
+                <div className="text-[12px] text-[var(--tm-navy)]/70 font-semibold leading-snug">{u.body}</div>
+                <div className="text-[10px] text-[var(--tm-text-muted)] font-bold mt-0.5 uppercase tracking-wider">{u.when}</div>
               </div>
             </div>
           ))
@@ -658,7 +647,7 @@ function DispatchCard({ updates, onViewAll }) {
 function DispatchUpdatesDialog({ open, onClose, updates }) {
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-md bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-md">
+      <DialogContent className="max-w-md bg-white border-[var(--tm-border)] text-[var(--tm-navy)] rounded-2xl shadow-[0_24px_60px_rgba(14,31,71,0.18)]">
         <DialogHeader>
           <DialogTitle className="text-[var(--tm-navy)] inline-flex items-center gap-2">
             <MessageSquare className="h-4 w-4" /> Dispatch Updates
@@ -703,14 +692,14 @@ function MetricCard({ testId, label, value, sub, icon }) {
   return (
     <div
       data-testid={testId}
-      className="bg-white border border-[var(--tm-border)] rounded-lg p-4 shadow-sm flex flex-col gap-1"
+      className="bg-white border border-[var(--tm-border)] rounded-xl p-4 shadow-[0_2px_8px_rgba(14,31,71,0.04)] flex flex-col gap-1"
     >
       <span className="text-[var(--tm-navy)]" aria-hidden="true">{icon}</span>
-      <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--tm-text-muted)] font-bold mt-1.5">{label}</div>
+      <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--tm-navy)]/70 font-bold mt-1.5">{label}</div>
       <div className="text-2xl md:text-3xl font-black tracking-tight text-[var(--tm-navy)] truncate" title={String(value)}>
         {value}
       </div>
-      <div className="text-[11px] text-[var(--tm-text-soft)] truncate">{sub}</div>
+      <div className="text-[11px] text-[var(--tm-text-soft)] font-semibold truncate">{sub}</div>
     </div>
   );
 }
@@ -722,24 +711,24 @@ function UpNextCard({ upNext, onCreate }) {
       type="button"
       data-testid="up-next-card"
       onClick={onCreate}
-      className="w-full text-left bg-white border border-[var(--tm-border)] rounded-lg p-4 flex items-center gap-3 hover:bg-[var(--tm-surface)] transition-colors"
+      className="w-full text-left bg-white border border-[var(--tm-border)] rounded-xl p-4 shadow-[0_2px_8px_rgba(14,31,71,0.04)] flex items-center gap-3 hover:bg-[var(--tm-surface)] transition-colors"
     >
       <span className="h-10 w-10 rounded-md border border-[var(--tm-border)] flex items-center justify-center text-[var(--tm-navy)] flex-shrink-0">
         <CalendarDays className="h-5 w-5" strokeWidth={1.5} />
       </span>
       <div className="flex-1 min-w-0">
-        <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--tm-text-muted)] font-bold">Up Next</div>
+        <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--tm-navy)]/70 font-bold">Up Next</div>
         {upNext ? (
           <>
             <div className="text-base font-black tracking-tight text-[var(--tm-navy)]">Order #{upNext.order_number}</div>
-            <div className="text-[11px] text-[var(--tm-text-soft)] mt-0.5">
+            <div className="text-[12px] text-[var(--tm-navy)]/70 font-semibold mt-0.5">
               {formatShortDate(upNext.date)} · {upNext.stops} stops · {fmtMiles(upNext.miles)} mi
             </div>
           </>
         ) : (
           <>
             <div className="text-base font-black tracking-tight text-[var(--tm-navy)]">Plan your next trip</div>
-            <div className="text-[11px] text-[var(--tm-text-soft)] mt-0.5">
+            <div className="text-[12px] text-[var(--tm-navy)]/70 font-semibold mt-0.5">
               Tap to schedule the next order — pre-fills mileage and stops.
             </div>
           </>
@@ -775,7 +764,7 @@ function MilestonesPanel({ achievements, stats, profile }) {
   ].slice(0, 3);
 
   return (
-    <div className="bg-white border border-[var(--tm-border)] rounded-lg p-4">
+    <div className="bg-white border border-[var(--tm-border)] rounded-xl p-4 shadow-[0_2px_8px_rgba(14,31,71,0.04)]">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-[var(--tm-navy)]">Milestones</h3>
         <button
