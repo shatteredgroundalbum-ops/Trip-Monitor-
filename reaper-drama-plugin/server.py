@@ -10,29 +10,34 @@ REAPER Audio Drama Director - MCP server.
 
 Gives Claude control over a running REAPER instance via reapy so it can
 scaffold audio-drama sessions, place dialogue/SFX stems at exact times,
-set volume and fades, and write MIDI drone beds and tension pulses.
+set volume and fades, and write musical underscore: drones, tension
+pulses, chord progressions, themes, stingers and dialogue ducking.
 
 Important: this server talks to Claude over stdio, so nothing in here may
 print to stdout. Errors are returned as strings instead.
 """
 
-import os
 import functools
-import re
+import os
+import random
+import sys
 from contextlib import contextmanager
 
-from mcp.server.fastmcp import FastMCP
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from mcp.server.fastmcp import FastMCP  # noqa: E402
+
+import music  # noqa: E402
+from music import parse_pitch  # noqa: E402
 
 mcp = FastMCP("REAPER Audio Drama Director")
 
 SCORE_TRACK = "SCORE - Synth Underscore"
 PULSE_TRACK = "SCORE - Tension Pulse"
-
-NOTE_OFFSETS = {
-    "C": 0, "C#": 1, "Db": 1, "D": 2, "D#": 3, "Eb": 3, "E": 4,
-    "F": 5, "F#": 6, "Gb": 6, "G": 7, "G#": 8, "Ab": 8, "A": 9,
-    "A#": 10, "Bb": 10, "B": 11,
-}
+HARMONY_TRACK = "SCORE - Harmony Pads"
+THEME_TRACK = "SCORE - Theme"
+STINGER_TRACK = "SCORE - Stingers"
+DIALOGUE_PREFIX = "VO - "
 
 
 # --------------------------------------------------------------------------
@@ -110,23 +115,95 @@ def get_or_create_track(RPR, project, name: str):
     return track, True
 
 
-def parse_pitch(pitch_root: str) -> int:
-    """Convert 'C2', 'F#1', 'Bb-1' etc. to a MIDI note number (C4 = 60)."""
-    match = re.match(r"^([A-Ga-g])([b#]?)(-?\d+)$", pitch_root.strip())
-    if not match:
-        raise ValueError(
-            f"Unrecognised pitch '{pitch_root}'. Use note+octave, e.g. 'C2', 'F#1', 'Bb2'."
-        )
-    letter, accidental, octave = match.groups()
-    name = letter.upper() + accidental
-    midi = 12 * (int(octave) + 1) + NOTE_OFFSETS[name]
-    if not 0 <= midi <= 127:
-        raise ValueError(f"Pitch '{pitch_root}' is outside the MIDI range.")
-    return midi
-
-
 def db_to_linear(db: float) -> float:
     return 10 ** (db / 20.0)
+
+
+def is_null(ptr) -> bool:
+    """reapy returns pointers as strings like '(PCM_source*)0x0000...'."""
+    if not ptr:
+        return True
+    text = str(ptr)
+    if "0x" in text:
+        try:
+            return int(text.split("0x")[-1].rstrip(")"), 16) == 0
+        except ValueError:
+            return False
+    return False
+
+
+def get_score_track(RPR, project, name: str, pad: bool = False):
+    """Get or create a score track; new ones get ReaSynth shaped for the role."""
+    track, new = get_or_create_track(RPR, project, name)
+    if new:
+        track.add_fx("ReaSynth")
+        shape_reasynth(RPR, track, pad=pad)
+    return track
+
+
+def shape_reasynth(RPR, track, pad: bool) -> None:
+    """Give ReaSynth a slow attack/long release for pads, snappy for hits."""
+    try:
+        n = RPR.TrackFX_GetNumParams(track.id, 0)
+        settings = {"attack": 0.35, "release": 0.6} if pad else {"attack": 0.0, "release": 0.25}
+        for i in range(int(n)):
+            res = RPR.TrackFX_GetParamName(track.id, 0, i, "", 64)
+            pname = str(res[-2] if isinstance(res, (tuple, list)) else res).lower()
+            for key, val in settings.items():
+                if key in pname:
+                    RPR.TrackFX_SetParamNormalized(track.id, 0, i, val)
+    except Exception:
+        pass  # cosmetic only; never fail a cue because of synth tweaks
+
+
+def project_bpm(RPR, bpm):
+    if bpm and bpm > 0:
+        return float(bpm)
+    res = RPR.Master_GetTempo()
+    return float(res[0] if isinstance(res, (tuple, list)) else res) or 120.0
+
+
+def get_volume_envelope(RPR, track):
+    """Return the track's volume envelope, creating (showing) it if needed."""
+    env = RPR.GetTrackEnvelopeByName(track.id, "Volume")
+    if is_null(env):
+        RPR.SetOnlyTrackSelected(track.id)
+        RPR.Main_OnCommand(40406, 0)  # Track: Toggle track volume envelope visible
+        env = RPR.GetTrackEnvelopeByName(track.id, "Volume")
+    if is_null(env):
+        raise RuntimeError(f"Could not create a volume envelope on '{track.name}'.")
+    return env
+
+
+def env_value(RPR, env, db: float) -> float:
+    mode = RPR.GetEnvelopeScalingMode(env)
+    if isinstance(mode, (tuple, list)):
+        mode = mode[0]
+    val = RPR.ScaleToEnvelopeMode(int(mode), db_to_linear(db))
+    return float(val[0] if isinstance(val, (tuple, list)) else val)
+
+
+def write_envelope(RPR, env, points, clear_range=None) -> None:
+    """points: list of (time, db). Linear shape between points."""
+    if clear_range:
+        RPR.DeleteEnvelopePointRange(env, clear_range[0], clear_range[1])
+    for t, db in points:
+        RPR.InsertEnvelopePoint(env, max(0.0, t), env_value(RPR, env, db), 0, 0.0, False, True)
+    RPR.Envelope_SortPoints(env)
+
+
+def dialogue_intervals(project, track_names=None):
+    """(start, end) of every item on dialogue tracks (default: 'VO - ' tracks)."""
+    wanted = [n.strip().lower() for n in track_names] if track_names else None
+    spans = []
+    for track in project.tracks:
+        name = track.name.strip()
+        is_vo = name.lower() in wanted if wanted else name.startswith(DIALOGUE_PREFIX)
+        if not is_vo:
+            continue
+        for item in track.items:
+            spans.append((item.position, item.position + item.length))
+    return spans
 
 
 # --------------------------------------------------------------------------
@@ -161,6 +238,7 @@ def init_drama_session(scene_title: str, characters: list[str]) -> str:
             track, new = get_or_create_track(RPR, project, name)
             if new:
                 track.add_fx("ReaSynth")
+                shape_reasynth(RPR, track, pad=(name == SCORE_TRACK))
                 created.append(name)
 
         project.add_marker(0.0, f"START: {scene_title}")
@@ -198,7 +276,7 @@ def insert_audio_stem(
         track, _ = get_or_create_track(RPR, project, track_name)
 
         source = RPR.PCM_Source_CreateFromFile(file_path)
-        if not source:
+        if is_null(source):
             return f"Error: REAPER could not open '{file_path}' as audio."
         length = RPR.GetMediaSourceLength(source, False)
         if isinstance(length, (tuple, list)):  # reapy may return out-params too
@@ -243,11 +321,13 @@ def set_track_volume(track_name: str, volume_db: float, pan: float = 0.0) -> str
     return f"'{track_name}' set to {volume_db:+.1f} dB, pan {pan:+.2f}."
 
 
-def _add_midi_notes(take, notes, duration_seconds: float) -> None:
+def _add_midi_notes(take, notes, duration_seconds: float, item_start: float) -> None:
+    """notes: (start, end, pitch, velocity) relative to the item start.
+    reapy's add_note takes *project* time in seconds, so offset by item_start."""
     for start, end, pitch, velocity in notes:
-        if 0 <= pitch <= 127:
+        if 0 <= pitch <= 127 and start < duration_seconds:
             take.add_note(
-                start, min(end, duration_seconds), pitch,
+                item_start + start, item_start + min(end, duration_seconds), pitch,
                 velocity=max(1, min(127, int(velocity))),
                 unit="seconds", sort=False,
             )
@@ -283,12 +363,9 @@ def generate_synth_drone(
         notes.append((0.0, duration_seconds, root + 13, velocity * 0.6))
 
     with reaper_session(f"Drone {pitch_root}") as (_, RPR, project):
-        track, new = get_or_create_track(RPR, project, SCORE_TRACK)
-        if new:
-            track.add_fx("ReaSynth")
+        track = get_score_track(RPR, project, SCORE_TRACK, pad=True)
         item = track.add_midi_item(start_seconds, start_seconds + duration_seconds)
-        take = item.active_take
-        _add_midi_notes(take, notes, duration_seconds)
+        _add_midi_notes(item.active_take, notes, duration_seconds, start_seconds)
         # Soft swell in/out so the pad doesn't click.
         fade = min(2.0, duration_seconds / 4.0)
         RPR.SetMediaItemInfo_Value(item.id, "D_FADEINLEN", fade)
@@ -335,11 +412,9 @@ def generate_tension_pulse(
         t += beat
 
     with reaper_session(f"Tension pulse {pitch_root}") as (_, RPR, project):
-        track, new = get_or_create_track(RPR, project, PULSE_TRACK)
-        if new:
-            track.add_fx("ReaSynth")
+        track = get_score_track(RPR, project, PULSE_TRACK, pad=False)
         item = track.add_midi_item(start_seconds, start_seconds + duration_seconds)
-        _add_midi_notes(item.active_take, notes, duration_seconds)
+        _add_midi_notes(item.active_take, notes, duration_seconds, start_seconds)
 
     return (
         f"Created {duration_seconds:.2f}s tension pulse on {pitch_root} (MIDI {root}) "
@@ -382,6 +457,351 @@ def list_session() -> str:
             for pos, name in sorted(markers):
                 lines.append(f"    {pos:8.2f}s  {name}")
     return "\n".join(lines) if lines else "Project is empty."
+
+
+# --------------------------------------------------------------------------
+# Musical underscoring tools
+# --------------------------------------------------------------------------
+
+def _velocity(intensity: int) -> int:
+    return min(127, 35 + max(1, min(5, int(intensity))) * 16)
+
+
+def _humanize(rng, vel: float, amount: int = 5) -> int:
+    return max(1, min(127, int(vel + rng.randint(-amount, amount))))
+
+
+@mcp.tool()
+@tool_errors
+def analyze_dialogue_gaps(min_gap_seconds: float = 1.0, track_names: list[str] | None = None) -> str:
+    """
+    Map where dialogue sits in the recording so music can be placed around it.
+    Reads every item on dialogue tracks (default: tracks named 'VO - ...', or
+    pass track_names, e.g. ["Narration"] for a single recorded voice track).
+    Returns merged speech spans and the gaps of at least min_gap_seconds -
+    the windows where underscore can swell, a theme can state itself, or a
+    stinger can land without fighting a line.
+    """
+    with reaper_session("Analyze dialogue") as (_, RPR, project):
+        spans = music.merge_intervals(dialogue_intervals(project, track_names), gap=0.25)
+        project_end = float(project.length)
+    if not spans:
+        return ("No dialogue items found. Insert dialogue first, or pass track_names "
+                "for the track(s) holding the recording.")
+
+    lines = [f"Dialogue spans ({len(spans)}):"]
+    for s, e in spans:
+        lines.append(f"    {s:8.2f}s - {e:8.2f}s  ({e - s:.2f}s speech)")
+    gaps = []
+    if spans[0][0] >= min_gap_seconds:
+        gaps.append((0.0, spans[0][0]))
+    for (_, e1), (s2, _) in zip(spans, spans[1:]):
+        if s2 - e1 >= min_gap_seconds:
+            gaps.append((e1, s2))
+    if project_end - spans[-1][1] >= min_gap_seconds:
+        gaps.append((spans[-1][1], project_end))
+    lines.append(f"Music windows (gaps >= {min_gap_seconds:.2f}s): {len(gaps)}")
+    for s, e in gaps:
+        lines.append(f"    {s:8.2f}s - {e:8.2f}s  ({e - s:.2f}s)")
+    speech = sum(e - s for s, e in spans)
+    lines.append(f"Dialogue runs {spans[0][0]:.2f}s to {spans[-1][1]:.2f}s; {speech:.2f}s of speech in total.")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+@tool_errors
+def set_project_tempo(bpm: float) -> str:
+    """Set the project tempo. Musical tools use it when their bpm is omitted."""
+    if not 20 <= bpm <= 300:
+        return "Error: bpm must be between 20 and 300."
+    with reaper_session(f"Tempo {bpm}") as (_, RPR, project):
+        RPR.SetCurrentBPM(project.id, float(bpm), True)
+    return f"Project tempo set to {bpm:g} BPM."
+
+
+@mcp.tool()
+@tool_errors
+def generate_chord_progression(
+    key: str,
+    mode: str,
+    progression: list[str],
+    start_seconds: float,
+    bars_per_chord: float = 1.0,
+    bpm: float | None = None,
+    beats_per_bar: int = 4,
+    style: str = "sustain",
+    intensity: int = 2,
+    repeat: int = 1,
+    track_name: str = HARMONY_TRACK,
+) -> str:
+    """
+    Write a voice-led chord progression for underscore (pads, pulses or arps).
+    key: tonic such as 'D', 'F#', 'Bb'. mode: minor, major, dorian, phrygian,
+    lydian, mixolydian, locrian, harmonic_minor, melodic_minor.
+    progression: roman numerals relative to the mode, e.g. ["i", "VI", "III", "VII"],
+      ["i", "bII", "i"], ["I", "V", "vi", "IV"], ["i", "iv", "V7"]. Suffixes:
+      7, maj7, dim, o7, +, sus2, sus4, add9.
+    bars_per_chord: length of each chord in bars (fractions allowed).
+    bpm: omit to use the project tempo.
+    style: 'sustain' (held pads), 'pulse' (repeated 8ths over held bass) or
+      'arpeggio' (rolling 8ths over held bass).
+    intensity: 1 (barely there) .. 5 (full).
+    repeat: play the progression this many times.
+    """
+    if not progression:
+        return "Error: progression is empty."
+    style = style.strip().lower()
+    if style not in ("sustain", "pulse", "arpeggio"):
+        return "Error: style must be 'sustain', 'pulse' or 'arpeggio'."
+    key_pc, scale = music.parse_key(key), music.get_scale(mode)
+    chords = [music.parse_chord(c, key_pc, scale) for c in progression] * max(1, int(repeat))
+    voicings = music.voice_progression(chords)
+    rng = random.Random(1234)
+
+    with reaper_session(f"Chords {key} {mode}") as (_, RPR, project):
+        tempo = project_bpm(RPR, bpm)
+        chord_len = bars_per_chord * beats_per_bar * 60.0 / tempo
+        eighth = 30.0 / tempo
+        total = chord_len * len(voicings)
+        vel = _velocity(intensity)
+
+        notes = []
+        for n, voicing in enumerate(voicings):
+            t0 = n * chord_len
+            bass, upper = voicing[0], voicing[1:]
+            notes.append((t0, t0 + chord_len, bass, vel * 0.9))
+            if style == "sustain":
+                for p in upper:
+                    notes.append((t0, t0 + chord_len, p, _humanize(rng, vel * 0.8)))
+            else:
+                steps = max(1, int(round(chord_len / eighth)))
+                cycle = upper + upper[-2:0:-1] if len(upper) > 2 else upper
+                for k in range(steps):
+                    s = t0 + k * eighth
+                    accent = 1.0 if k % 2 == 0 else 0.8
+                    if style == "pulse":
+                        for p in upper:
+                            notes.append((s, s + eighth * 0.6, p, _humanize(rng, vel * 0.75 * accent)))
+                    else:
+                        p = cycle[k % len(cycle)]
+                        notes.append((s, s + eighth * 0.9, p, _humanize(rng, vel * 0.8 * accent)))
+
+        track = get_score_track(RPR, project, track_name, pad=(style == "sustain"))
+        item = track.add_midi_item(start_seconds, start_seconds + total)
+        _add_midi_notes(item.active_take, notes, total, start_seconds)
+        RPR.GetSetMediaItemTakeInfo_String(
+            item.active_take.id, "P_NAME", f"{key} {mode}: {' '.join(progression)}", True)
+
+    return (
+        f"Wrote {' - '.join(progression)} in {key} {mode} ({style}, x{max(1, int(repeat))}) on "
+        f"'{track_name}': {start_seconds:.2f}s to {start_seconds + total:.2f}s, "
+        f"{chord_len:.2f}s per chord at {tempo:g} BPM."
+    )
+
+
+@mcp.tool()
+@tool_errors
+def generate_theme(
+    key: str,
+    mode: str,
+    notes: list[str],
+    durations_beats: list[float],
+    start_seconds: float,
+    bpm: float | None = None,
+    octave: int = 4,
+    intensity: int = 3,
+    repeat: int = 1,
+    track_name: str = THEME_TRACK,
+) -> str:
+    """
+    Write a melodic theme / leitmotif from scale degrees.
+    notes: scale degrees in the key/mode: "1".."7"; "8"+ continue upward;
+      "0", "-1" go below the tonic; prefix b/# to alter ("b3", "#4");
+      suffix ' for an octave up or , for down; "r" is a rest.
+      Example (rising minor motif): ["1", "b3", "5", "4", "r", "b3", "2", "1"].
+    durations_beats: length of each note in beats; reused cyclically if shorter
+      than notes, e.g. [1, 1, 2] or [0.5].
+    octave: octave of degree 1 (4 = middle C octave).
+    repeat: state the theme this many times back to back.
+    """
+    if not notes or not durations_beats:
+        return "Error: notes and durations_beats must not be empty."
+    if any(d <= 0 for d in durations_beats):
+        return "Error: durations_beats must all be > 0."
+    key_pc, scale = music.parse_key(key), music.get_scale(mode)
+    pitches = [music.parse_degree(n, key_pc, scale, octave) for n in notes]
+    rng = random.Random(99)
+
+    with reaper_session(f"Theme {key} {mode}") as (_, RPR, project):
+        tempo = project_bpm(RPR, bpm)
+        beat = 60.0 / tempo
+        vel = _velocity(intensity)
+        out, t = [], 0.0
+        count = len(pitches)
+        for _ in range(max(1, int(repeat))):
+            for i, p in enumerate(pitches):
+                dur = durations_beats[i % len(durations_beats)] * beat
+                if p is not None:
+                    arch = 0.85 + 0.15 * (1 - abs((i / max(1, count - 1)) * 2 - 1))  # phrase swell
+                    out.append((t, t + dur * 0.95, p, _humanize(rng, vel * arch, 3)))
+                t += dur
+        total = t
+        track = get_score_track(RPR, project, track_name, pad=False)
+        item = track.add_midi_item(start_seconds, start_seconds + total)
+        _add_midi_notes(item.active_take, out, total, start_seconds)
+        RPR.GetSetMediaItemTakeInfo_String(item.active_take.id, "P_NAME", f"Theme {key} {mode}", True)
+
+    return (
+        f"Wrote a {len(notes)}-note theme in {key} {mode} (x{max(1, int(repeat))}) on '{track_name}': "
+        f"{start_seconds:.2f}s to {start_seconds + total:.2f}s at {tempo:g} BPM."
+    )
+
+
+@mcp.tool()
+@tool_errors
+def add_stinger(
+    hit_seconds: float,
+    key: str,
+    mode: str = "minor",
+    kind: str = "hit",
+    lead_seconds: float = 2.0,
+    intensity: int = 4,
+    track_name: str = STINGER_TRACK,
+) -> str:
+    """
+    Add a musical stinger that lands exactly on a story moment (reveal, scare,
+    door slam, scene cut).
+    kind:
+      'hit'            - short, loud low chord stab exactly at hit_seconds.
+      'dissonant_hit'  - stab with a clashing minor 2nd / tritone for shocks.
+      'swell'          - chord that fades up over lead_seconds and cuts off at the
+                         hit (pair it with a 'hit' at the same time for a big impact).
+      'riser'          - accelerating rising notes over lead_seconds into the hit.
+    """
+    kind = kind.strip().lower()
+    if kind not in ("hit", "dissonant_hit", "swell", "riser"):
+        return "Error: kind must be 'hit', 'dissonant_hit', 'swell' or 'riser'."
+    key_pc, scale = music.parse_key(key), music.get_scale(mode)
+    root = 12 * 3 + key_pc  # octave 2
+    third = root + scale[2]
+    fifth = root + 7
+    vel = _velocity(intensity)
+
+    with reaper_session(f"Stinger {kind}") as (_, RPR, project):
+        track = get_score_track(RPR, project, track_name, pad=(kind == "swell"))
+        notes = []
+        if kind in ("hit", "dissonant_hit"):
+            start, length = hit_seconds, 1.5
+            chord = [root - 12, root, fifth, root + 12, third + 12]
+            if kind == "dissonant_hit":
+                chord += [root + 13, root + 6 + 12]
+            for p in chord:
+                notes.append((0.0, 0.4, p, min(127, vel + 10)))
+        else:
+            lead = max(0.25, lead_seconds)
+            start, length = max(0.0, hit_seconds - lead), hit_seconds - max(0.0, hit_seconds - lead)
+            if kind == "swell":
+                for p in (root, fifth, root + 12, third + 12):
+                    notes.append((0.0, length, p, vel))
+            else:
+                t, step, i = 0.0, length / 6.0, 0
+                while t < length:
+                    p = root + 12 + scale[i % 7] + 12 * (i // 7)
+                    notes.append((t, min(length, t + step * 0.9), p, vel * (0.5 + 0.5 * t / length)))
+                    t += step
+                    step = max(0.04, step * 0.82)
+                    i += 1
+
+        item = track.add_midi_item(start, start + length)
+        _add_midi_notes(item.active_take, notes, length, start)
+        RPR.GetSetMediaItemTakeInfo_String(item.active_take.id, "P_NAME", f"Stinger: {kind}", True)
+        if kind == "swell":
+            env = get_volume_envelope(RPR, track)
+            write_envelope(RPR, env,
+                           [(start - 0.01, 0.0), (start, -40.0), (hit_seconds, 0.0)],
+                           clear_range=(start - 0.02, hit_seconds + 0.001))
+
+    return f"Added '{kind}' stinger in {key} {mode} on '{track_name}', landing at {hit_seconds:.2f}s."
+
+
+@mcp.tool()
+@tool_errors
+def duck_score_under_dialogue(
+    duck_db: float = -9.0,
+    attack_seconds: float = 0.25,
+    release_seconds: float = 0.8,
+    score_tracks: list[str] | None = None,
+    dialogue_tracks: list[str] | None = None,
+) -> str:
+    """
+    Automatically lower music under speech and let it breathe back up in the
+    gaps, by writing volume automation on the score/ambience tracks.
+    duck_db: how far to dip under lines (-6 gentle .. -15 strong).
+    attack_seconds: how early the dip starts before each line.
+    release_seconds: how long the music takes to come back after a line.
+    score_tracks: defaults to every track whose name starts with 'SCORE' or 'AMB'.
+    dialogue_tracks: defaults to every 'VO - ' track (pass e.g. ["Narration"]
+      for a single recorded voice track).
+    Run this after all dialogue and music are placed; re-running replaces the
+    ducking automation in the affected ranges.
+    """
+    if duck_db >= 0:
+        return "Error: duck_db must be negative (e.g. -9)."
+    with reaper_session("Duck score under dialogue") as (_, RPR, project):
+        spans = music.merge_intervals(
+            dialogue_intervals(project, dialogue_tracks), gap=attack_seconds + release_seconds)
+        if not spans:
+            return "No dialogue found to duck under."
+        if score_tracks:
+            targets = [find_track(project, n) for n in score_tracks]
+            missing = [n for n, t in zip(score_tracks, targets) if t is None]
+            if missing:
+                return f"Error: no track(s) named {', '.join(missing)}."
+        else:
+            targets = [t for t in project.tracks
+                       if t.name.strip().upper().startswith(("SCORE", "AMB"))]
+        if not targets:
+            return "No score or ambience tracks found to duck."
+
+        for track in targets:
+            env = get_volume_envelope(RPR, track)
+            for s, e in spans:
+                a = max(0.0, s - attack_seconds)
+                write_envelope(RPR, env,
+                               [(a, 0.0), (s, duck_db), (e, duck_db), (e + release_seconds, 0.0)],
+                               clear_range=(a - 0.001, e + release_seconds + 0.001))
+
+    return (
+        f"Ducked {len(targets)} track(s) ({', '.join(t.name for t in targets)}) by {duck_db:g} dB "
+        f"under {len(spans)} dialogue span(s), {attack_seconds:g}s attack, {release_seconds:g}s release."
+    )
+
+
+@mcp.tool()
+@tool_errors
+def set_track_instrument(track_name: str, fx_name: str, replace_reasynth: bool = True) -> str:
+    """
+    Swap a score track's synth for a better instrument the user has installed,
+    e.g. 'VSTi: Spitfire LABS', 'VST3i: Vital', 'VSTi: Surge XT', 'ReaSamplOmatic5000'.
+    replace_reasynth removes the placeholder ReaSynth first.
+    """
+    with reaper_session(f"Instrument {fx_name}") as (_, RPR, project):
+        track = find_track(project, track_name)
+        if track is None:
+            return f"Error: no track named '{track_name}'."
+        if replace_reasynth:
+            idx = RPR.TrackFX_GetByName(track.id, "ReaSynth", False)
+            idx = idx[0] if isinstance(idx, (tuple, list)) else idx
+            if int(idx) >= 0:
+                RPR.TrackFX_Delete(track.id, int(idx))
+        added = RPR.TrackFX_AddByName(track.id, fx_name, False, -1)
+        added = added[0] if isinstance(added, (tuple, list)) else added
+        if int(added) < 0:
+            return (f"Error: REAPER couldn't find an FX called '{fx_name}'. Use the name exactly "
+                    "as shown in REAPER's FX browser.")
+        if int(added) != 0:
+            RPR.TrackFX_CopyToTrack(track.id, int(added), track.id, 0, True)  # instrument first
+    return f"'{track_name}' now plays through '{fx_name}'."
 
 
 if __name__ == "__main__":

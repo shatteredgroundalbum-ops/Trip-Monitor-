@@ -26,7 +26,7 @@ build them, then check your work.
 5. **SFX**: point sounds (gunshot, door, footsteps) on `SFX - Spot Foley`;
    continuous beds (rain, room tone, city) on `SFX - Environment` or
    `AMB - Background Drones`. Give beds long fades (1–3 s).
-6. **Score**:
+6. **Score**: for anything beyond a simple bed, follow the `musical-underscoring` skill. Quick options:
    - `generate_synth_drone` for the underscore bed. Intensity 1–2 for calm or
      uneasy, 3 for suspense, 4–5 for dread or climax. Keep the root low (A0–D2)
      so it sits under voices.

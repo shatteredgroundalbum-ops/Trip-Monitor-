@@ -12,8 +12,14 @@ It bundles:
 - **The `audio-drama-director` skill**, which teaches Claude the workflow
   (cue sheet, then dialogue, SFX, score, levels and a final check) and sensible
   mix levels. It loads automatically when you ask for scene work in REAPER.
-- **The `/assemble-scene` command**, a shortcut that hands Claude a script or
-  stem folder to build.
+- **The `musical-underscoring` skill**, which makes Claude act as composer:
+  it maps where the dialogue sits, plans cues to the scene's emotional arc
+  (keys, modes, progressions, tempo, themes, stingers), keeps music out of
+  the way of speech, and ducks it under every line. It includes an emotion
+  palette reference with progressions and leitmotif recipes.
+- **Commands:** `/assemble-scene` builds a scene from a script or stem
+  folder, and `/score-scene` composes underscore for the scene or recording
+  in REAPER.
 
 > Claude runs the plugin on your own computer, next to REAPER. That means
 > Claude Code or the Claude desktop app (Cowork). It can't run from a cloud
@@ -74,6 +80,12 @@ or just ask:
 > - Gunshot from C:/Audio/sfx_blast.wav at 7.2s.
 > - Eerie C2 drone at intensity 4 from 0 to 12s, with a tension pulse building into the gunshot.
 
+To score a finished recording:
+
+```
+/score-scene Narration track. Opens melancholy, turns to dread at the letter (1:42), ends unresolved.
+```
+
 Every tool call is one undo step in REAPER, so Ctrl+Z backs out anything
 you don't like.
 
@@ -86,6 +98,13 @@ you don't like.
 | `set_track_volume` | Sets track fader (dB) and pan. |
 | `generate_synth_drone` | MIDI pad, intensity 1–5 (root, then adds the 5th, minor 3rd and flat 9th). |
 | `generate_tension_pulse` | Heartbeat pulse that gets louder and, optionally, faster. |
+| `analyze_dialogue_gaps` | Maps speech spans and the music windows between them. |
+| `set_project_tempo` | Sets BPM; musical tools follow it. |
+| `generate_chord_progression` | Voice-led roman-numeral progression in any key and mode, as sustained pads, pulses or arpeggios. |
+| `generate_theme` | Melody or leitmotif from scale degrees and beat lengths. |
+| `add_stinger` | `hit`, `dissonant_hit`, `swell` or `riser` landing exactly on a moment. |
+| `duck_score_under_dialogue` | Volume automation that dips score and ambience under every line. |
+| `set_track_instrument` | Swaps the placeholder ReaSynth for a real instrument plugin. |
 | `add_timeline_marker` | Cue or beat marker. |
 | `list_session` | Lists tracks, clips and markers so Claude can check its work. |
 
