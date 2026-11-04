@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "reaper-director": {
+      "command": "uv",
+      "args": ["run", "--quiet", "--script", "${CLAUDE_PLUGIN_ROOT}/server.py"]
+    }
+  }
+}

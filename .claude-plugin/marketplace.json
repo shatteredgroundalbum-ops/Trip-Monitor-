@@ -1,0 +1,13 @@
+{
+  "name": "shattered-ground-plugins",
+  "owner": {
+    "name": "Richard Webb"
+  },
+  "plugins": [
+    {
+      "name": "reaper-drama-director",
+      "source": "./reaper-drama-plugin",
+      "description": "Direct audio dramas in REAPER from Claude: dialogue and SFX placement, levels, fades, MIDI drones and tension pulses."
+    }
+  ]
+}

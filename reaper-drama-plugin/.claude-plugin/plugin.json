@@ -1,0 +1,10 @@
+{
+  "name": "reaper-drama-director",
+  "version": "1.0.0",
+  "description": "Direct audio dramas in REAPER from Claude: scaffold sessions, place dialogue and SFX stems at exact times, set levels and fades, and write MIDI drone beds and tension pulses.",
+  "author": {
+    "name": "Richard Webb"
+  },
+  "license": "MIT",
+  "keywords": ["reaper", "audio-drama", "podcast", "sound-design", "daw", "mcp"]
+}

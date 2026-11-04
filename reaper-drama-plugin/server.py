@@ -1,3 +1,10 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "mcp>=1.2.0,<2",
+#     "python-reapy>=0.10.0",
+# ]
+# ///
 """
 REAPER Audio Drama Director - MCP server.
 
