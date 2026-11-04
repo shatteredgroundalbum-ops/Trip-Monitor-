@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "reaper-director": {
+      "command": "python",
+      "args": ["C:/absolute/path/to/reaper-drama-plugin/server.py"]
+    }
+  }
+}
