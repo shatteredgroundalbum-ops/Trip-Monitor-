@@ -1,5 +1,29 @@
 # REAPER Drama Director: a Claude plugin
 
+## Use it in the regular Claude chat window (no REAPER, no DAW)
+
+The **music-supervisor** skill runs entirely inside Claude. Upload your script,
+music library and voice recording to a chat. Claude writes the underscore cue
+sheet, finds every trigger line in the recording, and hands back a finished,
+playable mix (plus a cue report and stems).
+
+1. Download [`dist/music-supervisor.zip`](dist/music-supervisor.zip).
+2. In Claude, make sure **Code execution and file creation** is turned on in
+   Settings.
+3. Go to **Customize → Skills**, upload the zip, and switch the skill on.
+4. In a new chat, attach your files and say, for example: *"Be my music
+   supervisor: here's the script, my music library and the voice recording.
+   Spot it and mix the episode."*
+
+Uploads are limited to 30 MB per file, so use MP3s for long recordings.
+Word timing comes from a transcript you upload (SRT, VTT or JSON from
+Whisper, Descript, Riverside, ElevenLabs and others), from Whisper if Claude
+can install it, or from aligning the script to the speech it detects.
+
+The rest of this README covers the REAPER plugin, which controls a running
+copy of REAPER from Claude Code or Cowork.
+
+
 A Claude plugin that lets Claude direct audio dramas in REAPER. Once it's
 installed, you can paste a script into Claude and it will build the scene:
 character dialogue tracks, dialogue and SFX placed at exact times, levels and
